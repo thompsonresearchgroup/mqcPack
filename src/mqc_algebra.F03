@@ -43,8 +43,8 @@
 !     **    Lee M. Thompson, Xianghai Sheng, Andrew D. Mahler, Dave        **
 !     **    Mullally, and Hrant P. Hratchian                               **
 !     **                                                                   **
-!     **                          Version 25.2.1                           **
-!     **                         February 9, 2025                          **
+!     **                          Version 25.3.0                           **
+!     **                          March 25, 2025                           **
 !     **                                                                   **
 !     **                                                                   **
 !     ** Modules beloning to MQCPack:                                      **
@@ -264,8 +264,9 @@
 !>      \brief <b> Updates the specified submatrix of the MQC Matrix to the specified
 !>      matrix</b>
         Procedure, Public::mput => MQC_Matrix_Matrix_Put
-!>      \brief <b> Updates the specified element of the MQC Matrix to the specified
-!>      value</b>
+!>      \brief <b> Increases a MQC Matrix dimension and fill the additional elements with
+!>      with zeros.</b>
+        Procedure, Public::mpad => MQC_Matrix_Pad
       End Type MQC_Matrix
 !     
 !>    \brief <b> Rank 4 array variable</b>
@@ -2789,6 +2790,12 @@
 !>        Scalar is Class(MQC_Scalar)
 !>        The MQC_Scalar to be tested.
 !>    \endverbatim
+!>
+!>    \param[in] Thresh_Inp
+!>    \verbatim
+!>        Thresh_Inp is Type(MQC_Scalar)
+!>        The threshold for determining the phase.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
@@ -2800,17 +2807,17 @@
 !     Variable Declarations
       Implicit None
       Class(MQC_Scalar),Intent(In)::Scalar
-      Type(MQC_Scalar),optional::thresh_inp
+      Type(MQC_Scalar),optional,Intent(In)::thresh_inp
       Type(MQC_Scalar)::Output
       real::thresh
 
-      if(present(thresh_inp)) then      
+      if(present(thresh_inp)) then
        thresh=thresh_inp%rval()
       else
         thresh=1.0E-8
       end if
-     
-      if (abs(Scalar).lt.thresh) then 
+
+      if (abs(Scalar).lt.thresh) then
         output = 0.0
       else
         output = acos(Scalar%rval()/abs(Scalar))
@@ -15845,7 +15852,7 @@
       If (IndL.lt.0) IndL = Mat%NCol + IndL + 1
       LenRow = IndJ-IndI+1
       LenCol = IndL-IndK+1
-      If (LenRow.le.0.or.LenRow.gt.Mat%NRow.or.LenRow.ne.MatrixIn%NRow) Call MQC_Error_I('Row length badly &
+      If (LenRow.lt.0.or.LenRow.gt.Mat%NRow.or.LenRow.ne.MatrixIn%NRow) Call MQC_Error_I('Row length badly &
      &  defined in MQC_Matrix_Matrix_Put', 6, &
      'LenRow', LenRow, &
      'Mat%NRow', Mat%NRow, &
@@ -15860,7 +15867,7 @@
      'IndJ', IndJ, &
      'LenRow', LenRow, &
      'Mat%NRow', Mat%NRow )
-      If (LenCol.le.0.or.LenCol.gt.Mat%NCol.or.LenCol.ne.MatrixIn%NCol) Call MQC_Error_I('Column length badly &
+      If (LenCol.lt.0.or.LenCol.gt.Mat%NCol.or.LenCol.ne.MatrixIn%NCol) Call MQC_Error_I('Column length badly &
      &  defined in MQC_Matrix_Matrix_Put', 6, &
      'LenCol', LenCol, &
      'Mat%NCol', Mat%NCol, &
@@ -15929,8 +15936,8 @@
               L = 1
               Do M = 1, LenCol
                 Do N = 1, M
-                  Mat%MatI(IndI+M-1,IndK+N-1) = MatrixIn%MatR(L,1)
-                  Mat%MatI(IndI+N-1,IndK+M-1) = MatrixIn%MatR(L,1)
+                  Mat%MatR(IndI+M-1,IndK+N-1) = MatrixIn%MatR(L,1)
+                  Mat%MatR(IndI+N-1,IndK+M-1) = MatrixIn%MatR(L,1)
                   L = L + 1
                 endDo
               endDo
@@ -15938,8 +15945,8 @@
               L = 1
               Do M = 1, LenCol
                 Do N = 1, M
-                  Mat%MatI(IndI+N-1,IndK+M-1) = (-1)*MatrixIn%MatR(L,1)
-                  Mat%MatI(IndI+M-1,IndK+N-1) = MatrixIn%MatR(L,1)
+                  Mat%MatR(IndI+N-1,IndK+M-1) = (-1)*MatrixIn%MatR(L,1)
+                  Mat%MatR(IndI+M-1,IndK+N-1) = MatrixIn%MatR(L,1)
                   L = L + 1
                 endDo
               endDo
@@ -16370,6 +16377,89 @@
       EndIf
 
       End Subroutine MQC_Matrix_Matrix_Put
+!
+!
+!     PROCEDURE MQC_Matrix_Pad
+!
+!>    \brief <b> MQC_Matrix_Pad is a function that increases the dimension of a
+!>    MQC matrix and set the new elements to zero.</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Matrix_Pad is a function that increases the dimension of a
+!>    MQC matrix and set the new elements to zero. Each dimension of the
+!>    final MQC matrix cannot be smaller that the input one.
+!>    To reduce the dimension of a MQC matrix use MQC_Matrix_Matrix_At.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Matrix
+!>    \verbatim
+!>        Mat is Class(MQC_Matrix)
+!>        The MQC matrix from which the dimension will be increased.
+!>    \endverbatim
+!>
+!>    \param[in] Rows
+!>    \verbatim
+!>        Rows is Integer(kind=int64)
+!>        The specification of the number of rows after padding.
+!>        The final number of rows must be larger or equal to the initial.
+!>        Otherwise the rows of the final matrix is the same as the initial
+!>        one. To reduce the dimension of a MQC matrix use MQC_Matrix_Matrix_At.
+!>        If Rows > Matrix%NRow
+!>          The MatrixOut%Row = Rows
+!>        else
+!>          The MatrixOut%Row = Matrix%Row
+!>    \endverbatim
+!>
+!>    \param[in] Cols
+!>    \verbatim
+!>        Cols is Integer(kind=int64)
+!>        The specification of the number of columns after padding.
+!>        The final number of columns must be larger or equal to the initial.
+!>        Otherwise the columns of the final matrix is the same as the initial
+!>        one. To reduce the dimension of a MQC matrix use MQC_Matrix_Matrix_At.
+!>        If Cols > Matrix%NCol
+!>          The MatrixOut%Col = Cols
+!>        else
+!>          The MatrixOut%Col = Matrix%Col
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2025
+!
+      function MQC_Matrix_Pad(Matrix,Rows,Cols) result(MatrixOut)
+!
+      Implicit None
+      Class(MQC_Matrix),Intent(In)::Matrix
+      Integer(kind=int64),Intent(In)::Rows,Cols
+      Type(MQC_Matrix)::MatrixOut
+
+      if (Rows.le.Matrix%NRow) then
+        if (Cols.le.Matrix%NCol) then
+          MatrixOut = Matrix
+        else
+          call MatrixOut%init(Matrix%NRow,Cols)
+          call MatrixOut%mput(Matrix,[1,Matrix%NRow],[1,Matrix%NCol])
+        end if
+      else
+        if (Cols.le.Matrix%NCol) then
+          call MatrixOut%init(Rows,Matrix%NCol)
+          call MatrixOut%mput(Matrix,[1,Matrix%NRow],[1,Matrix%NCol])
+        else
+          call MatrixOut%init(Rows,Cols)
+          call MatrixOut%mput(Matrix,[1,Matrix%NRow],[1,Matrix%NCol])
+        end if
+      end if
+!
+      end function MQC_Matrix_Pad
 !
 !
 !     PROCEDURE SymIndexHash
@@ -20015,7 +20105,7 @@
 !
 !     Variable Declarations.
       Implicit None
-      Class(MQC_Matrix),Intent(InOut)::Matrix
+      Class(MQC_Matrix),Intent(In)::Matrix
       Logical::isAllocated
 !
       isAllocated = .False.
@@ -26748,71 +26838,66 @@
       storFlag = A%Storage
  1050 Format( A, I10 )
 !
-      if(storFlag.eq.'StorDiag') return
+      if(storFlag.eq.'StorDiag') call mqc_matrix_diag2Full(A)
       if(storFlag.eq.'StorSymm'.or.storFlag.eq.'StorAsym'.or.&
         storFlag.eq.'StorHerm'.or.storFlag.eq.'StorAhrm') &
         call mqc_matrix_symm2Full(A)
-      if(storFlag.eq.'StorFull') then
-        if(typeFlag.eq.'Real'.or.typeFlag.eq.'Integer') then
-          if(typeFlag.eq.'Integer') call mqc_matrix_copy_int2Real(A)
-          Allocate(A_Temp(NDim1,NDim2),A_SVals(Min(NDim1,NDim2)),A_UVecs(NDim1,NDim1), &
-            A_VVecs(NDim2,NDim2),Work(1))
-          A_Temp = A
-          Call DGESVD('A','A',NDim1,NDim2,A_Temp,NDim1,A_SVals,A_UVecs,NDim1,A_VVecs, &
-            NDim2,Work,Work_Length,IError)
-          Work_Length = Int(Work(1))
-          DeAllocate(Work)
-          Allocate(Work(Work_Length))
-          Call DGESVD('A','A',NDim1,NDim2,A_Temp,NDim1,A_SVals,A_UVecs,NDim1,A_VVecs, &
-            NDim2,Work,Work_Length,IError)
-          If(IError.ne.0) Write(*,1050)' SVD FAILED: IError = ',IError
-          DeAllocate(Work)
-          Work_Length = -1
-        elseIf(typeFlag.eq.'Complex') then
-          Allocate(AC_Temp(NDim1,NDim2),A_SVals(Min(NDim1,NDim2)),AC_UVecs(NDim1,NDim1), &
-            AC_VVecs(NDim2,NDim2),WorkC(1),Work(5*min(NDim1,NDim2)))
-          AC_Temp = A
-          Call ZGESVD('A','A',NDim1,NDim2,AC_Temp,NDim1,A_SVals,AC_UVecs,NDim1,AC_VVecs, &
-            NDim2,WorkC,Work_Length,Work,IError)
-          Work_Length = Int(WorkC(1))
-          DeAllocate(WorkC)
-          Allocate(WorkC(Work_Length))
-          Call ZGESVD('A','A',NDim1,NDim2,AC_Temp,NDim1,A_SVals,AC_UVecs,NDim1,AC_VVecs, &
-            NDim2,WorkC,Work_Length,Work,IError)
-          If(IError.ne.0) Write(*,1050)' SVD FAILED: IError = ',IError
-          DeAllocate(WorkC,Work)
-          Work_Length = -1
-        else
-          call mqc_error_a('typeFlag not recognised in mqc_matrix_svd', 6, &
-               'typeFlag', typeFlag )
-        endIf
-!
-        if(present(EVals)) EVals = A_SVals
-        if(present(EUVecs)) then
-          if(allocated(A_UVecs)) EUVecs = A_UVecs
-          if(allocated(AC_UVecs)) EUVecs = AC_UVecs
-        endIf
-        if(present(EVVecs)) then
-          if(allocated(A_VVecs)) EVVecs = A_VVecs
-          if(allocated(AC_VVecs)) EVVecs = AC_VVecs
-        endIf
-        if(allocated(A_SVals)) deallocate(A_SVals)
-        if(allocated(A_UVecs)) deallocate(A_UVecs)
-        if(allocated(AC_UVecs)) deallocate(AC_UVecs)
-        if(allocated(A_VVecs)) deallocate(A_VVecs)
-        if(allocated(AC_VVecs)) deallocate(AC_VVecs)
-        if(allocated(A_Temp)) deallocate(A_Temp)
-        if(allocated(AC_Temp)) deallocate(AC_Temp)
-!
+      if(typeFlag.eq.'Real'.or.typeFlag.eq.'Integer') then
+        if(typeFlag.eq.'Integer') call mqc_matrix_copy_int2Real(A)
+        Allocate(A_Temp(NDim1,NDim2),A_SVals(Min(NDim1,NDim2)),A_UVecs(NDim1,NDim1), &
+          A_VVecs(NDim2,NDim2),Work(1))
+        A_Temp = A
+        Call DGESVD('A','A',NDim1,NDim2,A_Temp,NDim1,A_SVals,A_UVecs,NDim1,A_VVecs, &
+          NDim2,Work,Work_Length,IError)
+        Work_Length = Int(Work(1))
+        DeAllocate(Work)
+        Allocate(Work(Work_Length))
+        Call DGESVD('A','A',NDim1,NDim2,A_Temp,NDim1,A_SVals,A_UVecs,NDim1,A_VVecs, &
+          NDim2,Work,Work_Length,IError)
+        If(IError.ne.0) Write(*,1050)' SVD FAILED: IError = ',IError
+        DeAllocate(Work)
+        Work_Length = -1
+      elseIf(typeFlag.eq.'Complex') then
+        Allocate(AC_Temp(NDim1,NDim2),A_SVals(Min(NDim1,NDim2)),AC_UVecs(NDim1,NDim1), &
+          AC_VVecs(NDim2,NDim2),WorkC(1),Work(5*min(NDim1,NDim2)))
+        AC_Temp = A
+        Call ZGESVD('A','A',NDim1,NDim2,AC_Temp,NDim1,A_SVals,AC_UVecs,NDim1,AC_VVecs, &
+          NDim2,WorkC,Work_Length,Work,IError)
+        Work_Length = Int(WorkC(1))
+        DeAllocate(WorkC)
+        Allocate(WorkC(Work_Length))
+        Call ZGESVD('A','A',NDim1,NDim2,AC_Temp,NDim1,A_SVals,AC_UVecs,NDim1,AC_VVecs, &
+          NDim2,WorkC,Work_Length,Work,IError)
+        If(IError.ne.0) Write(*,1050)' SVD FAILED: IError = ',IError
+        DeAllocate(WorkC,Work)
+        Work_Length = -1
       else
-        call mqc_error_a('storFlag not recognised in mqc_matrix_svd', 6, &
-             'storFlag', storFlag )
-     endIf
+        call mqc_error_a('typeFlag not recognised in mqc_matrix_svd', 6, &
+             'typeFlag', typeFlag )
+      endIf
+!
+      if(present(EVals)) EVals = A_SVals
+      if(present(EUVecs)) then
+        if(allocated(A_UVecs)) EUVecs = A_UVecs
+        if(allocated(AC_UVecs)) EUVecs = AC_UVecs
+      endIf
+      if(present(EVVecs)) then
+        if(allocated(A_VVecs)) EVVecs = A_VVecs
+        if(allocated(AC_VVecs)) EVVecs = AC_VVecs
+      endIf
+      if(allocated(A_SVals)) deallocate(A_SVals)
+      if(allocated(A_UVecs)) deallocate(A_UVecs)
+      if(allocated(AC_UVecs)) deallocate(AC_UVecs)
+      if(allocated(A_VVecs)) deallocate(A_VVecs)
+      if(allocated(AC_VVecs)) deallocate(AC_VVecs)
+      if(allocated(A_Temp)) deallocate(A_Temp)
+      if(allocated(AC_Temp)) deallocate(AC_Temp)
 !
       if(typeFlag.eq.'Integer') call mqc_matrix_copy_real2Int(A)
       if(storFlag.eq.'StorSymm'.or.storFlag.eq.'StorAsym'.or.&
         storFlag.eq.'StorHerm'.or.storFlag.eq.'StorAhrm') &
         call mqc_matrix_full2Symm(A)
+      if(storFlag.eq.'StorDiag') call mqc_matrix_full2diag(A)
 !
       Return
       End Subroutine MQC_Matrix_SVD

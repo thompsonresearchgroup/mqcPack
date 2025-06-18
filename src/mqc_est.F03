@@ -8076,7 +8076,7 @@
       type(mqc_scalar)::scalar
       Character(Len=64)::myLabel
 
-      myLabel = ''
+      myLabel = 'full'
 
       select type(scalarIn)
       type is (integer)
@@ -8113,6 +8113,18 @@
             bbbb = scalar*eris%getBlock('bbbb')
           if(eris%hasSpinBlock('bbaa')) &
             bbaa = scalar*eris%getBlock('bbaa')
+          if(eris%hasSpinBlock('aabb')) &
+            aabb = scalar*eris%getBlock('aabb')
+          if(eris%hasSpinBlock('baba')) &
+            baba = scalar*eris%getBlock('baba')
+          if(eris%hasSpinBlock('baab')) &
+            baab = scalar*eris%getBlock('baab')
+          if(eris%hasSpinBlock('abba')) &
+            abba = scalar*eris%getBlock('abba')
+          if(eris%hasSpinBlock('abab')) &
+            abab = scalar*eris%getBlock('abab')
+          if(eris%hasSpinBlock('aabb')) &
+            aabb = scalar*eris%getBlock('aabb')
           if(eris%hasSpinBlock('aabb')) &
             aabb = scalar*eris%getBlock('aabb')
           if(eris%hasSpinBlock('aaab')) &
@@ -8188,7 +8200,7 @@
       type(mqc_scalar)::scalar
       Character(Len=64)::myLabel
 
-      myLabel = ''
+      myLabel = 'full'
 
       select type(scalarIn)
       type is (integer)
@@ -8227,6 +8239,15 @@
             bbaa = scalar*eris%getBlock('bbaa')
           if(eris%hasSpinBlock('aabb')) &
             aabb = scalar*eris%getBlock('aabb')
+            aabb = scalar*eris%getBlock('aabb')
+          if(eris%hasSpinBlock('baba')) &
+            baba = scalar*eris%getBlock('baba')
+          if(eris%hasSpinBlock('baab')) &
+            baab = scalar*eris%getBlock('baab')
+          if(eris%hasSpinBlock('abba')) &
+            abba = scalar*eris%getBlock('abba')
+          if(eris%hasSpinBlock('abab')) &
+            abab = scalar*eris%getBlock('abab')
           if(eris%hasSpinBlock('aaab')) &
             aaab = scalar*eris%getBlock('aaab')
           if(eris%hasSpinBlock('aaba')) &

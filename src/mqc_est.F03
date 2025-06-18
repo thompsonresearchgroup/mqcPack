@@ -435,6 +435,8 @@
       Interface Operator (*)
         Module Procedure MQC_Scalar_Integral_Multiply
         Module Procedure MQC_Integral_Scalar_Multiply
+        Module Procedure MQC_Scalar_twoERIs_Multiply
+        Module Procedure MQC_twoERIs_Scalar_Multiply
       End Interface
 !
 !>    \brief <b> Computes the element-wise product of two objects</b>
@@ -2401,12 +2403,12 @@
 !>                  only unique spin blocks are stored (first given in 
 !>                  equality): 
 !> 
-!>                    spin: [aa|aa]=[bb|bb]=[aa|bb]=[bb|aa]
-!>                    space: [aa|aa], [bb|bb], [aa|bb]=[bb|aa]
+!>                    space:   [aa|aa]=[bb|bb]=[aa|bb]=[bb|aa]
+!>                    spin:    [aa|aa], [bb|bb], [aa|bb]=[bb|aa]
 !>                    general: [aa|aa], [bb|bb], [aa|bb]=[bb|aa], 
-!>                      [abab]=[ba|ba]*, [ab|ba]=[ba|ab], 
-!>                      [aa|ab]=[ab|aa]=[aa|ba]*=[ba|aa]*,
-!>                      [ab|bb]=[bb|ab]=[bb|ba]*=[ba|bb]*
+!>                             [ab|ab]=[ba|ba]*, [ab|ba]=[ba|ab], 
+!>                             [aa|ab]=[ab|aa]=[aa|ba]*=[ba|aa]*,
+!>                             [ab|bb]=[bb|ab]=[bb|ba]*=[ba|bb]*
 !>
 !>    \endverbatim
 !>    
@@ -8012,6 +8014,230 @@
       end select
 !
       end function mqc_integral_scalar_multiply
+!
+!
+!     PROCEDURE MQC_twoERIs_Scalar_Multiply
+!
+!>    \brief <b> MQC_twoERIs_Scalar_Multiply is used to multiply an MQC scalar with
+!>    an MQC twoERIs type variable and returns an MQC twoERIs</b> 
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_twoERIs_Scalar_Multiply is used to multiply an MQC scalar with an MQC 
+!>    twoERIs type variable and returns an MQC twoERIs</b> 
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] eris
+!>    \verbatim
+!>        Integral is type(mqc_twoERIs)
+!>        The MQC twoERIs variable to multiply.
+!>    \endverbatim
+!>    
+!>    \param[in] ScalarIn
+!>    \verbatim
+!>        ScalarIn class(*)
+!>        The variable to multiply.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2025
+!
+      function mqc_twoERIs_scalar_multiply(eris,scalarIn) result(erisOut)
+!
+      implicit none
+      type(mqc_twoERIs),intent(in)::eris
+      class(*),intent(in)::scalarIn
+      type(mqc_twoERIs)::erisOut
+      type(mqc_R4Tensor)::aaaa,bbbb,aabb,bbaa,abab,abba,baab,baba,&
+                          aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb
+      type(mqc_scalar)::scalar
+      Character(Len=64)::myLabel
+
+      myLabel = ''
+
+      select type(scalarIn)
+      type is (integer)
+        scalar = scalarIn
+      type is (real)
+        scalar = scalarIn
+      type is (complex)
+        scalar = scalarIn
+      type is (mqc_scalar)
+        scalar = scalarIn
+      class default
+        call mqc_error_I('scalarIn type not defined in mqc_twoERIs_scalar_multiply',6)
+      end select
+
+      select case (eris%integralType)
+      case('space','regular','raffenetti1','raffenetti2','raffenetti3')
+          if(eris%hasSpinBlock('aaaa')) &
+            aaaa = scalar*eris%getBlock('aaaa')
+          call mqc_twoeris_allocate(erisOut,myLabel,'space',aaaa)
+      case('spin')
+          if(eris%hasSpinBlock('aaaa')) &
+            aaaa = scalar*eris%getBlock('aaaa')
+          if(eris%hasSpinBlock('bbbb')) &
+            bbbb = scalar*eris%getBlock('bbbb')
+          if(eris%hasSpinBlock('bbaa')) &
+            bbaa = scalar*eris%getBlock('bbaa')
+          if(eris%hasSpinBlock('aabb')) &
+            aabb = scalar*eris%getBlock('aabb')
+          call mqc_twoeris_allocate(erisOut,myLabel,'space',aaaa,bbbb,bbaa,aabb)
+      case('general')
+          if(eris%hasSpinBlock('aaaa')) &
+            aaaa = scalar*eris%getBlock('aaaa')
+          if(eris%hasSpinBlock('bbbb')) &
+            bbbb = scalar*eris%getBlock('bbbb')
+          if(eris%hasSpinBlock('bbaa')) &
+            bbaa = scalar*eris%getBlock('bbaa')
+          if(eris%hasSpinBlock('aabb')) &
+            aabb = scalar*eris%getBlock('aabb')
+          if(eris%hasSpinBlock('aaab')) &
+            aaab = scalar*eris%getBlock('aaab')
+          if(eris%hasSpinBlock('aaba')) &
+            aaba = scalar*eris%getBlock('aaba')
+          if(eris%hasSpinBlock('abaa')) &
+            abaa = scalar*eris%getBlock('abaa')
+          if(eris%hasSpinBlock('baaa')) &
+            baaa = scalar*eris%getBlock('baaa')
+          if(eris%hasSpinBlock('bbba')) &
+            bbba = scalar*eris%getBlock('bbba')
+          if(eris%hasSpinBlock('bbab')) &
+            bbab = scalar*eris%getBlock('bbab')
+          if(eris%hasSpinBlock('babb')) &
+            babb = scalar*eris%getBlock('babb')
+          if(eris%hasSpinBlock('abbb')) &
+            abbb = scalar*eris%getBlock('abbb')
+          call mqc_twoeris_allocate(erisOut,myLabel,'general',aaaa,bbbb,bbaa,aabb,&
+                                                             abab,abba,baab,baba,&
+                                                             aaab,aaba,abaa,baaa,&
+                                                             bbba,bbab,babb,abbb)
+      case default
+        call mqc_error_A('Unknown integral type in mqc_twoeris_scalar_multiply', 6, &
+             'twoeris%integralType', eris%integralType )
+      end select
+!
+      end function mqc_twoERIs_scalar_multiply
+!
+!
+!     PROCEDURE MQC_Scalar_twoERIs_Multiply
+!
+!>    \brief <b> MQC_Scalar_twoERIs_Multiply is used to multiply an MQC scalar with
+!>    an MQC twoERIs type variable and returns an MQC twoERIs</b> 
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Scalar_twoERIs_Multiply is used to multiply an MQC scalar with an MQC 
+!>    twoERIs type variable and returns an MQC twoERIs</b> 
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] ScalarIn
+!>    \verbatim
+!>        ScalarIn class(*)
+!>        The variable to multiply.
+!>    \endverbatim
+!>    
+!>    \param[in] eris
+!>    \verbatim
+!>        Integral is type(mqc_twoERIs)
+!>        The MQC twoERIs variable to multiply.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2025
+!
+      function mqc_scalar_twoERIs_multiply(scalarIn,eris) result(erisOut)
+!
+      implicit none
+      type(mqc_twoERIs),intent(in)::eris
+      class(*),intent(in)::scalarIn
+      type(mqc_twoERIs)::erisOut
+      type(mqc_R4Tensor)::aaaa,bbbb,aabb,bbaa,abab,abba,baab,baba,&
+                          aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb
+      type(mqc_scalar)::scalar
+      Character(Len=64)::myLabel
+
+      myLabel = ''
+
+      select type(scalarIn)
+      type is (integer)
+        scalar = scalarIn
+      type is (real)
+        scalar = scalarIn
+      type is (complex)
+        scalar = scalarIn
+      type is (mqc_scalar)
+        scalar = scalarIn
+      class default
+        call mqc_error_I('scalarIn type not defined in mqc_scalar_twoERIs_multiply',6)
+      end select
+
+      select case (eris%integralType)
+      case('space','regular','raffenetti1','raffenetti2','raffenetti3')
+          if(eris%hasSpinBlock('aaaa')) &
+            aaaa = scalar*eris%getBlock('aaaa')
+          call mqc_twoeris_allocate(erisOut,myLabel,'space',aaaa)
+      case('spin')
+          if(eris%hasSpinBlock('aaaa')) &
+            aaaa = scalar*eris%getBlock('aaaa')
+          if(eris%hasSpinBlock('bbbb')) &
+            bbbb = scalar*eris%getBlock('bbbb')
+          if(eris%hasSpinBlock('bbaa')) &
+            bbaa = scalar*eris%getBlock('bbaa')
+          if(eris%hasSpinBlock('aabb')) &
+            aabb = scalar*eris%getBlock('aabb')
+          call mqc_twoeris_allocate(erisOut,myLabel,'space',aaaa,bbbb,bbaa,aabb)
+      case('general')
+          if(eris%hasSpinBlock('aaaa')) &
+            aaaa = scalar*eris%getBlock('aaaa')
+          if(eris%hasSpinBlock('bbbb')) &
+            bbbb = scalar*eris%getBlock('bbbb')
+          if(eris%hasSpinBlock('bbaa')) &
+            bbaa = scalar*eris%getBlock('bbaa')
+          if(eris%hasSpinBlock('aabb')) &
+            aabb = scalar*eris%getBlock('aabb')
+          if(eris%hasSpinBlock('aaab')) &
+            aaab = scalar*eris%getBlock('aaab')
+          if(eris%hasSpinBlock('aaba')) &
+            aaba = scalar*eris%getBlock('aaba')
+          if(eris%hasSpinBlock('abaa')) &
+            abaa = scalar*eris%getBlock('abaa')
+          if(eris%hasSpinBlock('baaa')) &
+            baaa = scalar*eris%getBlock('baaa')
+          if(eris%hasSpinBlock('bbba')) &
+            bbba = scalar*eris%getBlock('bbba')
+          if(eris%hasSpinBlock('bbab')) &
+            bbab = scalar*eris%getBlock('bbab')
+          if(eris%hasSpinBlock('babb')) &
+            babb = scalar*eris%getBlock('babb')
+          if(eris%hasSpinBlock('abbb')) &
+            abbb = scalar*eris%getBlock('abbb')
+          call mqc_twoeris_allocate(erisOut,myLabel,'general',aaaa,bbbb,bbaa,aabb,&
+                                                             abab,abba,baab,baba,&
+                                                             aaab,aaba,abaa,baaa,&
+                                                             bbba,bbab,babb,abbb)
+      case default
+        call mqc_error_A('Unknown integral type in mqc_scalar_twoeris_multiply', 6, &
+             'twoeris%integralType', eris%integralType )
+      end select
+!
+      end function mqc_scalar_twoERIs_multiply
 
 !
 !     PROCEDURE MQC_Element_Integral_Multiply
@@ -10861,7 +11087,7 @@
 !     PROCEDURE MQC_ERI_ERI_Partial_Contraction
 !
 !>    \brief <b> MQC_ERI_ERI_Contraction is used to return the contraction of 
-!>    two-ERIs with an MQC rank-4 tensor</b> 
+!>    two-ERIs with an MQC two-ERIs</b> 
 !
 !>    \par Purpose:
 !     =============
@@ -11022,7 +11248,7 @@
             str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
             str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
-              if(str2.eq.'aabb'.or.str1.eq.'bbaa') then
+              if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
                 if (active_conf(3:4).eq.'aa') then
                   aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
                        eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
@@ -11082,7 +11308,7 @@
             str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
             str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
-              if(str2.eq.'aabb'.or.str1.eq.'bbaa') then
+              if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
                 if (active_conf(3:4).eq.'aa') then
                   aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
                        eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
@@ -11241,6 +11467,549 @@
  
 !
       end function mqc_eri_eri_partial_contraction
+!
+!
+!     PROCEDURE MQC_ERI_ERI_Partial_Contraction_2ERI
+!
+!>    \brief <b> MQC_ERI_ERI_Contraction_2ERI is used to return the contraction of 
+!>    a two-ERIs with an MQC two-ERIs in a two-ERIs form</b> 
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_ERI_ERI_Contraction_2ERI is used to return the contraction of two-ERIs with 
+!>    an MQC two-ERIs in a two-ERIs form.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] ERIs1
+!>    \verbatim
+!>        ERIs1 is type(mqc_twoERIs) 
+!>        The first 2ERIs to be contracted.
+!>    \endverbatim
+!>
+!>    \param[in] ERIs2
+!>    \verbatim
+!>        ERIs2 is type(mqc_twoERIs) 
+!>        The second 2ERIs to be contracted.
+!>    \endverbatim
+!>
+!>    \param[in] Index1
+!>    \verbatim
+!>        Index1 is integer(kind=int64),dimension(4),optional 
+!>        Contain the indexes of ERIs1 to be contracted.
+!>        The two first integers in the object are the ones to be contracted,
+!>        while the two last are the two first indexes of the final ERIs.
+!>        Ex: If Index1=[3,2,4,1], the third and second indexes of ERIs1 are contracted.
+!>            The fourth and first form the first and second indices
+!>            of the result ERIs, respectivelly.
+!>    \endverbatim
+!>
+!>    \param[in] Index2
+!>    \verbatim
+!>        Index2 is Integer(kind=int64),dimension(4),optional
+!>        Contain the indexes of ERIs2 to be contracted.
+!>        The two first integers in the object are the ones to be contracted,
+!>        while the two last are the final indexes of the final ERIs.
+!>
+!>        Ex: index1=[3,2,4,1] and index2=[2,1,4,3]
+!>        sum_{i,j} ERIs1_{ljik} ERIs2_{jipq} = IntOut_{klqp}
+!>
+!>    \endverbatim
+!>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2025
+!
+      function mqc_eri_eri_partial_contraction_2eri(eris1,eris2,index1,index2) result(eriOut)
+!
+      implicit none
+      type(mqc_twoERIs),intent(in)::eris1,eris2
+      integer(kind=int64),dimension(4),intent(in),optional::index1,index2
+      type(mqc_twoERIs)::eriOut
+
+      type(MQC_R4Tensor)::aaaa,aaab,aaba,abaa,baaa,aabb,abab,baab,abba,baba,bbaa,&
+                          abbb,babb,bbab,bbba,bbbb
+      type(MQC_R4Tensor)::tmp_aaaa,tmp_bbbb
+      character(len=64)::mylabel,eriType
+      integer(kind=int64)::r4t1,r4t2,r4t3,r4t4,nB1,nB2,nB3,nB4
+      type(mqc_twoERIs)::temp
+      Integer(kind=int64)::ia,ja,ka,la,ib,jb,kb,lb,i,j,k,l
+      Integer(kind=int64)::dimAi,dimAj,dimAk,dimAl,dimBi,dimBj,dimBk,dimBl
+      character(len=4)::str1,str2,active_conf_1,active_conf_2,active_conf
+      character(len=4),dimension(4)::allowed_spin,a_bbb_array,aaa_b_array
+      character(len=4),dimension(6)::aa_bb_array                                       
+      character(len=4),dimension(16)::full_array     
+
+      full_array =['aaaa','bbbb','aabb','abab','abba','baab','baba','bbaa',&
+                   'abbb','babb','bbab','bbba','baaa','abaa','aaba','aaab']
+      aa_bb_array=['aabb','abab','abba','baab','baba','bbaa']
+      a_bbb_array=['abbb','babb','bbab','bbba']
+      aaa_b_array=['baaa','abaa','aaba','aaab']
+
+!
+      if(present(index1)) then
+        ia=index1(1)
+        ja=index1(2)
+        ka=index1(3)
+        la=index1(4)
+        if (ia.eq.ja) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Contraction_2eri',&
+                                        6,'ia', ia,'ja',ja)
+        if (ia.eq.ka) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Contraction_2eri',&
+                                        6,'ia', ia,'ka',ka)
+        if (ia.eq.la) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Contraction_2eri',&
+                                        6,'ia', ia,'la',la)
+        if (ja.eq.ka) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Contraction_2eri',&
+                                        6,'ja', ja,'ka',ka)
+        if (ja.eq.la) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Contraction_2eri',&
+                                        6,'ja', ja,'la',la)
+        if (ka.eq.la) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Contraction_2eri',&
+                                        6,'ka', ka,'la',la)
+      else
+        ia=1
+        ja=2
+        ka=3
+        la=4
+      endif
+      if(present(index2)) then
+        ib=index2(1)
+        jb=index2(2)
+        kb=index2(3)
+        lb=index2(4)
+        if (ib.eq.jb) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Partial_Contraction_2eri',&
+                                        6,'ib', ib,'jb',jb)
+        if (ib.eq.kb) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Partial_Contraction_2eri',&
+                                        6,'ib', ib,'kb',kb)
+        if (ib.eq.lb) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Partial_Contraction_2eri',&
+                                        6,'ib', ib,'lb',lb)
+        if (jb.eq.kb) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Partial_Contraction_2eri',&
+                                        6,'jb', jb,'kb',kb)
+        if (jb.eq.lb) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Partial_Contraction_2eri',&
+                                        6,'jb', jb,'lb',lb)
+        if (kb.eq.lb) Call MQC_Error_I('Duplicated index in MQC_ERI_ERI_Partial_Contraction_2eri',&
+                                        6,'kb', kb,'lb',lb)
+      else
+        ib=1
+        jb=2
+        kb=3
+        lb=4
+      endif
+      if (ia.gt.4.or.ia.le.0.or.ib.gt.4.or.ib.le.0.or.&
+          ja.gt.4.or.ja.le.0.or.jb.gt.4.or.jb.le.0.or.&
+          ka.gt.4.or.ka.le.0.or.kb.gt.4.or.kb.le.0.or.&
+          la.gt.4.or.la.le.0.or.lb.gt.4.or.lb.le.0.) Call MQC_Error(&
+           'Index out of range in MQC_ERI_ERI_Partial_Contraction_2eri', 6)
+
+       if (eris1%blockSize('alpha',ia).ne.eris2%blockSize('alpha',ib).or.&
+           eris1%blockSize('alpha',ja).ne.eris2%blockSize('alpha',jb))&
+           call mqc_error_i('2ERIs not correctly dimensioned in mqc_eri_eri_contraction_2eri',6,&
+            'dim1',eris1%blockSize('alpha',ia),'dim2',eris2%blockSize('alpha',ib),&
+            'dim3',eris1%blockSize('alpha',ja),'dim4',eris2%blockSize('alpha',jb))
+
+      call aaaa%init(eris1%blockSize('alpha',ka),eris1%blockSize('alpha',la),&
+                     eris2%blockSize('alpha',kb),eris2%blockSize('alpha',lb))
+      call bbbb%init(eris1%blockSize('beta',ka),eris1%blockSize('beta',la),&
+                     eris2%blockSize('beta',kb),eris2%blockSize('beta',lb))
+      call aabb%init(eris1%blockSize('alpha',ka),eris1%blockSize('alpha',la),&
+                     eris2%blockSize('beta',kb),eris2%blockSize('beta',lb))
+      call bbaa%init(eris1%blockSize('beta',ka),eris1%blockSize('beta',la),&
+                     eris2%blockSize('alpha',kb),eris2%blockSize('alpha',lb))
+      call abab%init(eris1%blockSize('alpha',ka),eris1%blockSize('beta',la),&
+                     eris2%blockSize('alpha',kb),eris2%blockSize('beta',lb))
+      call abba%init(eris1%blockSize('alpha',ka),eris1%blockSize('beta',la),&
+                     eris2%blockSize('beta',kb),eris2%blockSize('alpha',lb))
+      call baab%init(eris1%blockSize('beta',ka),eris1%blockSize('alpha',la),&
+                     eris2%blockSize('alpha',kb),eris2%blockSize('beta',lb))
+      call baba%init(eris1%blockSize('beta',ka),eris1%blockSize('alpha',la),&
+                     eris2%blockSize('beta',kb),eris2%blockSize('alpha',lb))
+      call abbb%init(eris1%blockSize('alpha',ka),eris1%blockSize('beta',la),&
+                     eris2%blockSize('beta',kb),eris2%blockSize('beta',lb))
+      call babb%init(eris1%blockSize('beta',ka),eris1%blockSize('alpha',la),&
+                     eris2%blockSize('beta',kb),eris2%blockSize('beta',lb))
+      call bbab%init(eris1%blockSize('beta',ka),eris1%blockSize('beta',la),&
+                     eris2%blockSize('alpha',kb),eris2%blockSize('beta',lb))
+      call bbba%init(eris1%blockSize('beta',ka),eris1%blockSize('beta',la),&
+                     eris2%blockSize('beta',kb),eris2%blockSize('alpha',lb))
+
+      eriType='spin'
+      do i=1,16
+        active_conf_1=full_array(i)
+        str1=mqc_index_to_string([ia,ja,ka,la],active_conf_1)
+        do j=1,16
+          active_conf_2=full_array(j)
+          active_conf=trim(active_conf_1(3:4))//trim(active_conf_2(3:4))
+          str2=mqc_index_to_string([ib,jb,kb,lb],active_conf_2)
+          select case (active_conf)
+          case('aaaa') 
+            aaaa = aaaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          case('bbbb') 
+            bbbb = bbbb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          case('aabb') 
+            aabb = aabb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          case('abab') 
+            eriType='general'
+            abab = abab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          case('abba') 
+            eriType='general'
+            abba = abba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          case('baab') 
+            eriType='general'
+            baab = baab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          case('baba') 
+            eriType='general'
+            baba = baba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          case('bbaa') 
+            bbaa = bbaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          case('abbb') 
+            eriType='general'
+            abbb = abbb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          case('babb') 
+            eriType='general'
+            babb = babb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          case('bbab') 
+            eriType='general'
+            bbab = bbab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          case('bbba') 
+            eriType='general'
+            bbba = bbba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+          end select  
+        enddo
+      enddo
+
+  !!!! TODO: Use the space symmetry
+  !   aaaa = MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+  !         eris1%getBlock('aaaa'),eris2%getBlock('aaaa'),index1,index2)
+  !   select case (eris1%type())
+  !   case ('space','regular')
+  !     select case (eris2%type())
+  !     case ('space','regular')
+  !       eriType='space'
+  !     case ('spin')
+  !       eriType='spin'
+  !       bbbb = MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+  !              eris1%getBlock('aaaa'),eris2%getBlock('bbbb'),index1,index2)
+  !       tmp_aaaa = aaaa
+  !       tmp_bbbb = bbbb
+  !       do i=1,6
+  !         active_conf_1=aa_bb_array(i)
+  !         str1=mqc_index_to_string([ia,ja,ka,la],active_conf_1)
+  !         if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
+  !           if (active_conf_1(3:4).eq.'aa') then
+  !             aabb = aabb + tmp_bbbb 
+  !           else if (active_conf_1(3:4).eq.'bb') then
+  !             bbaa = bbaa + tmp_aaaa
+  !           end if
+  !           do j=1,6
+  !             active_conf_2=aa_bb_array(j)
+  !             active_conf=trim(active_conf_1(3:4))//trim(active_conf_2(3:4))
+  !             str2=mqc_index_to_string([ib,jb,kb,lb],active_conf_2)
+  !             if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
+  !               if(i.eq.1.and.active_conf_2(3:4).eq.'aa') then
+  !                  bbaa = bbaa + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+  !                         eris1%getBlock('aaaa'),eris2%getBlock(str2),index1,index2)
+  !               else if (i.eq.1.and.active_conf_2(3:4).eq.'bb') then
+  !                  aabb = aabb + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+  !                         eris1%getBlock('aaaa'),eris2%getBlock(str2),index1,index2)
+  !               end if
+
+  !               select case (active_conf)
+  !               case('aaaa') then
+  !                 aaaa = aaaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('bbbb') then
+  !                 bbbb = bbbb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('aabb') then
+  !                 aabb = aabb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('abab') then
+  !                 eriType='general'
+  !                 abab = abab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('abba') then
+  !                 eriType='general'
+  !                 abba = abba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('baab') then
+  !                 eriType='general'
+  !                 baab = baab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('baba') then
+  !                 eriType='general'
+  !                 baba = baba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('bbaa') then
+  !                 bbaa = bbaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               end select  
+  !             end if
+  !           end do
+  !         end if
+  !       end do
+  !     case ('general')
+  !       eriType='spin'
+  !       bbbb = MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+  !              eris1%getBlock('aaaa'),eris2%getBlock('bbbb'),index1,index2)
+  !       tmp_aaaa = aaaa
+  !       tmp_bbbb = bbbb
+  !       do i=1,6
+  !         active_conf_1=aa_bb_array(i)
+  !         str1=mqc_index_to_string([ia,ja,ka,la],active_conf_1)
+  !         if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
+  !           if (active_conf_1(3:4).eq.'aa') then
+  !             aabb = aabb + tmp_bbbb 
+  !           else if (active_conf_1(3:4).eq.'bb') then
+  !             bbaa = bbaa + tmp_aaaa
+  !           end if
+  !           do j=1,6
+  !             active_conf_2=aa_bb_array(j)
+  !             active_conf=trim(active_conf_1(3:4))//trim(active_conf_2(3:4))
+  !             str2=mqc_index_to_string([ib,jb,kb,lb],active_conf_2)
+  !             if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
+  !               if(i.eq.1.and.active_conf_2(3:4).eq.'aa') then
+  !                  bbaa = bbaa + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+  !                         eris1%getBlock('aaaa'),eris2%getBlock(str2),index1,index2)
+  !               else if (i.eq.1.and.active_conf_2(3:4).eq.'bb') then
+  !                  aabb = aabb + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+  !                         eris1%getBlock('aaaa'),eris2%getBlock(str2),index1,index2)
+  !               end if
+
+  !               select case (active_conf)
+  !               case('aaaa') then
+  !                 aaaa = aaaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('bbbb') then
+  !                 bbbb = bbbb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('aabb') then
+  !                 aabb = aabb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('abab') then
+  !                 eriType='general'
+  !                 abab = abab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('abba') then
+  !                 eriType='general'
+  !                 abba = abba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('baab') then
+  !                 eriType='general'
+  !                 baab = baab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('baba') then
+  !                 eriType='general'
+  !                 baba = baba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               case('bbaa') then
+  !                 bbaa = bbaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                      eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !               end select  
+  !             end if
+  !           end do
+  !           do j=1,4
+  !             active_conf_2=a_bbb_array(i)
+  !             active_conf=trim(active_conf_1(3:4))//trim(active_conf_2(3:4))
+  !             str2=mqc_index_to_string([ib,jb,kb,lb],active_conf_2)
+  !             if(str2(1:2).eq.'aa'.or.str2(1:2).eq.'bb') then
+  !               
+  !             end if
+  !           end do
+  !         end if
+  !       end do
+  !     case default
+  !       call mqc_error_a('Unrecognized 2ERI integral type',6,&
+  !                        'eris2%type',eris2%type())
+  !     end select
+  !   case ('spin')
+  !     select case (eris2%type())
+  !     case ('space','regular','spin')
+  !       intType='spin'
+  !       bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !         eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+  !       do i=1,6
+  !         active_conf=aa_bb_array(i)
+  !         str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
+  !         str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+  !         if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
+  !           if(str2.eq.'aabb'.or.str1.eq.'bbaa') then
+  !             if (active_conf(3:4).eq.'aa') then
+  !               aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                    eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !             else if (active_conf(3:4).eq.'bb') then
+  !               bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                    eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !             else if (active_conf(3:4).eq.'ab') then
+  !               intType='general'
+  !               ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                    eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !             else if (active_conf(3:4).eq.'ba') then
+  !               intType='general'
+  !               ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                    eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !             end if
+  !           end if
+  !         end if
+  !       end do
+  !     case ('general')
+  !       intType='spin'
+  !       bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !         eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+  !       do i=1,6
+  !         active_conf=aa_bb_array(i)
+  !         str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
+  !         str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+  !         if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
+  !           if (active_conf(3:4).eq.'aa') then
+  !             aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                  eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !           else if (active_conf(3:4).eq.'bb') then
+  !             bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                  eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !           else if (active_conf(3:4).eq.'ab') then
+  !             intType='general'
+  !             ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                  eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !           else if (active_conf(3:4).eq.'ba') then
+  !             intType='general'
+  !             ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                  eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !           end if
+  !         end if
+  !       end do
+  !     case default
+  !       call mqc_error_a('Unrecognized 2ERI integral type',6,&
+  !                        'eris2%type',eris2%type())
+  !     end select
+  !   case ('general')
+  !     select case (eris2%type())
+  !     case ('space','regular','spin')
+  !       intType='spin'
+  !       bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !         eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+  !       do i=1,6
+  !         active_conf=aa_bb_array(i)
+  !         str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
+  !         str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+  !         if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
+  !           if (active_conf(3:4).eq.'aa') then
+  !             aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                  eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !           else if (active_conf(3:4).eq.'bb') then
+  !             bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                  eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !           else if (active_conf(3:4).eq.'ab') then
+  !             intType='general'
+  !             ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                  eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !           else if (active_conf(3:4).eq.'ba') then
+  !             intType='general'
+  !             ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                  eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !           end if
+  !         end if
+  !       end do
+  !     case ('general')
+  !       intType='spin'
+  !       bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !         eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+  !       do i=1,6
+  !         active_conf=aa_bb_array(i)
+  !         str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
+  !         str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+  !         if (active_conf(3:4).eq.'aa') then
+  !           aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         else if (active_conf(3:4).eq.'bb') then
+  !           bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         else if (active_conf(3:4).eq.'ab') then
+  !           intType='general'
+  !           ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         else if (active_conf(3:4).eq.'ba') then
+  !           intType='general'
+  !           ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         end if
+  !       end do
+  !       do i=1,4
+  !         active_conf=a_bbb_array(i)
+  !         str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
+  !         str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+  !         if (active_conf(3:4) == 'aa') then
+  !           aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         else if (active_conf(3:4) == 'bb') then
+  !           bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         else if (active_conf(3:4) == 'ab') then
+  !           intType='general'
+  !           ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         else if (active_conf(3:4) == 'ba') then
+  !           intType='general'
+  !           ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         end if
+  !       end do
+  !       do i=1,4
+  !         active_conf=aaa_b_array(i)
+  !         str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
+  !         str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+  !         if (active_conf(3:4) == 'aa') then
+  !           aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         else if (active_conf(3:4) == 'bb') then
+  !           bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         else if (active_conf(3:4) == 'ab') then
+  !           intType='general'
+  !           ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         else |if (active_conf(3:4) == 'ba') then
+  !           intType='general'
+  !           ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+  !                eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+  !         end if
+  !       end do
+  !     case default
+  !       call mqc_error_a('Unrecognized 2ERI integral type',6,&
+  !                        'eris2%type',eris2%type())
+  !     end select
+  !   case default
+  !     call mqc_error_a('Unrecognized 2ERI integral type',6,&
+  !                      'eris1%type',eris1%type())
+  !   end select
+      if (eriType.eq.'space') then
+        call mqc_twoeris_allocate(eriOut,'full','space',aaaa)
+      elseif (eriType.eq.'spin') then
+        call mqc_twoeris_allocate(eriOut,'full','spin',aaaa,bbbb,aabb,bbaa)
+      elseif (eriType.eq.'general') then
+        call mqc_twoeris_allocate(eriOut,'full','general',aaaa,bbbb,aabb,bbaa,&
+                                  abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,&
+                                  bbab,babb,abbb)
+      endif
+ 
+!
+      end function mqc_eri_eri_partial_contraction_2eri
 !
 !
 !     PROCEDURE MQC_Index_to_String

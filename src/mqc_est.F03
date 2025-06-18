@@ -967,39 +967,54 @@
       
       call string_change_case(twoERIs%integraltype,'L')
       if(twoERIs%integralType.eq.'regular') then
-        call twoERIs%alpha%print(iout,'Regular 2ERIs')
+        if(twoERIs%hasSpinBlock('aaaa')) &
+          call twoERIs%alpha%print(iout,'Regular 2ERIs')
       elseIf(twoERIs%integralType.eq.'raffenetti1') then
-        call twoERIs%alpha%print(iout,'Raffenetti 1 2ERIs')
+        if(twoERIs%hasSpinBlock('aaaa')) &
+          call twoERIs%alpha%print(iout,'Raffenetti 1 2ERIs')
       elseIf(twoERIs%integralType.eq.'raffenetti2') then
-        call twoERIs%alpha%print(iout,'Raffenetti 2 2ERIs')
+        if(twoERIs%hasSpinBlock('aaaa')) &
+          call twoERIs%alpha%print(iout,'Raffenetti 2 2ERIs')
       elseIf(twoERIs%integralType.eq.'raffenetti3') then
-        call twoERIs%alpha%print(iout,'Raffenetti 3 2ERIs')
+        if(twoERIs%hasSpinBlock('aaaa')) &
+          call twoERIs%alpha%print(iout,'Raffenetti 3 2ERIs')
       elseIf(twoERIs%integralType.eq.'space') then
-        call twoERIs%alpha%print(iout,'Restricted MO 2ERIs')
+        if(twoERIs%hasSpinBlock('aaaa')) &
+          call twoERIs%alpha%print(iout,'Restricted MO 2ERIs')
       elseIf(twoERIs%integralType.eq.'spin') then
         write(iout,'(A)') 'Unrestricted MO 2ERIs'
-        call twoERIs%alpha%print(iout,'(aa|aa)')
-        call twoERIs%beta%print(iout,'(bb|bb)')
-        call twoERIs%alphaBeta%print(iout,'(aa|bb)')
-        if(twoERIs%storageType.eq.'full') call twoERIs%betaAlpha%print(iout,'(bb|aa)')
+        if(twoERIs%hasSpinBlock('aaaa')) &
+          call twoERIs%alpha%print(iout,'(aa|aa)')
+        if(twoERIs%hasSpinBlock('bbbb')) &
+           call twoERIs%beta%print(iout,'(bb|bb)')
+        if(twoERIs%hasSpinBlock('aabb')) &
+           call twoERIs%alphaBeta%print(iout,'(aa|bb)')
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbaa')) call twoERIs%betaAlpha%print(iout,'(bb|aa)')
       elseIf(twoERIs%integralType.eq.'general') then
         write(iout,'(A)') 'General MO 2ERIs'
-        call twoERIs%alpha%print(iout,'(aa|aa)')
-        call twoERIs%beta%print(iout,'(bb|bb)')
-        call twoERIs%alphaBeta%print(iout,'(aa|bb)')
-        if(twoERIs%storageType.eq.'full') call twoERIs%betaAlpha%print(iout,'(bb|aa)')
-        call twoERIs%abab%print(iout,'(ab|ab)')
-        call twoERIs%abba%print(iout,'(ab|ba)')
-        if(twoERIs%storageType.eq.'full') call twoERIs%baab%print(iout,'(ba|ab)')
-        if(twoERIs%storageType.eq.'full') call twoERIs%baba%print(iout,'(ba|ba)')
-        call twoERIs%aaab%print(iout,'(aa|ab)')
-        if(twoERIs%storageType.eq.'full') call twoERIs%aaba%print(iout,'(aa|ba)')
-        if(twoERIs%storageType.eq.'full') call twoERIs%abaa%print(iout,'(ab|aa)')
-        if(twoERIs%storageType.eq.'full') call twoERIs%baaa%print(iout,'(ba|aa)')
-        if(twoERIs%storageType.eq.'full') call twoERIs%bbba%print(iout,'(bb|ba)')
-        if(twoERIs%storageType.eq.'full') call twoERIs%bbab%print(iout,'(bb|ab)')
+        if(twoERIs%hasSpinBlock('aaaa')) &
+          call twoERIs%alpha%print(iout,'(aa|aa)')
+        if(twoERIs%hasSpinBlock('bbbb')) &
+          call twoERIs%beta%print(iout,'(bb|bb)')
+        if(twoERIs%hasSpinBlock('aabb')) &
+          call twoERIs%alphaBeta%print(iout,'(aa|bb)')
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbaa')) call twoERIs%betaAlpha%print(iout,'(bb|aa)')
+        if(twoERIs%hasSpinBlock('abab')) &
+          call twoERIs%abab%print(iout,'(ab|ab)')
+        if(twoERIs%hasSpinBlock('abba')) &
+          call twoERIs%abba%print(iout,'(ab|ba)')
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baab')) call twoERIs%baab%print(iout,'(ba|ab)')
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('abba')) call twoERIs%baba%print(iout,'(ba|ba)')
+        if(twoERIs%hasSpinBlock('aaab')) &
+          call twoERIs%aaab%print(iout,'(aa|ab)')
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('aaba')) call twoERIs%aaba%print(iout,'(aa|ba)')
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('abaa')) call twoERIs%abaa%print(iout,'(ab|aa)')
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbba')) call twoERIs%baaa%print(iout,'(ba|aa)')
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbab')) call twoERIs%bbba%print(iout,'(bb|ba)')
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('babb')) call twoERIs%bbab%print(iout,'(bb|ab)')
         if(twoERIs%storageType.eq.'full') call twoERIs%babb%print(iout,'(ba|bb)')
-        call twoERIs%abbb%print(iout,'(ab|bb)')
+        if(twoERIs%hasSpinBlock('abbb')) &
+          call twoERIs%abbb%print(iout,'(ab|bb)')
       else
         call mqc_error_A('Integral type unrecogised in mqc_print_twoERIs', 6, &
              'twoERIs%integralType', twoERIs%integralType )

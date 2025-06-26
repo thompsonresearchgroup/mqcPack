@@ -941,21 +941,31 @@
 !>        = .True.:  print blank line below output
 !>        = .False.: do not print blank line below output.
 !>    \endverbatim
+!>
+!>    \param[in] Short_Print_Threshold
+!>    \verbatim
+!>        Short_Print_Threshold is Real,Optional
+!>        if present: print only elements with absolute value larger than Short_Print_Threshold
+!>    \endverbatim
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2017
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2017, 2025
 !
       subroutine mqc_print_twoERIs(twoERIs,iOut,header, &
-          blank_at_top,blank_at_bottom)
+          blank_at_top,blank_at_bottom,short_print_threshold)
 !
       implicit none
       class(mqc_twoERIs)::twoERIs
       integer(kind=int64),intent(in)::iOut
       character(len=*),intent(in)::header
+      Real(kind=real64),intent(in),optional::short_print_threshold
       character(len=64)::integralType
       logical,intent(In),optional::blank_at_top,blank_at_bottom
+      Logical::short_print
+      Real(kind=real64)::print_threshold
+
 !
  1000 Format(1x,A)
  1020 Format( " " )
@@ -964,57 +974,73 @@
         if(blank_at_top) write(iout,1020)
       endif
       write(iout,1000) trim(header)
-      
+      If(Present(short_print_threshold)) then
+        print_threshold = short_print_threshold
+        short_print = .true.
+      else
+        print_threshold = -1.0
+        short_print = .false.
+      EndIf      
       call string_change_case(twoERIs%integraltype,'L')
       if(twoERIs%integralType.eq.'regular') then
         if(twoERIs%hasSpinBlock('aaaa')) &
-          call twoERIs%alpha%print(iout,'Regular 2ERIs')
+          call twoERIs%alpha%print(iout,'Regular 2ERIs',short_print_threshold=print_threshold)
       elseIf(twoERIs%integralType.eq.'raffenetti1') then
         if(twoERIs%hasSpinBlock('aaaa')) &
-          call twoERIs%alpha%print(iout,'Raffenetti 1 2ERIs')
+          call twoERIs%alpha%print(iout,'Raffenetti 1 2ERIs',short_print_threshold=print_threshold)
       elseIf(twoERIs%integralType.eq.'raffenetti2') then
         if(twoERIs%hasSpinBlock('aaaa')) &
-          call twoERIs%alpha%print(iout,'Raffenetti 2 2ERIs')
+          call twoERIs%alpha%print(iout,'Raffenetti 2 2ERIs',short_print_threshold=print_threshold)
       elseIf(twoERIs%integralType.eq.'raffenetti3') then
         if(twoERIs%hasSpinBlock('aaaa')) &
-          call twoERIs%alpha%print(iout,'Raffenetti 3 2ERIs')
+          call twoERIs%alpha%print(iout,'Raffenetti 3 2ERIs',short_print_threshold=print_threshold)
       elseIf(twoERIs%integralType.eq.'space') then
         if(twoERIs%hasSpinBlock('aaaa')) &
-          call twoERIs%alpha%print(iout,'Restricted MO 2ERIs')
+          call twoERIs%alpha%print(iout,'Restricted MO 2ERIs',short_print_threshold=print_threshold)
       elseIf(twoERIs%integralType.eq.'spin') then
         write(iout,'(A)') 'Unrestricted MO 2ERIs'
         if(twoERIs%hasSpinBlock('aaaa')) &
-          call twoERIs%alpha%print(iout,'(aa|aa)')
+          call twoERIs%alpha%print(iout,'(aa|aa)',short_print_threshold=print_threshold)
         if(twoERIs%hasSpinBlock('bbbb')) &
-           call twoERIs%beta%print(iout,'(bb|bb)')
+           call twoERIs%beta%print(iout,'(bb|bb)',short_print_threshold=print_threshold)
         if(twoERIs%hasSpinBlock('aabb')) &
-           call twoERIs%alphaBeta%print(iout,'(aa|bb)')
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbaa')) call twoERIs%betaAlpha%print(iout,'(bb|aa)')
+           call twoERIs%alphaBeta%print(iout,'(aa|bb)',short_print_threshold=print_threshold)
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbaa')) &
+           call twoERIs%betaAlpha%print(iout,'(bb|aa)',short_print_threshold=print_threshold)
       elseIf(twoERIs%integralType.eq.'general') then
         write(iout,'(A)') 'General MO 2ERIs'
         if(twoERIs%hasSpinBlock('aaaa')) &
-          call twoERIs%alpha%print(iout,'(aa|aa)')
+          call twoERIs%alpha%print(iout,'(aa|aa)',short_print_threshold=print_threshold)
         if(twoERIs%hasSpinBlock('bbbb')) &
-          call twoERIs%beta%print(iout,'(bb|bb)')
+          call twoERIs%beta%print(iout,'(bb|bb)',short_print_threshold=print_threshold)
         if(twoERIs%hasSpinBlock('aabb')) &
-          call twoERIs%alphaBeta%print(iout,'(aa|bb)')
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbaa')) call twoERIs%betaAlpha%print(iout,'(bb|aa)')
+          call twoERIs%alphaBeta%print(iout,'(aa|bb)',short_print_threshold=print_threshold)
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbaa')) &
+          call twoERIs%betaAlpha%print(iout,'(bb|aa)',short_print_threshold=print_threshold)
         if(twoERIs%hasSpinBlock('abab')) &
-          call twoERIs%abab%print(iout,'(ab|ab)')
+          call twoERIs%abab%print(iout,'(ab|ab)',short_print_threshold=print_threshold)
         if(twoERIs%hasSpinBlock('abba')) &
-          call twoERIs%abba%print(iout,'(ab|ba)')
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baab')) call twoERIs%baab%print(iout,'(ba|ab)')
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('abba')) call twoERIs%baba%print(iout,'(ba|ba)')
+          call twoERIs%abba%print(iout,'(ab|ba)',short_print_threshold=print_threshold)
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baab')) &
+          call twoERIs%baab%print(iout,'(ba|ab)',short_print_threshold=print_threshold)
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('abba')) &
+          call twoERIs%baba%print(iout,'(ba|ba)',short_print_threshold=print_threshold)
         if(twoERIs%hasSpinBlock('aaab')) &
-          call twoERIs%aaab%print(iout,'(aa|ab)')
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('aaba')) call twoERIs%aaba%print(iout,'(aa|ba)')
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('abaa')) call twoERIs%abaa%print(iout,'(ab|aa)')
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbba')) call twoERIs%baaa%print(iout,'(ba|aa)')
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbab')) call twoERIs%bbba%print(iout,'(bb|ba)')
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('babb')) call twoERIs%bbab%print(iout,'(bb|ab)')
-        if(twoERIs%storageType.eq.'full') call twoERIs%babb%print(iout,'(ba|bb)')
+          call twoERIs%aaab%print(iout,'(aa|ab)',short_print_threshold=print_threshold)
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('aaba')) &
+          call twoERIs%aaba%print(iout,'(aa|ba)',short_print_threshold=print_threshold)
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('abaa')) &
+          call twoERIs%abaa%print(iout,'(ab|aa)',short_print_threshold=print_threshold)
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbba')) &
+          call twoERIs%baaa%print(iout,'(ba|aa)',short_print_threshold=print_threshold)
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbab')) &
+          call twoERIs%bbba%print(iout,'(bb|ba)',short_print_threshold=print_threshold)
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('babb')) &
+          call twoERIs%bbab%print(iout,'(bb|ab)',short_print_threshold=print_threshold)
+        if(twoERIs%storageType.eq.'full') &
+          call twoERIs%babb%print(iout,'(ba|bb)',short_print_threshold=print_threshold)
         if(twoERIs%hasSpinBlock('abbb')) &
-          call twoERIs%abbb%print(iout,'(ab|bb)')
+          call twoERIs%abbb%print(iout,'(ab|bb)',short_print_threshold=print_threshold)
       else
         call mqc_error_A('Integral type unrecogised in mqc_print_twoERIs', 6, &
              'twoERIs%integralType', twoERIs%integralType )
@@ -6981,7 +7007,7 @@
                      ERIB%getBlock('bbba'),     ERIB%getBlock('bbab'),&
                      ERIB%getBlock('babb'),     ERIB%getBlock('abbb'))
         case default
-          call mqc_error_A('Unknown twoERI type in mqc_eri_difference', 6, &
+          call mqc_error_A('Unknown twoERI type in mqc_eri_sum', 6, &
                'ERIB%integraltype', ERIB%integraltype )
         end select
       case('spin')
@@ -7014,7 +7040,7 @@
                      ERIB%getBlock('bbba'),     ERIB%getBlock('bbab'),&
                      ERIB%getBlock('babb'),     ERIB%getBlock('abbb'))
         case default
-          call mqc_error_A('Unknown twoERI type in mqc_eri_difference', 6, &
+          call mqc_error_A('Unknown twoERI type in mqc_eri_sum', 6, &
                'ERIB%integraltype', ERIB%integraltype )
         end select
       case('general')
@@ -7065,11 +7091,11 @@
           call mqc_twoeris_allocate(ERIOut,'full','general',aaaa,bbbb,&
             aabb,bbaa,abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb)
         case default
-          call mqc_error_A('Unknown twoERI type in mqc_eri_difference', 6, &
+          call mqc_error_A('Unknown twoERI type in mqc_eri_sum', 6, &
                'ERIB%integraltype', ERIB%integraltype )
         end select
       case default
-        call mqc_error_A('Unknown twoERI type in mqc_eri_difference', 6, &
+        call mqc_error_A('Unknown twoERI type in mqc_eri_sum', 6, &
              'ERIA%integraltype', ERIA%integraltype )
       end select
       end function mqc_eri_sum
@@ -8105,7 +8131,7 @@
             bbaa = scalar*eris%getBlock('bbaa')
           if(eris%hasSpinBlock('aabb')) &
             aabb = scalar*eris%getBlock('aabb')
-          call mqc_twoeris_allocate(erisOut,myLabel,'space',aaaa,bbbb,bbaa,aabb)
+          call mqc_twoeris_allocate(erisOut,myLabel,'space',aaaa,bbbb,aabb,bbaa)
       case('general')
           if(eris%hasSpinBlock('aaaa')) &
             aaaa = scalar*eris%getBlock('aaaa')
@@ -8143,7 +8169,7 @@
             babb = scalar*eris%getBlock('babb')
           if(eris%hasSpinBlock('abbb')) &
             abbb = scalar*eris%getBlock('abbb')
-          call mqc_twoeris_allocate(erisOut,myLabel,'general',aaaa,bbbb,bbaa,aabb,&
+          call mqc_twoeris_allocate(erisOut,myLabel,'general',aaaa,bbbb,aabb,bbaa,&
                                                              abab,abba,baab,baba,&
                                                              aaab,aaba,abaa,baaa,&
                                                              bbba,bbab,babb,abbb)
@@ -8229,7 +8255,7 @@
             bbaa = scalar*eris%getBlock('bbaa')
           if(eris%hasSpinBlock('aabb')) &
             aabb = scalar*eris%getBlock('aabb')
-          call mqc_twoeris_allocate(erisOut,myLabel,'space',aaaa,bbbb,bbaa,aabb)
+          call mqc_twoeris_allocate(erisOut,myLabel,'space',aaaa,bbbb,aabb,bbaa)
       case('general')
           if(eris%hasSpinBlock('aaaa')) &
             aaaa = scalar*eris%getBlock('aaaa')
@@ -8238,7 +8264,6 @@
           if(eris%hasSpinBlock('bbaa')) &
             bbaa = scalar*eris%getBlock('bbaa')
           if(eris%hasSpinBlock('aabb')) &
-            aabb = scalar*eris%getBlock('aabb')
             aabb = scalar*eris%getBlock('aabb')
           if(eris%hasSpinBlock('baba')) &
             baba = scalar*eris%getBlock('baba')
@@ -8264,7 +8289,7 @@
             babb = scalar*eris%getBlock('babb')
           if(eris%hasSpinBlock('abbb')) &
             abbb = scalar*eris%getBlock('abbb')
-          call mqc_twoeris_allocate(erisOut,myLabel,'general',aaaa,bbbb,bbaa,aabb,&
+          call mqc_twoeris_allocate(erisOut,myLabel,'general',aaaa,bbbb,aabb,bbaa,&
                                                              abab,abba,baab,baba,&
                                                              aaab,aaba,abaa,baaa,&
                                                              bbba,bbab,babb,abbb)

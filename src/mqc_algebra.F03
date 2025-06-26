@@ -29063,20 +29063,29 @@
 !>        = .True.:  print blank line below output
 !>        = .False.: do not print blank line below output.
 !>    \endverbatim
+!>
+!>    \param[in] Short_Print_Threshold
+!>    \verbatim
+!>        Short_Print_Threshold is Real,Optional
+!>        if present: print only elements with absolute value larger than Short_Print_Threshold
+!>    \endverbatim
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2016
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2016, 2025
 !
-      Subroutine MQC_Print_R4Tensor_Algebra1(Tensor,IOut,Header,blank_at_top,blank_at_bottom)
+      Subroutine MQC_Print_R4Tensor_Algebra1(Tensor,IOut,Header,blank_at_top,blank_at_bottom,short_print_threshold)
 !
       Implicit None
       Integer(kind=int64),Intent(In)::IOut
       Class(MQC_R4Tensor),Intent(In)::Tensor
       Integer(kind=int64)::I,J,K,L
       Character(Len=*),intent(in),optional::Header
+      Real(kind=real64),intent(in),optional::short_print_threshold
       Logical,Optional::blank_at_top,blank_at_bottom
+      Logical::short_print
+      Real(kind=real64)::print_threshold 
 
  1000 Format(1x,A)
  1020 Format( " " )
@@ -29087,19 +29096,43 @@
       If(Present(blank_at_top)) then
         If(blank_at_top) Write(IOut,1020)
       EndIf
+      If(Present(short_print_threshold)) then
+        print_threshold = short_print_threshold
+        if (print_threshold.lt.0) then
+          short_print = .false.
+        else 
+          short_print = .true.
+        end if
+      else
+        print_threshold = -1.0
+        short_print = .false.
+      EndIf
       If(Present(Header)) Write(IOut,1000) Trim(Header)
       If(MQC_R4Tensor_HaveFull(Tensor)) then
         Do I = 1, Tensor%I
           Do J = 1, Tensor%J
             Do K = 1, Tensor%K
               Do l = 1, Tensor%L
-                If(Tensor%Data_Type.eq.'Integer') then
-                  Write(IOut,1100) I,J,K,L,Tensor%ITen(I,J,K,L)
-                ElseIf(Tensor%Data_Type.eq.'Real') then
-                  Write(IOut,1200) I,J,K,L,Tensor%RTen(I,J,K,L)
-                ElseIf(Tensor%Data_Type.eq.'Complex') then
-                  Write(IOut,1300) I,J,K,L,Tensor%CTen(I,J,K,L)
-                EndIf
+                If(short_print) then
+                  If(Tensor%Data_Type.eq.'Integer') then
+                    If(abs(Tensor%ITen(I,J,K,L)).gt.print_threshold) &
+                      Write(IOut,1100) I,J,K,L,Tensor%ITen(I,J,K,L)
+                  ElseIf(Tensor%Data_Type.eq.'Real') then
+                    If(abs(Tensor%RTen(I,J,K,L)).gt.print_threshold) &
+                      Write(IOut,1200) I,J,K,L,Tensor%RTen(I,J,K,L)
+                  ElseIf(Tensor%Data_Type.eq.'Complex') then
+                    If(abs(Tensor%CTen(I,J,K,L)).gt.print_threshold) &
+                      Write(IOut,1300) I,J,K,L,Tensor%CTen(I,J,K,L)
+                  EndIf
+                Else
+                  If(Tensor%Data_Type.eq.'Integer') then
+                    Write(IOut,1100) I,J,K,L,Tensor%ITen(I,J,K,L)
+                  ElseIf(Tensor%Data_Type.eq.'Real') then
+                    Write(IOut,1200) I,J,K,L,Tensor%RTen(I,J,K,L)
+                  ElseIf(Tensor%Data_Type.eq.'Complex') then
+                    Write(IOut,1300) I,J,K,L,Tensor%CTen(I,J,K,L)
+                  EndIf
+                EndIF
               EndDo
             EndDo
           EndDo
@@ -29109,13 +29142,25 @@
           Do J = 1, Tensor%J
             Do K = 1, Tensor%K
               Do l = 1, Tensor%L
-                If(Tensor%Data_Type.eq.'Integer') then
-                  Write(IOut,1100) I,J,K,L,Tensor%ITen(symIndexHash(I,J,K,L),1,1,1)
-                ElseIf(Tensor%Data_Type.eq.'Real') then
-                  Write(IOut,1200) I,J,K,L,Tensor%RTen(symIndexHash(I,J,K,L),1,1,1)
-                ElseIf(Tensor%Data_Type.eq.'Complex') then
-                  Write(IOut,1300) I,J,K,L,Tensor%CTen(symIndexHash(I,J,K,L),1,1,1)
-                EndIf
+                If(short_print) then
+                  If(abs(Tensor%ITen(symIndexHash(I,J,K,L),1,1,1)).gt.print_threshold ) then
+                    If(Tensor%Data_Type.eq.'Integer') then
+                      Write(IOut,1100) I,J,K,L,Tensor%ITen(symIndexHash(I,J,K,L),1,1,1)
+                    ElseIf(Tensor%Data_Type.eq.'Real') then
+                      Write(IOut,1200) I,J,K,L,Tensor%RTen(symIndexHash(I,J,K,L),1,1,1)
+                    ElseIf(Tensor%Data_Type.eq.'Complex') then
+                      Write(IOut,1300) I,J,K,L,Tensor%CTen(symIndexHash(I,J,K,L),1,1,1)
+                    EndIf
+                  EndIf
+                Else
+                  If(Tensor%Data_Type.eq.'Integer') then
+                    Write(IOut,1100) I,J,K,L,Tensor%ITen(symIndexHash(I,J,K,L),1,1,1)
+                  ElseIf(Tensor%Data_Type.eq.'Real') then
+                    Write(IOut,1200) I,J,K,L,Tensor%RTen(symIndexHash(I,J,K,L),1,1,1)
+                  ElseIf(Tensor%Data_Type.eq.'Complex') then
+                    Write(IOut,1300) I,J,K,L,Tensor%CTen(symIndexHash(I,J,K,L),1,1,1)
+                  EndIf
+                EndIF
               EndDo
             EndDo
           EndDo

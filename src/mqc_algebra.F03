@@ -27469,10 +27469,10 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2019
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2019, 2025
 !
-      Function MQC_Matrix_Matrix_Outer(matrix1,matrix2) result(outer)
+    Function MQC_Matrix_Matrix_Outer(matrix1,matrix2) result(outer)
 !
 !     Variable Declarations.
       Implicit None
@@ -27486,7 +27486,9 @@
       P = size(matrix2,2)
       
       call outer%init(M,N,O,P)
-      
+       
+!$OMP PARALLEL DO DEFAULT(NONE), &
+!$OMP SHARED(M,N,O,P,outer,matrix1,matrix2)
       do i = 1,M
         do j = 1,N
           do k = 1,O
@@ -27496,10 +27498,8 @@
           endDo
         endDo
       endDo
-
-      end function MQC_Matrix_Matrix_Outer
-
-
+!$OMP END PARALLEL DO
+    end function MQC_Matrix_Matrix_Outer
 !
 !
 !     PROCEDURE MQC_Matrix_Matrix_Cross_Outer
@@ -30543,8 +30543,8 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2019
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2019, 2025
 !
       Function MQC_R4Tensor_R4Tensor_Contraction(R4Tensor1,R4Tensor2) Result(Contraction)
 !
@@ -30553,6 +30553,7 @@
       Implicit None
       Type(MQC_R4Tensor),Intent(In)::R4Tensor1,R4Tensor2
       Type(MQC_Scalar)::Contraction
+      Type(MQC_Scalar),dimension(:),allocatable::ContractionVec
       Integer(kind=int64)::M,N,O,P,i,j,k,l
 !
       Contraction = 0.0
@@ -30560,14 +30561,23 @@
       N = Min(size(R4Tensor1,2),size(R4Tensor2,2))
       O = Min(size(R4Tensor1,3),size(R4Tensor2,3))
       P = Min(size(R4Tensor1,4),size(R4Tensor2,4))
+      allocate(ContractionVec(M))
+!$OMP PARALLEL DO DEFAULT(NONE), &
+!$OMP SHARED(M,N,O,P,ContractionVec,R4Tensor1,R4Tensor2),&
+!$OMP PRIVATE(j,k,l)
       Do i = 1,M
+        ContractionVec(i) = 0.0
         Do j = 1,N
           Do k = 1,O
             Do l = 1,P
-              Contraction = Contraction + R4Tensor1%at(i,j,k,l)*R4Tensor2%at(i,j,k,l)
+              ContractionVec(i) = ContractionVec(i) + R4Tensor1%at(i,j,k,l)*R4Tensor2%at(i,j,k,l)
             EndDo
           EndDo
         EndDo
+      EndDo
+!$OMP END PARALLEL DO
+      Do i = 1,M
+        Contraction = Contraction + ContractionVec(i)
       EndDo
 !
       End Function MQC_R4Tensor_R4Tensor_Contraction

@@ -981,23 +981,23 @@
         print_threshold = -1.0
         short_print = .false.
       EndIf      
-      call string_change_case(twoERIs%integraltype,'L')
-      if(twoERIs%integralType.eq.'regular') then
+      call string_change_case(trim(twoERIs%integraltype),'L')
+      if(trim(twoERIs%integralType).eq.'regular') then
         if(twoERIs%hasSpinBlock('aaaa')) &
           call twoERIs%alpha%print(iout,'Regular 2ERIs',short_print_threshold=print_threshold)
-      elseIf(twoERIs%integralType.eq.'raffenetti1') then
+      elseIf(trim(twoERIs%integralType).eq.'raffenetti1') then
         if(twoERIs%hasSpinBlock('aaaa')) &
           call twoERIs%alpha%print(iout,'Raffenetti 1 2ERIs',short_print_threshold=print_threshold)
-      elseIf(twoERIs%integralType.eq.'raffenetti2') then
+      elseIf(trim(twoERIs%integralType).eq.'raffenetti2') then
         if(twoERIs%hasSpinBlock('aaaa')) &
           call twoERIs%alpha%print(iout,'Raffenetti 2 2ERIs',short_print_threshold=print_threshold)
-      elseIf(twoERIs%integralType.eq.'raffenetti3') then
+      elseIf(trim(twoERIs%integralType).eq.'raffenetti3') then
         if(twoERIs%hasSpinBlock('aaaa')) &
           call twoERIs%alpha%print(iout,'Raffenetti 3 2ERIs',short_print_threshold=print_threshold)
-      elseIf(twoERIs%integralType.eq.'space') then
+      elseIf(trim(twoERIs%integralType).eq.'space') then
         if(twoERIs%hasSpinBlock('aaaa')) &
           call twoERIs%alpha%print(iout,'Restricted MO 2ERIs',short_print_threshold=print_threshold)
-      elseIf(twoERIs%integralType.eq.'spin') then
+      elseIf(trim(twoERIs%integralType).eq.'spin') then
         write(iout,'(A)') 'Unrestricted MO 2ERIs'
         if(twoERIs%hasSpinBlock('aaaa')) &
           call twoERIs%alpha%print(iout,'(aa|aa)',short_print_threshold=print_threshold)
@@ -1007,7 +1007,7 @@
            call twoERIs%alphaBeta%print(iout,'(aa|bb)',short_print_threshold=print_threshold)
         if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbaa')) &
            call twoERIs%betaAlpha%print(iout,'(bb|aa)',short_print_threshold=print_threshold)
-      elseIf(twoERIs%integralType.eq.'general') then
+      elseIf(trim(twoERIs%integralType).eq.'general') then
         write(iout,'(A)') 'General MO 2ERIs'
         if(twoERIs%hasSpinBlock('aaaa')) &
           call twoERIs%alpha%print(iout,'(aa|aa)',short_print_threshold=print_threshold)

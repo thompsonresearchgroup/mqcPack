@@ -14906,54 +14906,17 @@
           element = eigenvalues%alpha%at(myI)
         elseIf(myI.le.eigenvalues%blockSize('full')) then
           myI = myI - eigenvalues%blockSize('alpha')
-          element = eigenvalues%beta%at(myI)
+          if(eigenvalues%array_type.eq.'space') then
+            element = eigenvalues%alpha%at(myI)
+          elseIf(eigenvalues%array_type.eq.'spin'.or.eigenvalues%array_type.eq.'general') then
+            element = eigenvalues%beta%at(myI)
+          endIf
         else
           call mqc_error_i('Requested index is outside size of eigenvalues object',6,'myI',myI)
         endIf
       case default
         call mqc_error_A('SpinBlock type not valid in MQC_Eigenvalues_At',6,'SpinBlock',SpinBlock)
       end select
-
-!
-!      if(present(spinBlockIn)) then
-!        call string_change_case(spinBlockIn,'L',spinBlock)
-!        if(eigenvalues%array_type.eq.'space') then
-!          if(spinBlock.eq.'alpha'.or.spinBlock.eq.'beta') then
-!            element = eigenvalues%alpha%at(myI)
-!          else
-!            call mqc_error_A('SpinBlock type not valid in MQC_Eigenvalues_At',6,'SpinBlock',SpinBlock)
-!          endIf
-!        elseIf(eigenvalues%array_type.eq.'spin'.or.eigenvalues%array_type.eq.'general') then
-!          if(spinBlock.eq.'alpha') then
-!            element = eigenvalues%alpha%at(myI)
-!          elseif(spinblock.eq.'beta') then
-!            element = eigenvalues%beta%at(myI)
-!          else
-!            call mqc_error_A('SpinBlock type not valid in MQC_Eigenvalues_At',6,'SpinBlock',SpinBlock)
-!          endIf
-!        else
-!          call mqc_error_A('Array type not valid in MQC_Eigenvalues_At',6,'Array_Type',eigenvalues%array_type)
-!        endIf
-!      else 
-!        if(eigenvalues%array_type.eq.'space') then
-!          if(myI.gt.eigenvalues%blockSize('alpha')) myI = myI - eigenvalues%blockSize('alpha')
-!          if(myI.lt.(-1)*eigenvalues%blockSize('alpha')) myI = myI + eigenvalues%blockSize('alpha')
-!          element = eigenvalues%alpha%at(myI)
-!        elseIf(eigenvalues%array_type.eq.'spin'.or.eigenvalues%array_type.eq.'general') then
-!          if(myI.gt.eigenvalues%blockSize('alpha')) then
-!            element = eigenvalues%beta%at(myI)
-!          elseIf(myI.ge.0) then
-!            element = eigenvalues%alpha%at(myI)
-!          elseIf(myI.lt.(-1)*eigenvalues%blockSize('alpha')) then
-!            myI = myI + eigenvalues%blockSize('alpha')
-!            element = eigenvalues%beta%at(myI)
-!          else
-!            element = eigenvalues%alpha%at(myI)
-!          endIf
-!        else
-!          call mqc_error_A('Array type not valid in MQC_Eigenvalues_At',6,'Array_Type',eigenvalues%array_type)
-!        endIf
-!      endIf
 
       end function mqc_eigenvalues_at
 !

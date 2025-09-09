@@ -184,6 +184,14 @@
         Procedure, Public::diagf => MQC_Matrix_DiagMatrix_Put_Vector_func
       End Type MQC_Vector
 !
+!     Vectors of Vectors...
+!
+!>    \brief <b> Vector of Vectors variable</b>
+      Type MQC_VoV
+        Type(MQC_Vector),Public::Vector
+        Type(MQC_VoV),Public,Dimension(:),Allocatable::VoV
+      End Type MQC_VoV
+!      
 !     Matrices...
 !     Lower triangular matrix is stored in a row-major manner so that it is stored one row at a time.
 !     Matrices with StorSymm flag are symmetric for both real and complex parts. StorHerm, StorASymm 

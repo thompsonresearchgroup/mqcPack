@@ -20,6 +20,7 @@
 !>    4. MQC_PSCF_Wavefunction:  EST intermediates of post-Hartree-Fock methods 
 !>    5. MQC_Determinant:        Binary strings reresenting occupation number vectors
 !>    6. MQC_TwoERIs:            Two-electron resonance integrals
+!>    7. MQC_TwoERIset:          Set of two-electron resonance integrals
 !>
 !>    This module is level 2 in the MQC hierarchy and so depends on level 0 and 1
 !>    modules. 
@@ -342,6 +343,7 @@
 !>    \brief <b> Returns the Hermitian conjugate</b>
       Interface Dagger
         Module Procedure MQC_Integral_Conjugate_Transpose
+        Module Procedure MQC_TwoERIS_Conjugate_Transpose
       End Interface
 !
 !>    \brief <b> Contracts two objects</b>
@@ -2718,7 +2720,7 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
+!>    \author L. M. Thompson, M. M. F. Moraes
 !>    \date 2016, 2025
 !
       subroutine mqc_integral_allocate(integral,arrayName,arrayType,alpha, &
@@ -2749,23 +2751,27 @@
         integral%nARows = size(integral%alpha,1)
         integral%nACols = size(integral%alpha,2)
         if(present(nDimA1)) then
-          if(nDimA1.ne.integral%nARows) call mqc_error_i('Mismatch in integral dimensions &
+          if(nDimA1.ne.integral%nARows.and.nDimA1.ne.0) call mqc_error_i('Mismatch in integral dimensions &
             &provided in mqc_integral_allocate',6,'nDimA1',nDimA1,'integral%nARows',&
             integral%nARows)
         endIf
         if(present(nDimA2)) then
-          if(nDimA2.ne.integral%nACols) call mqc_error_i('Mismatch in integral dimensions &
+          if(nDimA2.ne.integral%nACols.and.nDimA2.ne.0) call mqc_error_i('Mismatch in integral dimensions &
             &provided in mqc_integral_allocate',6,'nDimA2',nDimA2,'integral%nACols',&
             integral%nACols)
         endIf
       else
         if(present(nDimA1)) then
           integral%nARows = nDimA1
+        else if (present(alpha).and.allocated(alpha).and.size(alpha,1).ne.0) then
+          integral%nARows = size(integral%alpha,1)
         else
           integral%nARows = 0
         endIf
         if(present(nDimA2)) then
           integral%nACols = nDimA2
+        else if (present(alpha).and.allocated(alpha).and.size(alpha,2).ne.0) then
+          integral%nACols = size(integral%alpha,2)
         else
           integral%nACols = 0
         endIf
@@ -2780,23 +2786,27 @@
           integral%nBRows = size(integral%beta,1)
           integral%nBCols = size(integral%beta,2)
           if(present(nDimB1)) then
-            if(nDimB1.ne.integral%nBRows) call mqc_error_i('Mismatch in integral dimensions &
+            if(nDimB1.ne.integral%nBRows.and.nDimB1.ne.0) call mqc_error_i('Mismatch in integral dimensions &
               &provided in mqc_integral_allocate',6,'nDimB1',nDimB1,'integral%nBRows',&
               integral%nBRows)
           endIf
           if(present(nDimB2)) then
-            if(nDimB2.ne.integral%nBCols) call mqc_error_i('Mismatch in integral dimensions &
+            if(nDimB2.ne.integral%nBCols.and.nDimB2.ne.0) call mqc_error_i('Mismatch in integral dimensions &
               &provided in mqc_integral_allocate',6,'nDimB2',nDimB2,'integral%nBCols',&
               integral%nBCols)
           endIf
         else
           if(present(nDimB1)) then
             integral%nBRows = nDimB1
+          else if(present(beta).and.allocated(beta).and.size(beta,1).ne.0) then
+            integral%nBRows = size(integral%beta,1)
           else
             integral%nBRows = 0
           endIf
           if(present(nDimB2)) then
             integral%nBCols = nDimB2
+          else if(present(beta).and.allocated(beta).and.size(beta,2).ne.0) then
+            integral%nBCols = size(integral%beta,2)
           else
             integral%nBCols = 0
           endIf
@@ -2806,8 +2816,10 @@
       if(myArrayType.eq.'general') then
         if(present(alphaBeta).and.allocated(alphaBeta).and.size(alphaBeta,1).ne.0.and.size(alphaBeta,2).ne.0) then
           integral%alphaBeta = alphaBeta
+          if(integral%nBRows.eq.0) integral%nBRows = size(integral%alphaBeta,1)
+          if(integral%nACols.eq.0) integral%nACols = size(integral%alphaBeta,2)
           if(size(integral%alphaBeta,1).ne.integral%nBRows.or.&
-            size(integral%alphaBeta,2).ne.integral%nACols) &
+             size(integral%alphaBeta,2).ne.integral%nACols) &
             call mqc_error_i('Alpha-beta array size mismatch in &
             &mqc_integral_allocate',6,'size(integral%alphaBeta,1)',&
             size(integral%alphaBeta,1),'integral%nBRows',integral%nBRows,&
@@ -2816,8 +2828,10 @@
         endIf
         if(present(betaAlpha).and.allocated(betaAlpha).and.size(betaAlpha,1).ne.0.and.size(betaAlpha,2).ne.0) then
           integral%betaAlpha = betaAlpha
+          if(integral%nARows.eq.0) integral%nARows = size(integral%betaAlpha,1)
+          if(integral%nBCols.eq.0) integral%nBCols = size(integral%betaAlpha,2)
           if(size(integral%betaAlpha,1).ne.integral%nARows.or.&
-            size(integral%betaAlpha,2).ne.integral%nBCols) &
+             size(integral%betaAlpha,2).ne.integral%nBCols) &
             call mqc_error_i('Beta-Alpha array size mismatch in &
             &mqc_integral_allocate',6,'size(integral%betaAlpha,1)',&
             size(integral%betaAlpha,1),'integral%nARows',integral%nARows,&
@@ -3563,8 +3577,8 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2017
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2017, 2025
 !
       subroutine mqc_integral_initialize(integral,nAlpha,nBeta,scalar,label,nAlpha2,nBeta2) 
 !
@@ -3574,7 +3588,7 @@
       character(Len=*),optional,intent(in)::label
       class(*),optional,intent(in)::Scalar
       integer,intent(in),optional::nAlpha2,nBeta2
-      type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta
+      type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha
       Character(Len=64)::myLabel
       integer::my_nAlpha2,my_nBeta2
 !
@@ -3599,7 +3613,14 @@
           call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha)
         else 
           call tmpMatrixBeta%init(nBeta,my_nBeta2,scalar)
-          call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+          if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then 
+            call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2)
+            call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2)
+            call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,& 
+                                                           tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+          else
+            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+          endIf
         endIf
       else
         call tmpMatrixAlpha%init(nAlpha,my_nAlpha2)
@@ -3607,7 +3628,14 @@
           call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha)
         else 
           call tmpMatrixBeta%init(nBeta,my_nBeta2)
-          call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+          if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then 
+            call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2)
+            call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2)
+            call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,& 
+                                                           tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+          else
+            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+          endIf
         endIf
       endIf
 !
@@ -11798,52 +11826,54 @@
           active_conf_2=full_array(j)
           active_conf=trim(active_conf_1(3:4))//trim(active_conf_2(3:4))
           str2=mqc_index_to_string([ib,jb,kb,lb],active_conf_2)
-          select case (active_conf)
-          case('aaaa') 
-            aaaa = aaaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          case('bbbb') 
-            bbbb = bbbb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          case('aabb') 
-            aabb = aabb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          case('abab') 
-            eriType='general'
-            abab = abab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          case('abba') 
-            eriType='general'
-            abba = abba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          case('baab') 
-            eriType='general'
-            baab = baab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          case('baba') 
-            eriType='general'
-            baba = baba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          case('bbaa') 
-            bbaa = bbaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          case('abbb') 
-            eriType='general'
-            abbb = abbb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          case('babb') 
-            eriType='general'
-            babb = babb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          case('bbab') 
-            eriType='general'
-            bbab = bbab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          case('bbba') 
-            eriType='general'
-            bbba = bbba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                 eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-          end select  
+          if (active_conf_1(1:2).eq.active_conf_2(1:2)) then
+            select case (active_conf)
+            case('aaaa') 
+              aaaa = aaaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            case('bbbb') 
+              bbbb = bbbb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            case('aabb') 
+              aabb = aabb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            case('abab') 
+              eriType='general'
+              abab = abab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            case('abba') 
+              eriType='general'
+              abba = abba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            case('baab') 
+              eriType='general'
+              baab = baab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            case('baba') 
+              eriType='general'
+              baba = baba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            case('bbaa') 
+              bbaa = bbaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            case('abbb') 
+              eriType='general'
+              abbb = abbb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            case('babb') 
+              eriType='general'
+              babb = babb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            case('bbab') 
+              eriType='general'
+              bbab = bbab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            case('bbba') 
+              eriType='general'
+              bbba = bbba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+            end select  
+          end if
         enddo
       enddo
 
@@ -21351,6 +21381,101 @@
       EndIf
 !
       End Subroutine TwoERI_Trans
+!
+!
+!     PROCEDURE MQC_TwoERIs_Conjugate_Transpose
+!
+!>    \brief <b> MQC_TwoERIs_Conjugate_Transpose is used to compute the conjugate 
+!>    transpose of a MQC two ERIs type variable</b> 
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_TwoERIs_Conjugate_Transpose is used to compute the conjugate 
+!>    transpose of a MQC two ERIs type variable
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] ERIs
+!>    \verbatim
+!>        Integral is type(mqc_twoERIs)
+!>        The MQC two ERIs type variable to conjugate transpose.
+!>    \endverbatim
+!>
+!>    \param[in] Label
+!>    \verbatim
+!>        Label is Character(Len=*),optional
+!>        A description tag for the conjugate transposed integral.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2025
+!
+      function mqc_twoeris_conjugate_transpose(ERIs,label) result(ERIsOut)
+!
+      implicit none
+      type(mqc_twoERIs),intent(in)::ERIs
+      Character(Len=*),optional,intent(in)::label
+      type(mqc_twoERIs)::ERIsOut
+      Character(Len=64)::myLabel
+      type(mqc_R4Tensor)::tmpaaaa,tmpbbbb,tmpaabb,tmpbbaa,tmpabab,tmpabba,tmpbaab,tmpbaba,&
+                         tmpaaab,tmpaaba,tmpabaa,tmpbaaa,tmpbbba,tmpbbab,tmpbabb,tmpabbb
+
+
+
+!
+      if(present(label)) then
+        call string_change_case(label,'l',myLabel)
+      else
+        myLabel = ''
+      endIf
+
+      select case (ERIs%integralType)
+      case('space')
+          tmpaaaa = dagger(ERIs%getblock('aaaa'))
+          call mqc_twoeris_allocate(ERIsOut,myLabel,'space',tmpaaaa)!, &
+           ! nDimA1=size(integral,'alpha',2),nDimA2=size(integral,'alpha',1),&
+           ! nDimB1=size(integral,'beta',2),nDimB2=size(integral,'beta',1))
+      case('spin')
+          tmpaaaa = dagger(ERIs%getblock('aaaa'))
+          tmpaabb = dagger(ERIs%getblock('bbaa'))
+          tmpbbaa = dagger(ERIs%getblock('aabb'))
+          tmpbbbb = dagger(ERIs%getblock('bbbb'))
+          call mqc_twoeris_allocate(ERIsOut,myLabel,'spin',tmpaaaa,tmpbbbb,tmpaabb,tmpbbaa)!, &
+      case('general')
+          tmpaaaa = dagger(ERIs%getblock('aaaa'))
+          tmpaabb = dagger(ERIs%getblock('bbaa'))
+          tmpbbaa = dagger(ERIs%getblock('aabb'))
+          tmpbbbb = dagger(ERIs%getblock('bbbb'))
+          tmpaaab = dagger(ERIs%getblock('baaa'))
+          tmpaaba = dagger(ERIs%getblock('abaa'))
+          tmpabaa = dagger(ERIs%getblock('aaba'))
+          tmpbaaa = dagger(ERIs%getblock('aaab'))
+          tmpabab = dagger(ERIs%getblock('baba'))
+          tmpbaab = dagger(ERIs%getblock('baab'))
+          tmpbaba = dagger(ERIs%getblock('abab'))
+          tmpabba = dagger(ERIs%getblock('abba'))
+          tmpabbb = dagger(ERIs%getblock('bbba'))
+          tmpbabb = dagger(ERIs%getblock('bbab'))
+          tmpbbab = dagger(ERIs%getblock('babb'))
+          tmpbbba = dagger(ERIs%getblock('abbb'))
+          call mqc_twoeris_allocate(ERIsOut,myLabel,'general',tmpaaaa,tmpbbbb,tmpaabb,tmpbbaa,&
+                                                              tmpabab,tmpabba,tmpbaab,tmpbaba,&
+                                                              tmpaaab,tmpaaba,tmpabaa,tmpbaaa,&
+                                                              tmpbbba,tmpbbab,tmpbabb,tmpabbb)
+      case default
+        call mqc_error_A('Unknown integral type in mqc_twoERIs_conjugate_transpose', 6, &
+             'ERIs%integralType', ERIs%integralType )
+      end select
+!
+      end function mqc_twoeris_conjugate_transpose
+!
 
 !
 !     PROCEDURE MQC_Integral_Outer

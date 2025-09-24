@@ -298,6 +298,8 @@
         Procedure, Public::tat => MQC_R4Tensor_R4Tensor_At
         Procedure, Private::put_sca => MQC_R4Tensor_Put_Scalar
         Procedure, Private::put_int => MQC_R4Tensor_Put_Int
+!>      \brief <b> Returns the Hemitian transpose of the MQC R4Tensor</b>
+        Procedure, Public::dagger => MQC_R4Tensor_Conjugate_Transpose
 !>      \brief <b> Update the specified element in the MQC R4Tensor with the
 !>      specified value</b>
         Generic, Public::put => put_sca, put_int 
@@ -423,6 +425,7 @@
       Interface Dagger
         Module Procedure MQC_Vector_Conjugate_Transpose
         Module Procedure MQC_Matrix_Conjugate_Transpose
+        Module Procedure MQC_R4Tensor_Conjugate_Transpose
       End Interface
 !      
 !>    \brief <b> Defines a complex number</b>
@@ -24097,11 +24100,15 @@
       Type(MQC_Matrix)::MAreal,Tmp1
       Integer(kind=int64),Allocatable::Result(:,:)
 
-      If (.not. VB%Column .or. MA%NCol /= VB%Length) then
+      If (MA%NCol /= VB%Length) then
         Call MQC_Error_I('Matrix and vector are not conformable for multiplication', 6, &
              'MA%NCol', MA%NCol, &
              'VB%Length', VB%Length)
       EndIf
+      If (.not. VB%Column) then
+        Call MQC_Error_I('Row type vector are not conformable for a right size multiplication with a matrix', 6)
+      EndIf
+      
 
       If (MQC_Matrix_HaveInteger(MA)) MAreal = MQC_Cast_Real(MA)
       If (MQC_Vector_HaveInteger(VB)) VBreal = MQC_Cast_Real(VB)
@@ -24275,11 +24282,15 @@
       Type(MQC_Matrix)::MBreal,Tmp1
       Integer(kind=int64),Allocatable::Result(:,:)
 
-      If (VA%Column .or. VA%Length /= MB%NRow) then
+      If ( VA%Length /= MB%NRow) then
         Call MQC_Error_i('Matrix and vector are not conformable for multiplication', 6, &
              'VA%Length', VA%Length, &
              'MB%NRow', MB%NRow)
       EndIf
+      If (VA%Column) then
+        Call MQC_Error_I('Column type vector are not conformable for a left size multiplication with a matrix', 6)
+      EndIf
+
 
       If (MQC_Matrix_HaveReal(MB) .and. MQC_Vector_HaveReal(VA)) then
         Call MQC_Allocate_Vector(MB%NCol,VC,'Real')
@@ -27487,8 +27498,8 @@
       
       call outer%init(M,N,O,P)
        
-!$OMP PARALLEL DO DEFAULT(NONE), &
-!$OMP SHARED(M,N,O,P,outer,matrix1,matrix2)
+!!!$OMP PARALLEL DO DEFAULT(NONE), &
+!!!$OMP SHARED(M,N,O,P,outer,matrix1,matrix2)
       do i = 1,M
         do j = 1,N
           do k = 1,O
@@ -27498,7 +27509,7 @@
           endDo
         endDo
       endDo
-!$OMP END PARALLEL DO
+!!!$OMP END PARALLEL DO
     end function MQC_Matrix_Matrix_Outer
 !
 !
@@ -30564,7 +30575,7 @@
       allocate(ContractionVec(M))
 !$OMP PARALLEL DO DEFAULT(NONE), &
 !$OMP SHARED(M,N,O,P,ContractionVec,R4Tensor1,R4Tensor2),&
-!$OMP PRIVATE(j,k,l)
+!$OMP PRIVATE(j,k,l,i)
       Do i = 1,M
         ContractionVec(i) = 0.0
         Do j = 1,N
@@ -33111,6 +33122,129 @@
 !$OMP END PARALLEL DO
 
       EndFunction MQC_R4Tensor_R4Tensor_Partial_Contraction
+!
+!
+!     PROCEDURE MQC_R4Tensor_Conjugate_Transpose
+!
+!>    \brief <b> MQC_R4Tensor_Conjugate_Transpose is a function that returns the 
+!>    conjugate transpose of a MQC R4Tensor</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>       
+!>    MQC_R4Tensor_Conjugate_Transpose is a function that returns the conjugate 
+!>    transpose of a MQC R4Tensor.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] R4Tensor
+!>    \verbatim
+!>        Matrix is Type(MQC_R4Tensor)
+!>        The MQC R4Tensor to be conjugate transposed.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2025
+!
+      Function MQC_R4Tensor_Conjugate_Transpose(R4Tensor)
+!
+!     Variable Declarations.
+      Implicit None
+      Type(MQC_R4Tensor)::MQC_R4Tensor_Conjugate_Transpose
+      Class(MQC_R4Tensor),Intent(In)::R4Tensor
+      Integer(kind=int64)::I,J,L,K
+!
+      If(MQC_R4Tensor_HaveReal(R4Tensor)) then
+        Call MQC_Allocate_R4Tensor(R4Tensor%L,R4Tensor%K,R4Tensor%J,R4Tensor%I,&
+          MQC_R4Tensor_Conjugate_Transpose,'Real',R4Tensor%Storage)
+        If (R4Tensor%Storage.eq.'StorFull') then
+         do I=1, R4Tensor%I 
+          do J=1, R4Tensor%J 
+           do L=1, R4Tensor%L 
+            do K=1, R4Tensor%K 
+              MQC_R4Tensor_Conjugate_Transpose%RTen(L,K,J,I)=R4Tensor%RTen(I,J,K,L)
+            end do
+           end do
+          end do
+         end do
+        ElseIf (R4Tensor%Storage.eq.'StorSymm') then
+         do I=1, R4Tensor%I 
+          do J=1, R4Tensor%J 
+           do L=1, R4Tensor%L 
+            do K=1, R4Tensor%K 
+              MQC_R4Tensor_Conjugate_Transpose%RTen(L,K,J,I)=R4Tensor%RTen(I,J,K,L)
+            end do
+           end do
+          end do
+         end do
+        Else
+          Call MQC_Error_A('Unrecognise R4Tensor storage type in MQC_R4Tensor_Conjugate_Transpose', 6, &
+               'R4Tensor%Storage', R4Tensor%Storage )
+        EndIf
+      ElseIf(MQC_R4Tensor_HaveInteger(R4Tensor)) then
+        Call MQC_Allocate_R4Tensor(R4Tensor%I,R4Tensor%J,R4Tensor%K,R4Tensor%L,&
+          MQC_R4Tensor_Conjugate_Transpose,'Integer',R4Tensor%Storage)
+        If (R4Tensor%Storage.eq.'StorFull') then
+         do I=1, R4Tensor%I 
+          do J=1, R4Tensor%J 
+           do L=1, R4Tensor%L 
+            do K=1, R4Tensor%K 
+              MQC_R4Tensor_Conjugate_Transpose%ITen(L,K,J,I)=R4Tensor%ITen(I,J,K,L)
+            end do
+           end do
+          end do
+         end do
+        ElseIf (R4Tensor%Storage.eq.'StorSymm') then
+         do I=1, R4Tensor%I 
+          do J=1, R4Tensor%J 
+           do L=1, R4Tensor%L 
+            do K=1, R4Tensor%K 
+              MQC_R4Tensor_Conjugate_Transpose%ITen(L,K,J,I)=R4Tensor%ITen(I,J,K,L)
+            end do
+           end do
+          end do
+         end do
+        Else
+          Call MQC_Error_A('Unrecognise R4Tensor storage type in MQC_R4Tensor_Conjugate_Transpose', 6, &
+               'R4Tensor%Storage', R4Tensor%Storage )
+        EndIf
+      ElseIf(MQC_R4Tensor_HaveComplex(R4Tensor)) then
+        Call MQC_Allocate_R4Tensor(R4Tensor%I,R4Tensor%J,R4Tensor%K,R4Tensor%L,&
+          MQC_R4Tensor_Conjugate_Transpose,'Complex',R4Tensor%Storage)
+        If (R4Tensor%Storage.eq.'StorFull') then
+         do I=1, R4Tensor%I 
+          do J=1, R4Tensor%J 
+           do L=1, R4Tensor%L 
+            do K=1, R4Tensor%K 
+              MQC_R4Tensor_Conjugate_Transpose%CTen(L,K,J,I)=conjg(R4Tensor%CTen(I,J,K,L))
+            end do
+           end do
+          end do
+         end do
+        ElseIf (R4Tensor%Storage.eq.'StorSymm') then
+         do I=1, R4Tensor%I 
+          do J=1, R4Tensor%J 
+           do L=1, R4Tensor%L 
+            do K=1, R4Tensor%K 
+              MQC_R4Tensor_Conjugate_Transpose%CTen(L,K,J,I)=conjg(R4Tensor%CTen(I,J,K,L))
+            end do
+           end do
+          end do
+         end do
+        Else
+          Call MQC_Error_A('Unrecognise R4Tensor storage type in MQC_R4Tensor_Conjugate_Transpose', 6, &
+               'R4Tensor%Storage', R4Tensor%Storage )
+        EndIf
+      EndIf
+!
+      Return
+      End Function MQC_R4Tensor_Conjugate_Transpose
 
 !
 !

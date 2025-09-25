@@ -152,6 +152,8 @@
         Procedure, Public::pop => MQC_Vector_Pop
 !>      \brief <b> Removes the first element of the MQC_Vector and returns the value</b>
         Procedure, Public::shift => MQC_Vector_Shift
+!>      \brief <b> Returns a vector of elements that meet a logical criteria</b>
+        Procedure, Public::pack => MQC_Vector_Pack
 !>      \brief <b> Returns the maximum value in the MQC_Vector</b>
         Procedure, Public::maxval => MQC_Vector_MaxVal
 !>      \brief <b> Returns the minimum value in the MQC_Vector</b>
@@ -165,6 +167,8 @@
 !>      \brief <b> Returns the MQC_Vector sorted from low to high unless vector specifying
 !>      index order is provided</b>
         Procedure, Public::sort => MQC_Vector_sort
+!>      \brief <b> Returns the sorted MQC_Vector with unique elements</b>
+        Procedure, Public::unique => MQC_Vector_unique
 !>      \brief <b> Returns the square root of each element in the MQC_Vector</b>
         Procedure, Public::sqrt => MQC_Vector_Sqrt
 !>      \brief <b> Returns the exponential of the MQC Vector</b>
@@ -220,7 +224,7 @@
         Procedure, Public::norm => MQC_Matrix_Norm
 !>      \brief <b> Returns the transpose of the MQC Matrix</b>
         Procedure, Public::transpose => MQC_Matrix_Transpose
-!>      \brief <b> Returns the Hemitian transpose of the MQC Matrix</b>
+!>      \brief <b> Returns the Hermitian transpose of the MQC Matrix</b>
         Procedure, Public::dagger => MQC_Matrix_Conjugate_Transpose
 !>      \brief <b> Returns the eigenvalues and eigenvalues of a symmetric or 
 !>      hermitian MQC Matrix</b>
@@ -369,6 +373,7 @@
 !>    \brief <b> Returns the object as an integer intrinsic</b>
       Interface int
         Module Procedure MQC_Scalar_Get_Intrinsic_Integer
+        Module Procedure MQC_Set_Vector2IntegerArray_Func
       End Interface
 !
 !>    \brief <b> Determines in an array is real type</b>
@@ -459,6 +464,16 @@
 !>    \brief <b> Returns the location of the minimum value in the MQC_Vector</b>
       Interface minloc
         Module Procedure MQC_Vector_MinLoc
+      End Interface
+!
+!>    \brief <b> Sorts an MQC_Vector</b>
+      Interface sort
+        Module Procedure MQC_Vector_Sort
+      End Interface
+!
+!>    \brief <b> Unique sort of an MQC_Vector</b>
+      Interface unique
+        Module Procedure MQC_Vector_Unique
       End Interface
 !
 !>    \brief <b> Returns the square root</b>
@@ -590,6 +605,11 @@
         Module Procedure MQC_Matrix_Sum
       End Interface
 !
+!>    \brief <b> Returns the Minkowski sum of the MQC_Vector</b>
+      Interface Minkowski
+        Module Procedure MQC_Vector_Minkowski_Sum
+      End Interface
+!
 !>    \brief <b> Reshapes arrays</b>
       Interface Reshape
         Module Procedure MQC_Vector_Reshape_Matrix
@@ -675,6 +695,11 @@
 !>    \brief <b> Initializes a matrix of the specified size</b>
       interface init
         module procedure MQC_Matrix_Initialize_Func
+      end interface
+!
+!>    \brief <b> Returns a vector of elements that meet a logical criteria</b>
+      interface pack
+        module procedure  MQC_Vector_Pack
       end interface
 !
 !----------------------------------------------------------------
@@ -8411,6 +8436,48 @@
       End Subroutine MQC_Set_Vector2IntegerArray
 !
 !
+!     PROCEDURE MQC_Set_Vector2IntegerArray_Func
+!
+!>    \brief <b> MQC_Set_Vector2IntegerArray_Func is a function that outputs an MQC
+!>    vector to a rank 1 intrinsic integer array</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>       
+!>    MQC_Set_Vector2IntegerArray_Func is a function that outputs an MQC vector to
+!>    a rank 1 intrinsic integer array. 
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] VectorIn
+!>    \verbatim
+!>        VectorIn is Type(MQC_Vector)
+!>        The MQC_Vector whose data will be output into the intrinsic
+!>        array.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author L. M. Thompson  
+!>    \date 2025
+!
+      Function MQC_Set_Vector2IntegerArray_Func(VectorIn) Result(ArrayOut)
+!
+!     Variable Declarations.
+      Implicit None
+      Integer(kind=int64),Allocatable::ArrayOut(:)
+      Type(MQC_Vector),Intent(In)::VectorIn
+!
+      ArrayOut = VectorIn
+!
+      Return
+      End Function MQC_Set_Vector2IntegerArray_Func
+!
+!
 !     PROCEDURE MQC_Set_Vector2RealArray
 !
 !>    \brief <b> MQC_Set_Vector2RealArray is a subroutine that outputs an MQC
@@ -11918,6 +11985,103 @@
       end function mqc_vector_shift
 !
 !
+!     PROCEDURE MQC_Vector_Pack
+!
+!>    \brief <b> MQC_Vector_Pack is a function that returns a vector made up of elements
+!>    who satisfy a mask condition</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Vector_Pack is a function that returns a vector made up of elements whose 
+!>    mask condition equals true. Optionally, a vector argument can be provided which
+!>    is of equal or greater length than the number of true elements in mask, such that
+!>    the resulting vector will be of the same size as the optional vector agruments 
+!>    with the elements after the true mask elements taken from this vector.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Vector
+!>    \verbatim
+!>        Vector is Class(MQC_Vector)
+!>        The name of the MQC_Vector variable.
+!>    \endverbatim
+!>
+!>    \param[in] Mask
+!>    \verbatim
+!>        Mask is Logical,Dimension(:)
+!>        The mask vector of the same length as the 
+!>        input vector.
+!>    \endverbatim
+!>
+!>    \param[in] Padding
+!>    \verbatim
+!>        Padding is Type(MQC_Vector),Optional
+!>        The pad vector which must be equal or 
+!>        greater in size to the number of true
+!>        elements in mask.
+!>    \endverbatim
+!>
+!     Authors:
+!     ========
+!>    \author L. M. Thompson
+!>    \date 2025
+!
+      Function MQC_Vector_Pack(Vector,Mask,Padding) result(Output)
+!
+!     Variable Declarations.
+      implicit none
+      class(mqc_vector),intent(in)::vector
+      logical,dimension(:),intent(in)::mask
+      type(mqc_vector),optional,intent(in)::padding
+      type(mqc_vector)::output
+
+      integer(kind=int64),dimension(:),allocatable::tempInt,tempInt2
+      real(kind=real64),dimension(:),allocatable::tempReal,tempReal2
+      complex(kind=real64),dimension(:),allocatable::tempCmplx,tempCmplx2
+!
+      if(size(mask).ne.size(vector)) &
+        call mqc_error_i('mask and vector dimensions are inconsistent in mqc_vector_pack',&
+        6,'size(vector)',size(vector),'size(mask)',size(mask))
+      
+      select case(vector%data_type)
+      case('Integer')
+        tempInt = vector
+        if(present(padding)) then
+          tempInt2 = padding
+          output = pack(tempInt,mask,tempInt2)
+        else
+          output = pack(tempInt,mask)
+        endIf
+      case('Real')
+        tempReal = vector
+        if(present(padding)) then
+          tempReal2 = padding
+          output = pack(tempReal,mask,tempReal2)
+        else
+          output = pack(tempReal,mask)
+        endIf
+      case('Complex')
+        tempCmplx = vector
+        if(present(padding)) then
+          tempCmplx2 = padding
+          output = pack(tempCmplx,mask,tempCmplx2)
+        else
+          output = pack(tempCmplx,mask)
+        endIf
+      case default
+        call mqc_error_a('Unrecognized data type in mqc_vector_pack',6,'vector%data_type',&
+          vector%data_type)
+      end select
+!
+      return
+      end function mqc_vector_pack
+!
+!
 !     PROCEDURE MQC_Vector_MaxVal
 !
 !>    \brief <b> MQC_Vector_MaxVal is a function that returns the largest value in  
@@ -12179,6 +12343,56 @@
 !
       return
       end function mqc_vector_argsort
+!
+!
+!     PROCEDURE MQC_Vector_Unique
+!
+!>    \brief <b> MQC_Vector_Unique is a function that returns a sorted MQC
+!>    vector with unique elements</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Vector_Unique is a function that returns a sorted MQC vector with unique 
+!>    elements.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Vector
+!>    \verbatim
+!>        Vector is Class(MQC_Vector)
+!>        The name of the MQC_Vector variable.
+!>    \endverbatim
+!>
+!
+!     Authors:
+!     ========
+!>    \author L. M. Thompson
+!>    \date 2025
+!
+      Function MQC_Vector_Unique(Vector) result(VecOut)
+!
+!     Variable Declarations.
+      implicit none
+      class(mqc_vector),intent(in)::vector
+      type(mqc_vector)::VecOut
+
+      type(mqc_vector)::tmpVec
+      integer::i
+!
+      tmpVec = vector
+      call sort(tmpVec)
+      call vecOut%push(tmpVec%at(1))
+      do i = 2, size(tmpVec)
+        if(tmpVec%at(i).ne.tmpVec%at(i-1)) call vecOut%push(tmpVec%at(i))
+      endDo
+!
+      return
+      end function mqc_vector_unique
 !
 !
 !     PROCEDURE MQC_Vector_Sort
@@ -12910,6 +13124,59 @@
       endDo
 !
       end function mqc_vector_product
+!
+!
+!     PROCEDURE MQC_Vector_Minkowski_Sum
+!
+!>    \brief <b> MQC_Vector_Minkowski_Sum is a function that returns the Minkowski sum
+!>    of two MQC vectors</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Vector_Minkowski_Sum is a function that returns the Minkowski sum of two MQC 
+!>    vectors.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] A
+!>    \verbatim
+!>        A is Class(MQC_Vector)
+!>        The name of the first MQC_Vector variable.
+!>    \endverbatim
+!>
+!>    \param[in] B
+!>    \verbatim
+!>        B is Class(MQC_Vector)
+!>        The name of the second MQC_Vector variable.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author L. M. Thompson
+!>    \date 2025
+!
+      function mqc_vector_minkowski_sum(A,B) result(output)
+!
+      Implicit None
+      class(mqc_vector),intent(in)::A,B
+      type(mqc_vector)::output
+      integer(kind=int64)::i,j
+!
+!     Do the work.
+!
+      call output%init(size(A)*size(B))
+      do i=1,size(A)
+        do j=1,size(B)
+          call output%put(A%at(i)+B%at(j),(i-1)*size(A)+j)
+        endDo
+      endDo
+!
+      end function mqc_vector_minkowski_sum
 !
 !
 !     PROCEDURE MQC_Vector_Complex_Conjugate

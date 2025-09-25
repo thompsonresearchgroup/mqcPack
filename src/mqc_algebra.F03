@@ -193,7 +193,7 @@
 !>    \brief <b> Vector of Vectors variable</b>
       Type MQC_VoV
         Type(MQC_Vector),Public::Vector
-        Type(MQC_VoV),Public,Dimension(:),Allocatable::VoV
+        Type(MQC_VoV),Public,Dimension(:),Pointer::VoV=>null()
       End Type MQC_VoV
 !      
 !     Matrices...

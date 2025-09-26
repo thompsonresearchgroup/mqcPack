@@ -39,8 +39,8 @@
 !     **    Lee M. Thompson, Xianghai Sheng, Andrew D. Mahler, Dave        **
 !     **    Mullally, and Hrant P. Hratchian                               **
 !     **                                                                   **
-!     **                          Version 25.6.3                           **
-!     **                           June 18, 2025                           **
+!     **                          Version 25.7.3                           **
+!     **                          July 30, 2025                            **
 !     **                                                                   **
 !     **                                                                   **
 !     ** Modules beloning to MQCPack:                                      **
@@ -201,6 +201,8 @@
         Procedure, Public::minloc => MQC_Eigenvalues_MinLoc
 !>      \brief <b> Returns the location of the maximum value in MQC_SCF_Eigenvalues</b>
         Procedure, Public::maxloc => MQC_Eigenvalues_MaxLoc
+!>      \brief <b> Returns the absolute values of elements in MQC_SCF_Eigenvalues</b>
+        Procedure, Public::abs => MQC_Eigenvalues_Abs
       End Type
 !
 !>    \brief <b> EST intermediates of single determinant wavefunctions</b>
@@ -395,6 +397,11 @@
 !>    \brief <b> Returns the location of the minimum value in MQC_SCF_Eigenvalues</b>
       Interface minloc
         Module Procedure MQC_Eigenvalues_MinLoc
+      End Interface
+!
+!>    \brief <b> Returns the absolute values of elements in MQC_SCF_Eigenvalues</b>
+      Interface abs
+        Module Procedure MQC_Eigenvalues_Abs
       End Interface
 !
 !>    \brief <b> Returns the identity MQC_SCF_Integral of the specified size</b>
@@ -3613,11 +3620,11 @@
           call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha)
         else 
           call tmpMatrixBeta%init(nBeta,my_nBeta2,scalar)
-          if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then 
-            call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2)
-            call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2)
-            call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,& 
-                                                           tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+          if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
+            call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2,scalar)
+            call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2,scalar)
+            call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
           else
             call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
           endIf
@@ -3628,11 +3635,11 @@
           call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha)
         else 
           call tmpMatrixBeta%init(nBeta,my_nBeta2)
-          if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then 
+          if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
             call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2)
             call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2)
-            call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,& 
-                                                           tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+            call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
           else
             call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
           endIf
@@ -4539,7 +4546,7 @@
           call alpha%mput(tmp1,[0],[1,size(tmp1,2)])
           call alpha%mput(tmp2,[0],[size(tmp1,2)+1,size(tmp1,2)+size(tmp2,2)])
         endIf
-        call mqc_integral_allocate(integral,arrayName,'space',alpha,nDimA1=nTA1,nDimA2=nTA1,&
+        call mqc_integral_allocate(integral,arrayName,'space',alpha,nDimA1=nTA1,nDimA2=nTA2,&
           nDimB1=nTB1,nDimB2=nTB2)
       elseIf(occupieds%type().eq.'space'.and.virtuals%type().eq.'spin') then
         tmp1 = occupieds%getBlock('alpha')
@@ -4560,7 +4567,7 @@
           call beta%mput(tmp1,[0],[1,size(tmp1,2)])
           call beta%mput(tmp3,[0],[size(tmp1,2)+1,size(tmp1,2)+size(tmp3,2)])
         endIf
-        call mqc_integral_allocate(integral,arrayName,'spin',alpha,beta,nDimA1=nTA1,nDimA2=nTA1,&
+        call mqc_integral_allocate(integral,arrayName,'spin',alpha,beta,nDimA1=nTA1,nDimA2=nTA2,&
           nDimB1=nTB1,nDimB2=nTB2)
       elseIf(occupieds%type().eq.'spin'.and.virtuals%type().eq.'space') then
         tmp1 = occupieds%getBlock('alpha')
@@ -4581,7 +4588,7 @@
           call beta%mput(tmp2,[0],[1,size(tmp2,2)])
           call beta%mput(tmp3,[0],[size(tmp2,2)+1,size(tmp2,2)+size(tmp3,2)])
         endIf
-        call mqc_integral_allocate(integral,arrayName,'spin',alpha,beta,nDimA1=nTA1,nDimA2=nTA1,&
+        call mqc_integral_allocate(integral,arrayName,'spin',alpha,beta,nDimA1=nTA1,nDimA2=nTA2,&
           nDimB1=nTB1,nDimB2=nTB2)
       elseIf(occupieds%type().eq.'spin'.and.virtuals%type().eq.'spin') then
         tmp1 = occupieds%getBlock('alpha')
@@ -4603,7 +4610,7 @@
           call beta%mput(tmp2,[0],[1,size(tmp2,2)])
           call beta%mput(tmp4,[0],[size(tmp2,2)+1,size(tmp2,2)+size(tmp4,2)])
         endIf
-        call mqc_integral_allocate(integral,arrayName,'spin',alpha,beta,nDimA1=nTA1,nDimA2=nTA1,&
+        call mqc_integral_allocate(integral,arrayName,'spin',alpha,beta,nDimA1=nTA1,nDimA2=nTA2,&
           nDimB1=nTB1,nDimB2=nTB2)
       elseIf(occupieds%type().eq.'space'.and.virtuals%type().eq.'general') then
         tmp1 = occupieds%getBlock('alpha')
@@ -4635,7 +4642,7 @@
           call betaAlpha%mput(tmp5,[0],[size(tmp1,2)+1,size(tmp1,2)+size(tmp5,2)])
         endIf
         call mqc_integral_allocate(integral,arrayName,'general',alpha,beta,alphaBeta,betaAlpha,&
-          nDimA1=nTA1,nDimA2=nTA1,nDimB1=nTB1,nDimB2=nTB2)
+          nDimA1=nTA1,nDimA2=nTA2,nDimB1=nTB1,nDimB2=nTB2)
       elseIf(occupieds%type().eq.'general'.and.virtuals%type().eq.'space') then
         tmp1 = occupieds%getBlock('alpha')
         tmp2 = occupieds%getBlock('beta')
@@ -4666,7 +4673,7 @@
           call betaAlpha%mput(tmp4,[0],[1,size(tmp4,2)])
         endIf
         call mqc_integral_allocate(integral,arrayName,'general',alpha,beta,alphaBeta,betaAlpha,&
-          nDimA1=nTA1,nDimA2=nTA1,nDimB1=nTB1,nDimB2=nTB2)
+          nDimA1=nTA1,nDimA2=nTA2,nDimB1=nTB1,nDimB2=nTB2)
       elseIf(occupieds%type().eq.'spin'.and.virtuals%type().eq.'general') then
         tmp1 = occupieds%getBlock('alpha')
         tmp2 = occupieds%getBlock('beta')
@@ -4698,7 +4705,7 @@
           call betaAlpha%mput(tmp6,[0],[size(tmp2,2)+1,size(tmp2,2)+size(tmp6,2)])
         endIf
         call mqc_integral_allocate(integral,arrayName,'general',alpha,beta,alphaBeta,betaAlpha,&
-          nDimA1=nTA1,nDimA2=nTA1,nDimB1=nTB1,nDimB2=nTB2)
+          nDimA1=nTA1,nDimA2=nTA2,nDimB1=nTB1,nDimB2=nTB2)
       elseIf(occupieds%type().eq.'general'.and.virtuals%type().eq.'spin') then
         tmp1 = occupieds%getBlock('alpha')
         tmp2 = occupieds%getBlock('beta')
@@ -4730,7 +4737,7 @@
           call betaAlpha%mput(tmp4,[0],[1,size(tmp4,2)])
         endIf
         call mqc_integral_allocate(integral,arrayName,'general',alpha,beta,alphaBeta,betaAlpha,&
-          nDimA1=nTA1,nDimA2=nTA1,nDimB1=nTB1,nDimB2=nTB2)
+          nDimA1=nTA1,nDimA2=nTA2,nDimB1=nTB1,nDimB2=nTB2)
       elseIf(occupieds%type().eq.'general'.and.virtuals%type().eq.'general') then
         tmp1 = occupieds%getBlock('alpha')
         tmp2 = occupieds%getBlock('beta')
@@ -4768,7 +4775,7 @@
           call betaAlpha%mput(tmp8,[0],[size(tmp4,2)+1,size(tmp4,2)+size(tmp8,2)])
         endIf
         call mqc_integral_allocate(integral,arrayName,'general',alpha,beta,alphaBeta,betaAlpha,&
-          nDimA1=nTA1,nDimA2=nTA1,nDimB1=nTB1,nDimB2=nTB2)
+          nDimA1=nTA1,nDimA2=nTA2,nDimB1=nTB1,nDimB2=nTB2)
       endIf
 !
       end subroutine mqc_integral_combine_orbitals
@@ -16479,6 +16486,47 @@
       end function mqc_eigenvalues_maxloc
 !
 !
+!     PROCEDURE MQC_Eigenvalues_Abs
+!
+!>    \brief <b> MQC_Eigenvalues_Abs is a function that returns the absolute
+!>    values of all elements of an MQC_Eigenvalues variable</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Eigenvalues_Abs is a function that returns the absolute values of 
+!>    all elements of an MQC_Eigenvalues variable</b>
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] Eigenvalues
+!>    \verbatim
+!>        Eigenvalues is Class(MQC_Eigenvalues)
+!>        The name of the MQC_Eigenvalues variable.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author L. M. Thompson
+!>    \date 2025
+!
+      function mqc_eigenvalues_abs(eigenvalues) result(output)
+!
+      implicit none
+      class(mqc_scf_eigenvalues),intent(in)::eigenvalues
+      type(mqc_scf_eigenvalues)::output
+!
+      output = eigenvalues
+      if(output%hasalpha()) output%alpha = abs(output%alpha)
+      if(output%hasbeta()) output%beta = abs(output%beta)
+!
+      end function mqc_eigenvalues_abs
+!
+!
 !=====================================================================
 !
 !     POST-SCF ROUTINES
@@ -17489,7 +17537,7 @@
       type(mqc_vector)::tmpArray
 
       do i = 0, string%nBits-1 
-        if(btest(string,i)) call tmpArray%push(i)
+        if(btest(string,i)) call tmpArray%push(i+1)
       endDo
       allocate(arrayOut(size(tmpArray)))
       arrayOut = tmpArray
@@ -24020,9 +24068,9 @@
 !
 !=====================================================================
 !     
-!     PROCEDURE MQC_GET_STRINGS_AT_INDEX
+!     PROCEDURE MQC_STRINGS_AT_INDEX
 !
-!>    \brief <b> MQC_GET_STRINGS_AT_INDEX is a subroutine that returns the strings
+!>    \brief <b> MQC_STRINGS_AT_INDEX is a subroutine that returns the strings
 !>    corresponding to the index of matrices built by MQC_Build_CI_Hamiltonian</b>
 !>
 !>    \par Purpose:
@@ -24030,7 +24078,7 @@
 !>
 !>    \verbatim
 !>       
-!>    MQC_GET_STRINGS_AT_INDEX is a subroutine that returns the strings corresponding 
+!>    MQCSTRINGS_AT_INDEX is a subroutine that returns the strings corresponding 
 !>    to the index of matrices built by MQC_Build_CI_Hamiltonian.
 !>
 !>    \endverbatim
@@ -24064,19 +24112,19 @@
 !>
 !>    \param[in] SubsA
 !>    \verbatim
-!>        SubsA is Integer(kind=int64),Dimension(:)
+!>        SubsA is type(mqc_vector)
 !>        Permitted alpha substitutions.
 !>    \endverbatim
 !>
 !>    \param[in] SubsB
 !>    \verbatim
-!>        SubsB is Integer(kind=int64),Dimension(:)
+!>        SubsB is type(mqc_vector)
 !>        Permitted beta substitutions.
 !>    \endverbatim
 !>
 !>    \param[in] SubsT
 !>    \verbatim
-!>        SubsT is Integer(kind=int64),Dimension(:)
+!>        SubsT is type(mqc_vector)
 !>        Permitted total substitutions. 
 !>    \endverbatim
 !>    

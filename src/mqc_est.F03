@@ -39,8 +39,8 @@
 !     **    Lee M. Thompson, Xianghai Sheng, Andrew D. Mahler, Dave        **
 !     **    Mullally, and Hrant P. Hratchian                               **
 !     **                                                                   **
-!     **                          Version 25.7.3                           **
-!     **                          July 30, 2025                            **
+!     **                          Version 25.8.0                           **
+!     **                          August 1, 2025                           **
 !     **                                                                   **
 !     **                                                                   **
 !     ** Modules beloning to MQCPack:                                      **
@@ -320,6 +320,7 @@
       interface Allocated
         module procedure mqc_eigenvalues_isAllocated
         module procedure mqc_integral_isAllocated
+        module procedure mqc_determinant_isAllocated
       end interface
 !
 !>    \brief <b> Multiplies two objects</b>
@@ -1238,6 +1239,48 @@
 !
       Return
       End Function MQC_Eigenvalues_isAllocated
+!
+!
+!     PROCEDURE MQC_Determinant_isAllocated
+!
+!>    \brief <b> MQC_Determinant_isAllocated is a function that returns TRUE if an MQC
+!>    determinant object is allocated and FALSE if it is not</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Determinant_isAllocated is a function that returns TRUE if an MQC determinant 
+!>    object is allocated and FALSE if it is not.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Determinant
+!>    \verbatim
+!>        Integral is Class(MQC_Determinant)
+!>        The name of the MQC_Determinant variable.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author L. M. Thompson
+!>    \date 2025
+!
+      Function MQC_Determinant_isAllocated(Determinant) Result(isAllocated)
+!
+      Implicit None
+      Class(MQC_Determinant),Intent(In)::Determinant
+      Logical::isAllocated
+!
+      isAllocated = .False.
+      If(allocated(Determinant%Strings%Alpha)) isAllocated = .True.
+      If(allocated(Determinant%Strings%Beta)) isAllocated = .True.
+!
+      Return
+      End Function MQC_Determinant_isAllocated
 !
 !
 !     PROCEDURE MQC_Integral_Has_Alpha
@@ -15748,54 +15791,17 @@
           element = eigenvalues%alpha%at(myI)
         elseIf(myI.le.eigenvalues%blockSize('full')) then
           myI = myI - eigenvalues%blockSize('alpha')
-          element = eigenvalues%beta%at(myI)
+          if(eigenvalues%array_type.eq.'space') then
+            element = eigenvalues%alpha%at(myI)
+          elseIf(eigenvalues%array_type.eq.'spin'.or.eigenvalues%array_type.eq.'general') then
+            element = eigenvalues%beta%at(myI)
+          endIf
         else
           call mqc_error_i('Requested index is outside size of eigenvalues object',6,'myI',myI)
         endIf
       case default
         call mqc_error_A('SpinBlock type not valid in MQC_Eigenvalues_At',6,'SpinBlock',SpinBlock)
       end select
-
-!
-!      if(present(spinBlockIn)) then
-!        call string_change_case(spinBlockIn,'L',spinBlock)
-!        if(eigenvalues%array_type.eq.'space') then
-!          if(spinBlock.eq.'alpha'.or.spinBlock.eq.'beta') then
-!            element = eigenvalues%alpha%at(myI)
-!          else
-!            call mqc_error_A('SpinBlock type not valid in MQC_Eigenvalues_At',6,'SpinBlock',SpinBlock)
-!          endIf
-!        elseIf(eigenvalues%array_type.eq.'spin'.or.eigenvalues%array_type.eq.'general') then
-!          if(spinBlock.eq.'alpha') then
-!            element = eigenvalues%alpha%at(myI)
-!          elseif(spinblock.eq.'beta') then
-!            element = eigenvalues%beta%at(myI)
-!          else
-!            call mqc_error_A('SpinBlock type not valid in MQC_Eigenvalues_At',6,'SpinBlock',SpinBlock)
-!          endIf
-!        else
-!          call mqc_error_A('Array type not valid in MQC_Eigenvalues_At',6,'Array_Type',eigenvalues%array_type)
-!        endIf
-!      else 
-!        if(eigenvalues%array_type.eq.'space') then
-!          if(myI.gt.eigenvalues%blockSize('alpha')) myI = myI - eigenvalues%blockSize('alpha')
-!          if(myI.lt.(-1)*eigenvalues%blockSize('alpha')) myI = myI + eigenvalues%blockSize('alpha')
-!          element = eigenvalues%alpha%at(myI)
-!        elseIf(eigenvalues%array_type.eq.'spin'.or.eigenvalues%array_type.eq.'general') then
-!          if(myI.gt.eigenvalues%blockSize('alpha')) then
-!            element = eigenvalues%beta%at(myI)
-!          elseIf(myI.ge.0) then
-!            element = eigenvalues%alpha%at(myI)
-!          elseIf(myI.lt.(-1)*eigenvalues%blockSize('alpha')) then
-!            myI = myI + eigenvalues%blockSize('alpha')
-!            element = eigenvalues%beta%at(myI)
-!          else
-!            element = eigenvalues%alpha%at(myI)
-!          endIf
-!        else
-!          call mqc_error_A('Array type not valid in MQC_Eigenvalues_At',6,'Array_Type',eigenvalues%array_type)
-!        endIf
-!      endIf
 
       end function mqc_eigenvalues_at
 !
@@ -16996,8 +17002,8 @@
         arrStart,arrEnd,holeStart,partStart,holeInd,partInd
       type(mqc_bits),dimension(:),allocatable::Alpha_Strings,Beta_Strings
       integer(kind=int64),dimension(:),intent(in)::substitutions
+      integer(kind=int64),dimension(:),allocatable::subs
       type(mqc_bits)::initstr
-      type(mqc_vector)::subs
       type(mqc_matrix)::alpha_arr_hole,alpha_arr_part,beta_arr_hole,beta_arr_part
       type(mqc_vector)::nums_alpha_hole,nums_alpha_part,nums_beta_hole,&
         nums_beta_part,nah,nap,nbh,nbp
@@ -17061,7 +17067,24 @@
       else 
         nVirt = 0
       endIf
-      call trci_dets_arr(nBasis,nAlpha,nBeta,substitutions,alpha_arr_hole, &
+
+      if(any(substitutions.ge.1).and.any(substitutions.eq.0)) then
+        if(allocated(subs)) deallocate(subs)
+        allocate(subs(size(substitutions)-1))
+        j = 1 
+        do i = 1, size(substitutions)
+          if(substitutions(i).ne.0) then
+            subs(j) = substitutions(i)
+            j = j+ 1
+          endIf
+        endDo
+      elseIf(any(substitutions.eq.0)) then
+        subs = [0]
+      else
+        subs = substitutions
+      endIf
+      if(any(substitutions.ge.1)) &
+        call trci_dets_arr(nBasis,nAlpha,nBeta,subs,alpha_arr_hole, &
         alpha_arr_part,beta_arr_hole,beta_arr_part,nah,nap,nbh,nbp)
 !
 !     Initialize Arrays
@@ -17168,15 +17191,15 @@
       determinants%nVirt = nVirt
       determinants%NBasis = NBasis+nCore+nVirt
       call determinants%nSubsAlpha%init(maxval(substitutions)+1,0)
-      call determinants%nSubsAlpha%put(1,1)
-      do i = 1, size(substitutions)
-        call determinants%nSubsAlpha%put(nah%at(i)*nap%at(i),substitutions(i)+1)
-      endDo
       call determinants%nSubsBeta%init(maxval(substitutions)+1,0)
+      call determinants%nSubsAlpha%put(1,1)
       call determinants%nSubsBeta%put(1,1)
-      do i = 1, size(substitutions)
-        call determinants%nSubsBeta%put(nbh%at(i)*nbp%at(i),substitutions(i)+1)
-      endDo
+      if(any(substitutions.ge.1)) then
+        do i = 1, size(subs)
+          call determinants%nSubsAlpha%put(nah%at(i)*nap%at(i),subs(i)+1)
+          call determinants%nSubsBeta%put(nbh%at(i)*nbp%at(i),subs(i)+1)
+        endDo
+      endIf
 
       deallocate(alpha_strings,beta_strings)
 !
@@ -17228,7 +17251,7 @@
 !>    \param[in] Substitutions
 !>    \verbatim
 !>        Substitutions is Type(MQC_Vector)
-!>        The number of beta electrons.
+!>        The substitution levels requested.
 !>    \endverbatim
 !>    
 !>    \param[out] Alpha_Arr_Hole
@@ -17521,23 +17544,54 @@
 !>        String is Type(MQC_Bits)
 !>        The bit string to be analyzed.
 !>    \endverbatim
+!>
+!>    \param[in] Option
+!>    \verbatim
+!>        Option is Character(len=*),Optional
+!>        = 'occupied': returns vector with indices of 1 bits
+!>        = 'virtual':  returns vector with indices of 0 bits
+!>        = 'sorted':   returns vector with indices of 1 bits
+!>                      followed by indices of 0 bits
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
 !>    \date 2024
 !
-      function mqc_detString_to_occArray(string) result(arrayOut)
+      function mqc_detString_to_occArray(string,option) result(arrayOut)
 
       implicit none
       type(mqc_bits),intent(in)::string
       integer(kind=int64),dimension(:),allocatable::arrayOut
+      character(len=*),optional,intent(in)::option
 
-      integer::nBitInts,temp_int,i,j,nBasis
+      integer::i,j,iEnd
       type(mqc_vector)::tmpArray
+      character(len=64)::myOption
 
-      do i = 0, string%nBits-1 
-        if(btest(string,i)) call tmpArray%push(i+1)
+      if(present(option)) then
+        call string_change_case(option,'l',myOption)
+      else
+        myOption = 'occupied'
+      endIf
+     
+      if(myOption.eq.'occupied'.or.myOption.eq.'virtual') then
+        iEnd = 1
+      elseIf(myOption.eq.'sorted') then
+        iEnd = 2
+      else
+        call mqc_error_a('Unrecognized option in mqc_detString_to_occArray',6,&
+          'myOption',myOption)
+      endIf
+        
+      do i = 1, iEnd
+        do j = 0, string%nBits-1 
+          if((myOption.eq.'occupied'.or.(myOption.eq.'sorted'.and.i.eq.1)).and.btest(string,j)) &
+            call tmpArray%push(j+1)
+          if((myOption.eq.'virtual'.or.(myOption.eq.'sorted'.and.i.eq.2)).and..not.btest(string,j)) &
+            call tmpArray%push(j+1)
+        endDo
       endDo
       allocate(arrayOut(size(tmpArray)))
       arrayOut = tmpArray
@@ -24333,9 +24387,8 @@
       type(mqc_vector),Dimension(:),Intent(In)::SubsA,SubsB,SubsT
       type(MQC_bits),intent(Out)::aString,bString
 
-      Integer(kind=int64)::i,j
+      Integer(kind=int64)::i
       Integer(kind=int64),Dimension(:),Allocatable::NDets,NDetsA,NDetsB
-      type(mqc_bits)::alphaStrTemp,betaStrTemp
 
       allocate(NDets(Size(Determinants)),NDetsA(Size(Determinants)),&
         NDetsB(Size(Determinants)))
@@ -24343,16 +24396,20 @@
         call get_expansion_size(Determinants(i),SubsT(i),SubsA(i),SubsB(i),&
           NDets(i),NDetsA(i),NDetsB(i))
       EndDo
-      aString = mqc_bits(0)
-      bString = mqc_bits(0)
-      Do I = 1, size(determinants)
-        J = mod((IndIn-1)/product(NDets(1:i-1)),NDets(i))+1
-        call mqc_strings_at_index(iout,iprint,j,Determinants(i),subsA(i),SubsB(i),&
-          SubsT(i),AlphaStrTemp,BetaStrTemp)
-        aString = MQC_concatenate_bits(alphaStrTemp,aString)
-        bString = MQC_concatenate_bits(betaStrTemp,bString)
-      EndDo
-      Return
+
+      call mqc_get_string_from_substring(iout,iprint,indIn,determinants,nDets,&
+        subsA,subsB,subsT,aString,bString)
+
+!      aString = mqc_bits(0)
+!      bString = mqc_bits(0)
+!      Do I = 1, size(determinants)
+!        J = mod((IndIn-1)/product(NDets(1:i-1)),NDets(i))+1
+!        call mqc_strings_at_index(iout,iprint,j,Determinants(i),subsA(i),SubsB(i),&
+!          SubsT(i),AlphaStrTemp,BetaStrTemp)
+!        aString = MQC_concatenate_bits(alphaStrTemp,aString)
+!        bString = MQC_concatenate_bits(betaStrTemp,bString)
+!      EndDo
+!      Return
 !
       End Subroutine MQC_SubStrings_At_Index 
 !
@@ -24999,7 +25056,7 @@
 
       Implicit None
       Type(MQC_Determinant),Intent(In)::Determinants
-      integer(kind=int64),dimension(:),allocatable,intent(In)::subsA,subsB
+      integer(kind=int64),dimension(:),intent(In)::subsA,subsB
       type(mqc_vector),intent(Out)::subsAOut,subsBOut,subsTOut
       integer(kind=int64)::i,j
 

@@ -22239,8 +22239,8 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2016
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2016, 2025
 !
       Subroutine MQC_Matrix_Full2Symm(Matrix)
 !
@@ -22264,11 +22264,12 @@
       ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'antihermitian')) then
         label = 'antihermitian'
       Else
-        Call MQC_Error_L('Input matrix must be symmetric/antisymmetric/hermitian in MQC_Matrix_Full2Symm', 6, &
-          'MQC_Matrix_Test_Symmetric(Matrix)', MQC_Matrix_Test_Symmetric(Matrix), &
-          "MQC_Matrix_Test_Symmetric(Matrix,'antisymmetric')", MQC_Matrix_Test_Symmetric(Matrix,'antisymmetric'), &
-          "MQC_Matrix_Test_Symmetric(Matrix,'hermitian')", MQC_Matrix_Test_Symmetric(Matrix,'hermitian'), &
-          "MQC_Matrix_Test_Symmetric(Matrix,'antihermitian')", MQC_Matrix_Test_Symmetric(Matrix,'antihermitian') )
+        Return
+        !Call MQC_Error_L('Input matrix must be symmetric/antisymmetric/hermitian in MQC_Matrix_Full2Symm', 6, &
+        !  'MQC_Matrix_Test_Symmetric(Matrix)', MQC_Matrix_Test_Symmetric(Matrix), &
+        !  "MQC_Matrix_Test_Symmetric(Matrix,'antisymmetric')", MQC_Matrix_Test_Symmetric(Matrix,'antisymmetric'), &
+        !  "MQC_Matrix_Test_Symmetric(Matrix,'hermitian')", MQC_Matrix_Test_Symmetric(Matrix,'hermitian'), &
+        !  "MQC_Matrix_Test_Symmetric(Matrix,'antihermitian')", MQC_Matrix_Test_Symmetric(Matrix,'antihermitian') )
       EndIf
       If(MQC_Matrix_HaveReal(Matrix)) then
         Allocate(Temp(MQC_Matrix_Rows(Matrix),MQC_Matrix_Columns(Matrix)))
@@ -22374,9 +22375,9 @@
       Integer(kind=int64)::I,J,II,N,NTT
       Character(len=10)::storage
 !
-      If(.not.(Matrix%Storage.eq.'StorSymm'.or.Matrix%Storage.eq.'StorAsym'.or. &
-        Matrix%Storage.eq.'StorHerm'.or.Matrix%Storage.eq.'StorAhrm')) &
-        Call MQC_Error_A('Input matrix must be lower-triangular packed &
+      If((Matrix%Storage.ne.'StorSymm').and.(Matrix%Storage.ne.'StorAsym').and. &
+         (Matrix%Storage.ne.'StorHerm').and.(Matrix%Storage.ne.'StorAhrm')) &
+        Call MQC_Error_A('Input matrix must be lower-triangular packed&
         & in MQC_Matrix_Symm2Full', 6, 'Matrix%Storage', Matrix%Storage )
       N = MQC_Matrix_Columns(Matrix)
       NTT = (N*(N+1))/2
@@ -22863,8 +22864,8 @@
 !
 !     Authors:
 !     ========
-!>    \author X. Sheng
-!>    \date 2017
+!>    \author X. Sheng, M. M. F. Moraes
+!>    \date 2017, 2025
 !
       Function MQC_Matrix_Symm2Full_Func(Matrix) Result(Temp)
 !
@@ -22873,10 +22874,12 @@
       Type(MQC_Matrix),Intent(In)::Matrix
       type(MQC_Matrix)::Temp
       Integer(kind=int64)::I,J,II,N
-!
-      If(.not.Matrix%Storage.eq.'StorSymm') Call MQC_Error_A('Input matrix must be &
-     &  lower-triangular packed in MQC_Matrix_Symm2Full', 6, &
-     'Matrix%Storage', Matrix%Storage )
+
+      If((Matrix%Storage.ne.'StorSymm').and.(Matrix%Storage.ne.'StorAsym').and. &
+         (Matrix%Storage.ne.'StorHerm').and.(Matrix%Storage.ne.'StorAhrm')) &
+         Call MQC_Error_A('Input matrix must be &
+         &lower-triangular packed in MQC_Matrix_Symm2Full_Func', 6, &
+         'Matrix%Storage', Matrix%Storage )
       N = MQC_Matrix_Columns(Matrix)
       Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Temp,Matrix%Data_Type,'StorFull')
       If(Matrix%Data_Type.eq.'Real') then
@@ -25115,27 +25118,35 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2019
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2019, 2025
 !
       Function MQC_ComplexMatrixProduct(Comp,Matrix) Result(Matrix_Res)
 !
       Implicit None
       Complex(kind=real64),Intent(In)::Comp
       Type(MQC_Matrix),Intent(In)::Matrix
-      Type(MQC_Matrix)::Matrix_Res
+      Type(MQC_Matrix)::Matrix_Res,TmpMatrix
 
       Call MQC_Deallocate_Matrix(Matrix_Res)
-      If (Matrix%Data_Type.eq.'Integer') then
-        Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex',Matrix%Storage)
+      Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex','StorFull')
+      if (Matrix%Storage.ne.'StorFull') then
+        TmpMatrix =  MQC_Matrix_Symm2Full_Func(Matrix)
+        if (TmpMatrix%Data_Type.eq.'Integer') then
+          Matrix_Res%MatC = Comp *TmpMatrix%MatI
+        else if (TmpMatrix%Data_Type.eq.'Real') then
+          Matrix_Res%MatC = Comp *TmpMatrix%MatR
+        else 
+          Matrix_Res%MatC = Comp *TmpMatrix%MatC
+        end if
+      else if (Matrix%Data_Type.eq.'Integer') then
         Matrix_Res%MatC = Comp * Matrix%MatI
-      Else If (Matrix%Data_Type.eq.'Real') then
-        Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex',Matrix%Storage)
+      else if (Matrix%Data_Type.eq.'Real') then
         Matrix_Res%MatC = Comp * Matrix%MatR
-      Else If (Matrix%Data_Type.eq.'Complex') then
-        Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex',Matrix%Storage)
+      else 
         Matrix_Res%MatC = Comp * Matrix%MatC
-      EndIf
+      end if
+      call MQC_Matrix_Full2Symm(Matrix_Res) 
 
       End Function MQC_ComplexMatrixProduct
 !
@@ -25171,27 +25182,35 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2019
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2019, 2025
 !
       Function MQC_MatrixComplexProduct(Matrix,Comp) Result(Matrix_Res)
 !
       Implicit None
       Complex(kind=real64),Intent(In)::Comp
       Type(MQC_Matrix),Intent(In)::Matrix
-      Type(MQC_Matrix)::Matrix_Res
+      Type(MQC_Matrix)::Matrix_Res,TmpMatrix
 
       Call MQC_Deallocate_Matrix(Matrix_Res)
-      If (Matrix%Data_Type.eq.'Integer') then
-        Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex',Matrix%Storage)
+      Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex','StorFull')
+      if (Matrix%Storage.ne.'StorFull') then
+        TmpMatrix =  MQC_Matrix_Symm2Full_Func(Matrix)
+        if (TmpMatrix%Data_Type.eq.'Integer') then
+          Matrix_Res%MatC = Comp *TmpMatrix%MatI
+        else if (TmpMatrix%Data_Type.eq.'Real') then
+          Matrix_Res%MatC = Comp *TmpMatrix%MatR
+        else 
+          Matrix_Res%MatC = Comp *TmpMatrix%MatC
+        end if
+      else if (Matrix%Data_Type.eq.'Integer') then
         Matrix_Res%MatC = Comp * Matrix%MatI
-      Else If (Matrix%Data_Type.eq.'Real') then
-        Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex',Matrix%Storage)
+      else if (Matrix%Data_Type.eq.'Real') then
         Matrix_Res%MatC = Comp * Matrix%MatR
-      Else If (Matrix%Data_Type.eq.'Complex') then
-        Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex',Matrix%Storage)
+      else 
         Matrix_Res%MatC = Comp * Matrix%MatC
-      EndIf
+      end if
+      call MQC_Matrix_Full2Symm(Matrix_Res) 
 
       End Function MQC_MatrixComplexProduct
 !

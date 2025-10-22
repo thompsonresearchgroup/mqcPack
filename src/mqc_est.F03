@@ -15452,10 +15452,10 @@
           else if(spinBlock.eq.'beta') then
             integral = integral%changeType('spin')
             call integral%beta%put(element,myI,myJ)
-          elseIf(spinBlock.ne.'alphabeta') then
+          elseIf(spinBlock.eq.'alphabeta') then
             integral = integral%changeType('general')
             call integral%alphabeta%put(element,myI,myJ)
-          elseIf(spinBlock.ne.'betaalpha') then
+          elseIf(spinBlock.eq.'betaalpha') then
             integral = integral%changeType('general')
             call integral%betaalpha%put(element,myI,myJ)
           endIf
@@ -15464,10 +15464,10 @@
             if(integral%hasAlpha()) call integral%alpha%put(element,myI,myJ)
           elseif(spinblock.eq.'beta') then
             if(integral%hasBeta()) call integral%beta%put(element,myI,myJ)
-          elseIf(spinBlock.ne.'alphabeta') then
+          elseIf(spinBlock.eq.'alphabeta') then
             integral = integral%changeType('general')
             call integral%alphabeta%put(element,myI,myJ)
-          elseIf(spinBlock.ne.'betaalpha') then
+          elseIf(spinBlock.eq.'betaalpha') then
             integral = integral%changeType('general')
             call integral%betaalpha%put(element,myI,myJ)
           endIf
@@ -21535,7 +21535,7 @@
       if(present(label)) then
         call string_change_case(label,'l',myLabel)
       else
-        myLabel = ''
+        myLabel = 'full'
       endIf
 
       select case (ERIs%integralType)

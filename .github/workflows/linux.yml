@@ -33,6 +33,7 @@ jobs:
 
       - name: Install GauOpen and create the mqc-install directory
         run: |
+          curl -Lsv https://gaussian.com/g16/gauopen_v2.zip -o /dev/null
           mkdir gauopen
           cd gauopen
           wget http://gaussian.com/g16/gauopen_v2.zip

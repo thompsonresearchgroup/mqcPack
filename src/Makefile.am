@@ -6,14 +6,16 @@ MQC_MODULE_FILES = mqc_general.mod mqc_binary.mod \
   mqc_algebra.mod mqc_algebra2.mod mqc_molecule.mod mqc_est.mod \
   mqc_matwrapper.mod mqc_gaussian.mod mqc_fullwavefunction.mod
 nodist_mqcmod_DATA = $(MQC_MODULE_FILES)
+MQC_SUBMODULE_FILES = mqc_algebra.smod \
+  mqc_algebra@mqc_algebra_iterative.smod
 EXTRA_DIST = mqc_general_lapack.F03
 lib_LIBRARIES = libmqc.a
 CLEANFILES = gauopen_qcmatrix.$(OBJEXT) gauopen_qcmatrixio.$(OBJEXT) \
-  $(MQC_MODULE_FILES)
+  $(MQC_MODULE_FILES) $(MQC_SUBMODULE_FILES)
 if WITH_GAUOPEN
 libmqc_a_LIBADD = gauopen_qcmatrix.$(OBJEXT) gauopen_qcmatrixio.$(OBJEXT)
 endif
-libmqc_a_SOURCES = mqc_general.F03 mqc_binary.F03 mqc_datastructures.F03 mqc_files.F03 mqc_integrals.F03 mqc_algebra.F03 mqc_algebra2.F03 mqc_molecule.F03 mqc_est.F03 mqc_nef.F03 mqc_util.c
+libmqc_a_SOURCES = mqc_general.F03 mqc_binary.F03 mqc_datastructures.F03 mqc_files.F03 mqc_integrals.F03 mqc_algebra.F03 mqc_algebra_iterative.F03 mqc_algebra2.F03 mqc_molecule.F03 mqc_est.F03 mqc_nef.F03 mqc_util.c
 if WITH_GAUOPEN
 libmqc_a_SOURCES += mqc_matwrapper_direct.F03
 else
@@ -30,6 +32,7 @@ mqc_files.$(OBJEXT): mqc_general.$(OBJEXT)
 mqc_integrals.$(OBJEXT): mqc_general.$(OBJEXT) \
   mqc_datastructures.$(OBJEXT)
 mqc_algebra.$(OBJEXT): mqc_general.$(OBJEXT)
+mqc_algebra_iterative.$(OBJEXT): mqc_algebra.$(OBJEXT)
 mqc_algebra2.$(OBJEXT): mqc_general.$(OBJEXT)
 mqc_molecule.$(OBJEXT): mqc_general.$(OBJEXT) mqc_algebra.$(OBJEXT) \
   mqc_datastructures.$(OBJEXT) mqc_files.$(OBJEXT)

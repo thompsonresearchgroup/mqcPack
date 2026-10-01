@@ -161,6 +161,8 @@
         Procedure, Public::crossouter2ERI => mqc_integral_integral_crossouter_product
 !>    \brief <b> Returns the diagonal elements of an MQC_SCF_Integral object</b>
         Procedure, Public::diagonal => mqc_scf_integral_diagonal_elements
+!>      \brief <b> Check if all values in a MQC_SCF_Integral dimension are zero.</b>
+        Procedure, Public::iszero => MQC_SCF_Integral_Check_Zeros
       End Type
 !
 !>    \brief <b> EST intermediate diagonal matrix variable</b>
@@ -22913,6 +22915,72 @@
       endIf
 !
       end function mqc_scf_integral_diagonal_elements
+!
+!
+!     PROCEDURE MQC_SCF_Integral_Check_Zeros
+!
+!>    \brief <b> MQC_SCF_Integral_Check_Zeros check if all 
+!>    entries in a MQC scf integral have norm smaller than a threshold.</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>    MQC_SCF_Integral_Check_Zeros check if all 
+!>    entries in a MQC scf integral have norm smaller than a threshold.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Integral
+!>    \verbatim
+!>        Integral is Class(MQC_scf_integral)
+!>        The MQC scf integral to be tested against zeros.
+!>    \endverbatim
+!>
+!>    \param[in] threshold
+!>    \verbatim
+!>        threshold is real, optional (default=1.0E-8)
+!>        Defines the zero values threshold
+!>    \endverbatim
+!>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function MQC_SCF_Integral_Check_Zeros(Integral,threshold) result(isZero)
+!
+      Implicit None
+      Class(mqc_scf_integral),Intent(In)::Integral
+      Real(kind=real64),optional::threshold
+      !!!!!!
+      logical::isZero
+      !!!!!!
+      Real(kind=real64)::my_thresh
+      integer::I,J,zeroI
+!
+      if (present(threshold)) then
+        my_thresh = abs(threshold)
+      else
+        my_thresh = 1.0E-8 
+      end if
+      isZero = .true.
+      if (Integral%hasAlpha()) &
+        isZero = mqc_matrix_check_zeros(integral%getblock('alpha'),my_thresh)
+      if(integral%type().eq.'space'.or..not.isZero) return
+      if (Integral%hasBeta()) &
+        isZero =  mqc_matrix_check_zeros(integral%getblock('beta'),my_thresh)
+      if(integral%type().eq.'spin'.or..not.isZero) return 
+      if (Integral%hasAlphaBeta()) &
+        isZero = mqc_matrix_check_zeros(integral%getblock('alphabeta'),my_thresh)
+      if(.not.isZero) return 
+      if (Integral%hasBetaAlpha()) &
+        isZero = mqc_matrix_check_zeros(integral%getblock('betaalpha'),my_thresh)
+!
+      end function MQC_SCF_Integral_Check_Zeros
 !
 !
 !     PROCEDURE MQC_Eigenvalues_Minval

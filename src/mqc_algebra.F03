@@ -229,6 +229,8 @@
 !>      \brief <b> Returns the eigenvalues and eigenvalues of a symmetric or 
 !>      hermitian MQC Matrix</b>
         Procedure, Public::diag => MQC_Matrix_Diagonalize
+!>      \brief <b> Iteratively diagonalizes a symmetric or Hermitian MQC Matrix</b>
+        Procedure, Public::davidson => MQC_Matrix_Davidson
 !>      \brief <b> Computes the singular value decomposition of the MQC Matrix</b>
         Procedure, Public::svd => MQC_Matrix_SVD
 !>      \brief <b> Solves the generalized eigenproblem of the MQC Matrix</b>
@@ -285,7 +287,28 @@
 !>      \brief <b> Increases a MQC Matrix dimension and fill the additional elements with
 !>      with zeros.</b>
         Procedure, Public::mpad => MQC_Matrix_Pad
+!>      \brief <b> Check if all values in a MQC Matrix dimension are zero.</b>
+        Procedure, Public::iszero => MQC_Matrix_Check_Zeros
       End Type MQC_Matrix
+!
+!>    \brief Abstract Hermitian matrix-free linear operator.
+      Type, Abstract, Public::MQC_Linear_Operator
+      Contains
+        Procedure(MQC_Operator_Dimension_Interface),Deferred,Public::dimension
+        Procedure(MQC_Operator_Apply_Interface),Deferred,Public::apply
+        Procedure(MQC_Operator_Diagonal_Interface),Deferred,Public::diagonal
+      End Type MQC_Linear_Operator
+!
+!>    \brief Adapter exposing a stored MQC_Matrix as a linear operator.
+      Type,Extends(MQC_Linear_Operator),Public::MQC_Explicit_Matrix_Operator
+        Private
+        Type(MQC_Matrix)::Matrix
+      Contains
+        Procedure,Public::init=>MQC_Explicit_Operator_Init
+        Procedure,Public::dimension=>MQC_Explicit_Operator_Dimension
+        Procedure,Public::apply=>MQC_Explicit_Operator_Apply
+        Procedure,Public::diagonal=>MQC_Explicit_Operator_Diagonal
+      End Type MQC_Explicit_Matrix_Operator
 !     
 !>    \brief <b> Rank 4 array variable</b>
       Type MQC_R4Tensor
@@ -332,7 +355,6 @@
 !
 !
       logical::MQC_Algebra_DEBUG=.false.
-
 !
 !
 !----------------------------------------------------------------
@@ -1033,6 +1055,88 @@
         Module Procedure MQC_VectorLEInteger
       End Interface
 !
+!----------------------------------------------------------------
+!                                                               |
+!     ITERATIVE SUBMODULE PROCEDURE                             !
+!                                                               |
+!----------------------------------------------------------------
+!
+      Abstract Interface
+        Function MQC_Operator_Dimension_Interface(Operator) Result(Dimension)
+          Import::int64,MQC_Linear_Operator
+          Class(MQC_Linear_Operator),Intent(In)::Operator
+          Integer(Kind=int64)::Dimension
+        End Function MQC_Operator_Dimension_Interface
+!
+        Subroutine MQC_Operator_Apply_Interface(Operator,Vectors,Products)
+          Import::real64,MQC_Linear_Operator
+          Class(MQC_Linear_Operator),Intent(In)::Operator
+          Complex(Kind=real64),Intent(In)::Vectors(:,:)
+          Complex(Kind=real64),Intent(Out)::Products(:,:)
+        End Subroutine MQC_Operator_Apply_Interface
+!
+        Subroutine MQC_Operator_Diagonal_Interface(Operator,Diagonal)
+          Import::real64,MQC_Linear_Operator
+          Class(MQC_Linear_Operator),Intent(In)::Operator
+          Complex(Kind=real64),Intent(Out)::Diagonal(:)
+        End Subroutine MQC_Operator_Diagonal_Interface
+      End Interface
+!
+      Interface
+        Module Subroutine MQC_Explicit_Operator_Init(Operator,Matrix)
+          Class(MQC_Explicit_Matrix_Operator),Intent(InOut)::Operator
+          Type(MQC_Matrix),Intent(In)::Matrix
+        End Subroutine MQC_Explicit_Operator_Init
+!
+        Module Function MQC_Explicit_Operator_Dimension(Operator) Result(Dimension)
+          Class(MQC_Explicit_Matrix_Operator),Intent(In)::Operator
+          Integer(Kind=int64)::Dimension
+        End Function MQC_Explicit_Operator_Dimension
+!
+        Module Subroutine MQC_Explicit_Operator_Apply(Operator,Vectors,Products)
+          Class(MQC_Explicit_Matrix_Operator),Intent(In)::Operator
+          Complex(Kind=real64),Intent(In)::Vectors(:,:)
+          Complex(Kind=real64),Intent(Out)::Products(:,:)
+        End Subroutine MQC_Explicit_Operator_Apply
+!
+        Module Subroutine MQC_Explicit_Operator_Diagonal(Operator,Diagonal)
+          Class(MQC_Explicit_Matrix_Operator),Intent(In)::Operator
+          Complex(Kind=real64),Intent(Out)::Diagonal(:)
+        End Subroutine MQC_Explicit_Operator_Diagonal
+!
+!>      \brief Compute the lowest algebraic eigenpairs using block Davidson.
+        Module Subroutine MQC_Davidson(Operator,NumberOfRoots,Eigenvalues,Eigenvectors,&
+          MetricOperator,InitialVectors,Tolerance,MetricTolerance,MaximumSubspace,&
+          MaximumIterations,Converged,Iterations,ResidualNorms)
+          Class(MQC_Linear_Operator),Intent(In)::Operator
+          Class(MQC_Linear_Operator),Optional,Intent(In)::MetricOperator
+          Integer(Kind=int64),Optional,Intent(In)::NumberOfRoots
+          Type(MQC_Vector),Optional,Intent(Out)::Eigenvalues
+          Type(MQC_Matrix),Optional,Intent(Out)::Eigenvectors
+          Type(MQC_Matrix),Optional,Intent(In)::InitialVectors
+          Real(Kind=real64),Optional,Intent(In)::Tolerance,MetricTolerance
+          Integer(Kind=int64),Optional,Intent(In)::MaximumSubspace,MaximumIterations
+          Logical,Optional,Intent(Out)::Converged
+          Integer(Kind=int64),Optional,Intent(Out)::Iterations
+          Type(MQC_Vector),Optional,Intent(Out)::ResidualNorms
+        End Subroutine MQC_Davidson
+!
+!>      \brief Iteratively diagonalize a stored MQC matrix.
+        Module Subroutine MQC_Matrix_Davidson(Matrix,Eigenvalues,Eigenvectors,&
+          NumberOfRoots,MetricMatrix,InitialVectors,Tolerance,MetricTolerance,&
+          MaximumSubspace,MaximumIterations,Converged,Iterations,ResidualNorms)
+          Class(MQC_Matrix),Intent(In)::Matrix
+          Type(MQC_Vector),Optional,Intent(Out)::Eigenvalues
+          Type(MQC_Matrix),Optional,Intent(Out)::Eigenvectors
+          Integer(Kind=int64),Optional,Intent(In)::NumberOfRoots
+          Type(MQC_Matrix),Optional,Intent(In)::MetricMatrix,InitialVectors
+          Real(Kind=real64),Optional,Intent(In)::Tolerance,MetricTolerance
+          Integer(Kind=int64),Optional,Intent(In)::MaximumSubspace,MaximumIterations
+          Logical,Optional,Intent(Out)::Converged
+          Integer(Kind=int64),Optional,Intent(Out)::Iterations
+          Type(MQC_Vector),Optional,Intent(Out)::ResidualNorms
+        End Subroutine MQC_Matrix_Davidson
+      End Interface
 !
 !----------------------------------------------------------------
 !                                                               |
@@ -11693,7 +11797,7 @@
 
       if(Present(methodIn)) method = methodIn
       if(.not.Present(methodIn)) method = 'F'
-      if(method.eq.'I') allocate(work(max(1,MQC_Length_Vector(vector))))
+      allocate(work(max(1,MQC_Length_Vector(vector))))
       TypeFlag = vector%Data_Type
       If(vector%Data_Type.eq.'Integer'.or.vector%Data_Type.eq.'Real') then 
         If(vector%Data_Type.eq.'Integer') Call MQC_Vector_Copy_Int2Real(vector)
@@ -16893,6 +16997,161 @@
         call MatrixOut%mput(Matrix,[1,Matrix%NRow],[1,Matrix%NCol])
 !
       end function MQC_Matrix_Pad
+!
+!
+!     PROCEDURE MQC_Matrix_Check_Zeros
+!
+!>    \brief <b> MQC_Matrix_Check_Zeros check if all 
+!>    entries in a MQC matrix have norm smaller than a threshold.</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Matrix_Check_Zeros check if all 
+!>    entries in a MQC matrix have norm smaller than a threshold.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Mat
+!>    \verbatim
+!>        Mat is Class(MQC_Matrix)
+!>        The MQC matrix to be tested against zeros.
+!>    \endverbatim
+!>
+!>    \param[in] threshold
+!>    \verbatim
+!>        threshold is real, optional (default=1.0E-8)
+!>        Defines the zero values threshold
+!>    \endverbatim
+!>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function MQC_Matrix_Check_Zeros(Mat,threshold) result(isZero)
+!
+      Implicit None
+      Class(MQC_Matrix),Intent(In)::Mat
+      Real(kind=real64),optional::threshold
+      !!!!!!
+      logical::isZero
+      !!!!!!
+      Real(kind=real64)::my_thresh
+      integer::I,J,zeroI
+!
+      zeroI = 0
+      isZero = .true.
+      if(present(threshold)) then
+        my_thresh = abs(threshold)
+      else
+        my_thresh = 1.0E-8
+      end if
+
+      If (Mat%Storage.eq.'StorFull') then
+        If (Mat%Data_Type.eq.'Integer') then
+          do I = 1,Mat%NRow
+            do J = 1,Mat%NCol
+              if (abs(Mat%MatI(I,J)).ne.zeroI) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        Elseif (Mat%Data_Type.eq.'Real') then
+          do I = 1,Mat%NRow
+            do J = 1,Mat%NCol
+              if (abs(Mat%MatR(I,J)).ne.my_thresh) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        Elseif (Mat%Data_Type.eq.'Complex') then
+          do I = 1,Mat%NRow
+            do J = 1,Mat%NCol
+              if (abs(Mat%MatC(I,J)).ne.my_thresh) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        Else
+          Call MQC_Error_A('Matrix type not defined in MQC_Matrix_Check_Zeros', 6, &
+                 'Mat%Data_Type', Mat%Data_Type )
+        EndIf
+      ElseIf (Mat%Storage.eq.'StorSymm'.or.&
+              Mat%Storage.eq.'StorHerm'.or.&
+              Mat%Storage.eq.'StorAhrm'.or.&
+              Mat%Storage.eq.'StorAsym') then
+        If (Mat%Data_Type.eq.'Integer') then
+          do I = 1,Mat%NRow
+            do J = 1,I
+              if (abs(Mat%MatI(I*(I-1)/2+J,1)).ne.zeroI) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        ElseIf (Mat%Data_Type.eq.'Real') then
+          do I = 1,Mat%NRow
+            do J = 1,I
+              if (abs(Mat%MatR(I*(I-1)/2+J,1)).ne.my_thresh) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        ElseIf (Mat%Data_Type.eq.'Complex') then
+          do I = 1,Mat%NRow
+            do J = 1,I
+              if (abs(Mat%MatC(I*(I-1)/2+J,1)).ne.my_thresh) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        Else
+          Call MQC_Error_A('Matrix type not defined in MQC_Matrix_Check_Zeros', 6, &
+               'Mat%Data_Type', Mat%Data_Type )
+        EndIf
+      ElseIf (Mat%Storage.eq.'StorDiag') then
+        If (Mat%Data_Type.eq.'Integer') then
+          do I = 1,Mat%NRow
+            if (abs(Mat%MatI(I,1)).ne.zeroI) then
+              isZero = .false.
+              return
+            end if
+          end do
+        ElseIf (Mat%Data_Type.eq.'Real') then
+          do I = 1,Mat%NRow
+            if (abs(Mat%MatR(I,1)).ne.my_thresh) then
+              isZero = .false.
+              return
+            end if
+          end do
+        ElseIf (Mat%Data_Type.eq.'Complex') then
+          do I = 1,Mat%NRow
+            if (abs(Mat%MatC(I,1)).ne.my_thresh) then
+              isZero = .false.
+              return
+            end if
+          end do
+        Else
+          Call MQC_Error_A('Matrix type not defined in MQC_Matrix_Check_Zeros', 6, &
+               'Mat%Data_Type', Mat%Data_Type )
+        EndIf
+      Else
+        Call MQC_Error_A('Unrecognized storage type in MQC_Matrix_Check_Zeros', 6, &
+             'Mat%Storage', Mat%Storage )
+      EndIf
+!
+      end function MQC_Matrix_Check_Zeros
 !
 !
 !     PROCEDURE SymIndexHash
@@ -22275,10 +22534,10 @@
      'Matrix%Storage', Matrix%Storage )
       If(MQC_Matrix_Test_Symmetric(Matrix,'symmetric')) then
         label = 'symmetric'
-      ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'antisymmetric')) then
-        label = 'antisymmetric'
       ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'hermitian')) then
         label = 'hermitian'
+      ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'antisymmetric')) then
+        label = 'antisymmetric'
       ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'antihermitian')) then
         label = 'antihermitian'
       Else
@@ -26448,7 +26707,7 @@
       matrix = matrixIn
       if(Present(methodIn)) method = methodIn
       if(.not.Present(methodIn)) method = 'F'
-      if(method.eq.'I') allocate(work(max(1,MQC_Matrix_Rows(matrix))))
+      allocate(work(max(1,MQC_Matrix_Rows(matrix))))
       StorFlag = Matrix%Storage
       TypeFlag = Matrix%Data_Type
       if(Matrix%Storage.eq.'StorDiag') Call MQC_Matrix_Diag2Full(matrix)

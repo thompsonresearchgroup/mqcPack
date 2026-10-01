@@ -33269,6 +33269,17 @@
       Else
         Call MQC_Allocate_Matrix(dimc,dimd,MC,'Integer','StorFull')
       EndIf
+
+      if (dima.eq.0.or.dimb.eq.0) then
+        if (MQC_R4Tensor_HaveComplex(RA).or.MQC_Matrix_HaveComplex(MB)) then
+          call MC%init(dimc,dimd,(0.0,0.0))
+        elseif (MQC_R4Tensor_HaveReal(RA).or.MQC_Matrix_HaveReal(MB)) then
+          call MC%init(dimc,dimd,0.0)
+        else
+          call MC%init(dimc,dimd,0)
+        end if
+        return
+      end if
       
       va=[1,dima]
       vb=[1,dimb]

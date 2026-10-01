@@ -567,6 +567,12 @@
         Module Procedure MQC_twoERIs_Scalar_Multiply
       End Interface
 !
+!>    \brief <b> Computes the dot product of two objects</b>
+      Interface Operator (.dot.)
+        Module Procedure MQC_Integral_Eigenvalues_DotProduct
+      End Interface
+!
+!
 !>    \brief <b> Computes the element-wise product of two objects</b>
       Interface Operator (.ewp.)
         Module Procedure MQC_Element_Integral_Multiply
@@ -2200,7 +2206,7 @@
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
-!>    \date 2025
+!>    \date 2025, 2026
 !
       function mqc_integral_change_type(integral,newType) result(integralOut)
 !
@@ -2238,7 +2244,9 @@
            call mqc_error_a('New type is more restrictive than the original one in mqc_integral_change_type',&
                              6,'Original Type:',oldArrayType,'New Type:',newArrayType)
         aa = integral%getBlock('alpha')
-        call mqc_integral_allocate(integralOut,integral%Array_Name,'spin',aa,aa)
+        call mqc_integral_allocate(integralOut,integral%Array_Name,'spin',aa,aa,&
+                       nDimA1=Integral%nARows,nDimA2=Integral%nACols,&
+                       nDimB1=Integral%nBRows,nDimB2=Integral%nBCols)
       case ('general')
         if (oldArrayType.eq.'space') then
           aa = integral%getBlock('alpha')
@@ -2249,12 +2257,13 @@
         end if
         call ab%init(nDimBeta1,nDimAlpha2,zeroR)
         call ba%init(nDimAlpha1,nDimBeta2,zeroR)
-        call mqc_integral_allocate(integralOut,integral%Array_Name,'general',aa,bb,ab,ba)
+        call mqc_integral_allocate(integralOut,integral%Array_Name,'general',aa,bb,ab,ba,&
+                       nDimA1=Integral%nARows,nDimA2=Integral%nACols,&
+                       nDimB1=Integral%nBRows,nDimB2=Integral%nBCols)
       case default
         call mqc_error_A('Unrecognised integral type in mqc_integral_change_type', 6, &
              'New Type:', newArrayType )
       end select
-
 !
       end function mqc_integral_change_type
 !
@@ -2285,7 +2294,7 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
+!>    \author L. M. Thompson, M. M. F. Moraes
 !>    \date 2026
 !
       subroutine mqc_integral_update_type(integral) 
@@ -2302,7 +2311,9 @@
         if(integral%blockSize('Alpha',1).ne.integral%blockSize('Beta',1).or.&
           integral%blockSize('Alpha',2).ne.integral%blockSize('Beta',2)) return
         if(MQC_Matrix_Norm(integral%getBlock('aa')-integral%getBlock('bb')).lt.1.0e-14) &
-          call mqc_integral_allocate(integral,'','space',integral%getBlock('aa'))
+          call mqc_integral_allocate(integral,'','space',integral%getBlock('aa'),&
+                       nDimA1=Integral%nARoWs,nDimA2=Integral%nACols,&
+                       nDimB1=Integral%nBRoWs,nDimB2=Integral%nBCols)
         return
       case('general')
         if(integral%blockSize('Alpha',1).eq.integral%blockSize('Beta',1).and.&
@@ -2313,11 +2324,15 @@
             call mqc_integral_allocate(integral,'','space',integral%getBlock('aa'))
           elseIf(MQC_Matrix_Norm(integral%getBlock('ab')).lt.zeroThresh.and.&
               MQC_Matrix_Norm(integral%getBlock('ba')).lt.zeroThresh) then
-            call mqc_integral_allocate(integral,'','spin',integral%getBlock('aa'),integral%getBlock('bb'))
+            call mqc_integral_allocate(integral,'','spin',integral%getBlock('aa'),integral%getBlock('bb'),&
+                       nDimA1=Integral%nARoWs,nDimA2=Integral%nACols,&
+                       nDimB1=Integral%nBRoWs,nDimB2=Integral%nBCols)
           endIf
         elseIf(MQC_Matrix_Norm(integral%getBlock('ab')).lt.zeroThresh.and.&
             MQC_Matrix_Norm(integral%getBlock('ba')).lt.zeroThresh) then
-          call mqc_integral_allocate(integral,'','spin',integral%getBlock('aa'),integral%getBlock('bb'))
+          call mqc_integral_allocate(integral,'','spin',integral%getBlock('aa'),integral%getBlock('bb'),&
+                       nDimA1=Integral%nARoWs,nDimA2=Integral%nACols,&
+                       nDimB1=Integral%nBRoWs,nDimB2=Integral%nBCols)
         endIf
         return
       case default
@@ -2641,7 +2656,11 @@
         endif
       endIf
       eigenvalues%Alpha = vecAlpha
-      if(eigenvaluesType.eq.'spin') eigenvalues%Beta = vecBeta
+      if(eigenvaluesType.eq.'spin') then 
+        eigenvalues%Beta = vecBeta
+      else
+        if(Allocated(eigenvalues%Beta)) call mqc_deallocate_vector(eigenvalues%Beta)
+      end if
 !
       end subroutine mqc_eigenvalues_initialize
 !
@@ -4181,8 +4200,8 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2017
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2017, 2026
 !
       subroutine mqc_integral_identity(integral,nAlpha,nBeta,label,nAlpha2,nBeta2) 
 !
@@ -4214,10 +4233,12 @@
       call tmpMatrixAlpha%identity(nAlpha,my_nAlpha2)
 
       if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2) then
-        call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha)
+        call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
       else 
         call tmpMatrixBeta%identity(nBeta,my_nBeta2)
-        call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+        call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
       endIf
 !
       end subroutine mqc_integral_identity  
@@ -4378,7 +4399,7 @@
 !     Authors:
 !     ========
 !>    \author L. M. Thompson, M. M. F. Moraes
-!>    \date 2017, 2025
+!>    \date 2017, 2025, 2026
 !
       subroutine mqc_integral_initialize(integral,nAlpha,nBeta,scalar,label,nAlpha2,nBeta2) 
 !
@@ -4410,31 +4431,37 @@
       if(present(scalar)) then
         call tmpMatrixAlpha%init(nAlpha,my_nAlpha2,scalar)
         if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2) then
-          call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha)
+          call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
         else 
           call tmpMatrixBeta%init(nBeta,my_nBeta2,scalar)
           if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
             call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2,scalar)
             call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2,scalar)
             call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
-              tmpMatrixBetaAlpha,tmpMatrixAlphaBeta)
+              tmpMatrixBetaAlpha,tmpMatrixAlphaBeta,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
           else
-            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
           endIf
         endIf
       else
         call tmpMatrixAlpha%init(nAlpha,my_nAlpha2)
         if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2) then
-          call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha)
+          call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha,&
+                nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
         else 
           call tmpMatrixBeta%init(nBeta,my_nBeta2)
           if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
             call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2)
             call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2)
             call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
-              tmpMatrixBetaAlpha,tmpMatrixAlphaBeta)
+              tmpMatrixBetaAlpha,tmpMatrixAlphaBeta,&
+              nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
           else
-            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
           endIf
         endIf
       endIf
@@ -8294,8 +8321,8 @@
       integer(kind=int64)::nA1,nA2,nB1,nB2
 !
       if(size(integralA,'alpha',1).ne.size(integralB,'alpha',1).or.size(integralA,'alpha',2).ne.&
-        size(integralA,'alpha',2).or.size(integralA,'beta',1).ne.size(integralA,'beta',1).or.&
-        size(integralA,'beta',2).ne.size(integralA,'beta',2)) call mqc_error_i('Integral blocks are &
+        size(integralB,'alpha',2).or.size(integralA,'beta',1).ne.size(integralB,'beta',1).or.&
+        size(integralA,'beta',2).ne.size(integralB,'beta',2)) call mqc_error_i('Integral blocks are &
         &not conformable in mqc_integral_sum',6,'size(integralA,alpha,1)-size(integralB,alpha,1)',&
         size(integralA,'alpha',1)-size(integralB,'alpha',1),'size(integralA,alpha,2)-size(integralB,alpha,2)',&
         size(integralA,'alpha',2)-size(integralB,'alpha',2),'size(integralA,beta,1)-size(integralB,beta,1)',&
@@ -10818,21 +10845,25 @@
       nBB1 = size(integralB,'beta',1)
       nBB2 = size(integralB,'beta',2)
 
-      if (nAA2.eq.0.or.nBA1.eq.0) then
-        if (nAB2.ne.0.and.nBB1.ne.0) then
-          if (nAB2.ne.nBB1) call mqc_error_i('Integral dimensions are &
+
+     if (nAA2.ne.nBA1.or.nAB2.ne.nBB1) call mqc_error_i('Integral dimensions are &
           &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
           'nAB2',nAB2,'nBB1',nBB1)
-        end if
-      elseif (nAB2.eq.0.or.nBB1.eq.0) then
-        if (nAA2.ne.nBA1) call mqc_error_i('Integral dimensions are &
-          &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
-          'nAB2',nAB2,'nBB1',nBB1)
-      elseif(nAA2.ne.nBA1.or.nAB2.ne.nBB1) then 
-        call mqc_error_i('Integral dimensions are &
-        &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
-        'nAB2',nAB2,'nBB1',nBB1)
-      end if
+     ! if (nAA2.eq.0.or.nBA1.eq.0) then
+     !   if (nAB2.ne.0.and.nBB1.ne.0) then
+     !    if (nAB2.ne.nBB1) call mqc_error_i('Integral dimensions are &
+     !    &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
+     !    'nAB2',nAB2,'nBB1',nBB1)
+     !   end if
+     ! elseif (nAB2.eq.0.or.nBB1.eq.0) then
+     !  if (nAA2.ne.nBA1) call mqc_error_i('Integral dimensions are &
+     !    &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
+     !    'nAB2',nAB2,'nBB1',nBB1)
+     ! elseif(nAA2.ne.nBA1.or.nAB2.ne.nBB1) then 
+     !   call mqc_error_i('Integral dimensions are &
+     !   &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
+     !   'nAB2',nAB2,'nBB1',nBB1)
+     ! end if
 
       select case (integralA%array_type)
       case('space')
@@ -12672,6 +12703,133 @@
       end function mqc_eigenvalue_eigenvalue_dotProduct
 !
 !
+!     PROCEDURE MQC_Integral_Eigenvalues_DotProduct
+!
+!>    \brief <b> MQC_Integral_Eigenvalues_DotProduct is used to compute the true
+!>    matrix-vector product of an MQC integral type variable and an MQC
+!>    eigenvalues type variable (treated as a column vector), and returns an
+!>    MQC eigenvalues (vector)</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Integral_Eigenvalues_DotProduct is used to compute the true
+!>    matrix-vector product of an MQC integral type variable and an MQC
+!>    eigenvalues type variable, where the eigenvalues variable is treated as
+!>    a column vector (not a diagonal matrix, unlike MatMul(Integral,Eigenvalues)).
+!>    Returns an MQC eigenvalues (vector).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] IntegralA
+!>    \verbatim
+!>        IntegralA is type(mqc_scf_integral)
+!>        The MQC integral variable to multiply.
+!>    \endverbatim
+!>
+!>    \param[in] EigenvaluesB
+!>    \verbatim
+!>        EigenvaluesB is type(mqc_scf_eigenvalues)
+!>        The MQC eigenvalues type variable, treated as a column vector.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_eigenvalues_dotproduct(integralA,eigenvaluesB) result(eigenvaluesOut)
+!
+      implicit none
+      type(mqc_scf_integral),intent(in)::integralA
+      type(mqc_scf_eigenvalues),intent(in)::eigenvaluesB
+      type(mqc_scf_eigenvalues)::eigenvaluesOut
+      type(mqc_vector)::tmpVectorAlpha,tmpVectorBeta
+      integer(kind=int64)::nA2Alpha,nA2Beta,nBAlpha,nBBeta
+!
+      nA2Alpha = size(integralA,'alpha',2)
+      nA2Beta = size(integralA,'beta',2)
+      nBAlpha = size(eigenvaluesB,'alpha')
+      nBBeta = size(eigenvaluesB,'beta')
+
+      if(nA2Alpha.ne.nBAlpha.or.(eigenvaluesB%type().ne.'space'.and.nA2Beta.ne.nBBeta)) &
+        call mqc_error_i('Integral and eigenvalues are not conformable in &
+        &mqc_integral_eigenvalues_dotproduct',6,&
+        'nA2Alpha',nA2Alpha,'nBAlpha',nBAlpha,'nA2Beta',nA2Beta,'nBBeta',nBBeta)
+
+      select case (integralA%array_type)
+      case('space')
+        if(integralA%hasAlpha().and.eigenvaluesB%hasAlpha()) &
+          tmpVectorAlpha = integralA%alpha.dot.eigenvaluesB%alpha
+        if(eigenvaluesB%type().eq.'space') then
+          call mqc_eigenvalues_allocate(eigenvaluesOut,'','space',tmpVectorAlpha)
+        else
+          if(integralA%hasAlpha().and.eigenvaluesB%hasBeta()) &
+            tmpVectorBeta = integralA%alpha.dot.eigenvaluesB%beta
+          call mqc_eigenvalues_allocate(eigenvaluesOut,'','spin',tmpVectorAlpha,tmpVectorBeta)
+        endIf
+      case('spin')
+        if(integralA%hasAlpha().and.eigenvaluesB%hasAlpha()) &
+          tmpVectorAlpha = integralA%alpha.dot.eigenvaluesB%alpha
+        if(eigenvaluesB%type().eq.'space') then
+          if(integralA%hasBeta().and.eigenvaluesB%hasAlpha()) &
+            tmpVectorBeta = integralA%beta.dot.eigenvaluesB%alpha
+        else
+          if(integralA%hasBeta().and.eigenvaluesB%hasBeta()) &
+            tmpVectorBeta = integralA%beta.dot.eigenvaluesB%beta
+        endIf
+        call mqc_eigenvalues_allocate(eigenvaluesOut,'','spin',tmpVectorAlpha,tmpVectorBeta)
+      case('general')
+        if(integralA%hasAlpha().and.eigenvaluesB%hasAlpha()) &
+          tmpVectorAlpha = integralA%alpha.dot.eigenvaluesB%alpha
+        if(eigenvaluesB%type().eq.'space') then
+          if(integralA%hasBetaAlpha().and.eigenvaluesB%hasAlpha()) then
+            if(allocated(tmpVectorAlpha)) then
+              tmpVectorAlpha = tmpVectorAlpha + (integralA%betaAlpha.dot.eigenvaluesB%alpha)
+            else
+              tmpVectorAlpha = integralA%betaAlpha.dot.eigenvaluesB%alpha
+            endIf
+          endIf
+          if(integralA%hasBeta().and.eigenvaluesB%hasAlpha()) &
+            tmpVectorBeta = integralA%beta.dot.eigenvaluesB%alpha
+          if(integralA%hasAlphaBeta().and.eigenvaluesB%hasAlpha()) then
+            if(allocated(tmpVectorBeta)) then
+              tmpVectorBeta = tmpVectorBeta + (integralA%alphaBeta.dot.eigenvaluesB%alpha)
+            else
+              tmpVectorBeta = integralA%alphaBeta.dot.eigenvaluesB%alpha
+            endIf
+          endIf
+        else
+          if(integralA%hasBetaAlpha().and.eigenvaluesB%hasBeta()) then
+            if(allocated(tmpVectorAlpha)) then
+              tmpVectorAlpha = tmpVectorAlpha + (integralA%betaAlpha.dot.eigenvaluesB%beta)
+            else
+              tmpVectorAlpha = integralA%betaAlpha.dot.eigenvaluesB%beta
+            endIf
+          endIf
+          if(integralA%hasBeta().and.eigenvaluesB%hasBeta()) &
+            tmpVectorBeta = integralA%beta.dot.eigenvaluesB%beta
+          if(integralA%hasAlphaBeta().and.eigenvaluesB%hasAlpha()) then
+            if(allocated(tmpVectorBeta)) then
+              tmpVectorBeta = tmpVectorBeta + (integralA%alphaBeta.dot.eigenvaluesB%alpha)
+            else
+              tmpVectorBeta = integralA%alphaBeta.dot.eigenvaluesB%alpha
+            endIf
+          endIf
+        endIf
+        call mqc_eigenvalues_allocate(eigenvaluesOut,'','spin',tmpVectorAlpha,tmpVectorBeta)
+      case default
+        call mqc_error_A('Unknown integral type in mqc_integral_eigenvalues_dotproduct', 6, &
+             'integralA%array_type', integralA%array_type )
+      end select
+!
+      end function mqc_integral_eigenvalues_dotproduct
+!
+!
 !     PROCEDURE MQC_Integral_Transpose
 !
 !>    \brief <b> MQC_Integral_Transpose is used to compute the transpose of a MQC
@@ -12703,8 +12861,8 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2017
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2017, 2026
 !
       function mqc_integral_transpose(integral,label) result(integralOut)
 !
@@ -12725,18 +12883,24 @@
       select case (integral%array_type)
       case('space')
           tmpMatrixAlpha = transpose(integral%alpha)
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha)
+          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,&
+                       nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
+                       nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
       case('spin')
           tmpMatrixAlpha = transpose(integral%alpha)
           tmpMatrixBeta = transpose(integral%beta)
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+                       nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
+                       nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
       case('general')
           tmpMatrixAlpha = transpose(integral%alpha)
           tmpMatrixBeta = transpose(integral%beta)
           tmpMatrixAlphaBeta = transpose(integral%betaAlpha)
           tmpMatrixBetaAlpha = transpose(integral%alphaBeta)
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+                tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,&
+                nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
+                nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
       case default
         call mqc_error_A('Unknown integral type in mqc_integral_transpose', 6, &
              'integral%array_type', integral%array_type )
@@ -14409,7 +14573,7 @@
       type(mqc_scf_integral)::output
       type(mqc_matrix)::aa,bb,ab,ba,tmpM
       logical::same
-      integer::ia,ib
+      integer::ia,ib,ic,id
 !      
       eris = erisIn
       if(present(inorder)) then
@@ -14423,14 +14587,46 @@
              'Index out of range in MQC_ERI_Integral_Contraction', 6, &
                 'ia', ia,'ib',ib)
         if (ia.eq.1.or.ia.eq.2) then
-          if (ib.eq.1.or.ib.eq.2) same=.true.
+          if (ib.eq.1.or.ib.eq.2) then 
+            same=.true.
+            ic=3
+            id=4
+          else 
+            if(ia.eq.1) then
+              ic=2
+            else 
+              ic=1
+            end if
+            if (ib.eq.3) then
+              id=4
+            else
+              id=3
+            end if
+          end if
         else
-          if (ib.eq.3.or.ib.eq.4) same=.true.
+          if (ib.eq.3.or.ib.eq.4) then
+            same=.true.
+            ic=1
+            id=2
+          else
+            if(ia.eq.3) then
+              id=4
+            else 
+              id=2
+            end if
+            if (ib.eq.1) then
+              ic=2
+            else
+              ic=1
+            end if
+          end if
         endif
       else
         ind=[1,2]
         ia=1
         ib=2
+        ic=3
+        id=4
         same=.true.
       endif
       select case (eris%type())
@@ -15045,11 +15241,17 @@
       
       select case (FinalType)
       case ('space')
-        call mqc_integral_allocate(output,'','space',aa)
+        call mqc_integral_allocate(output,'','space',aa,&
+               nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
+               nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id))
       case ('spin')
-        call mqc_integral_allocate(output,'','spin',aa,bb)
+        call mqc_integral_allocate(output,'','spin',aa,bb,&
+               nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
+               nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id))
       case ('general')
-        call mqc_integral_allocate(output,'','general',aa,bb,ab,ba)
+        call mqc_integral_allocate(output,'','general',aa,bb,ab,ba,&
+               nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
+               nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id))
       end select
 !
       end function mqc_eri_integral_contraction

@@ -285,6 +285,8 @@
 !>      \brief <b> Increases a MQC Matrix dimension and fill the additional elements with
 !>      with zeros.</b>
         Procedure, Public::mpad => MQC_Matrix_Pad
+!>      \brief <b> Check if all values in a MQC Matrix dimension are zero.</b>
+        Procedure, Public::iszero => MQC_Matrix_Check_Zeros
       End Type MQC_Matrix
 !     
 !>    \brief <b> Rank 4 array variable</b>
@@ -16893,6 +16895,161 @@
         call MatrixOut%mput(Matrix,[1,Matrix%NRow],[1,Matrix%NCol])
 !
       end function MQC_Matrix_Pad
+!
+!
+!     PROCEDURE MQC_Matrix_Check_Zeros
+!
+!>    \brief <b> MQC_Matrix_Check_Zeros check if all 
+!>    entries in a MQC matrix have norm smaller than a threshold.</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Matrix_Check_Zeros check if all 
+!>    entries in a MQC matrix have norm smaller than a threshold.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Mat
+!>    \verbatim
+!>        Mat is Class(MQC_Matrix)
+!>        The MQC matrix to be tested against zeros.
+!>    \endverbatim
+!>
+!>    \param[in] threshold
+!>    \verbatim
+!>        threshold is real, optional (default=1.0E-8)
+!>        Defines the zero values threshold
+!>    \endverbatim
+!>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function MQC_Matrix_Check_Zeros(Mat,threshold) result(isZero)
+!
+      Implicit None
+      Class(MQC_Matrix),Intent(In)::Mat
+      Real(kind=real64),optional::threshold
+      !!!!!!
+      logical::isZero
+      !!!!!!
+      Real(kind=real64)::my_thresh
+      integer::I,J,zeroI
+!
+      zeroI = 0
+      isZero = .true.
+      if(present(threshold)) then
+        my_thresh = abs(threshold)
+      else
+        my_thresh = 1.0E-8
+      end if
+
+      If (Mat%Storage.eq.'StorFull') then
+        If (Mat%Data_Type.eq.'Integer') then
+          do I = 1,Mat%NRow
+            do J = 1,Mat%NCol
+              if (abs(Mat%MatI(I,J)).ne.zeroI) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        Elseif (Mat%Data_Type.eq.'Real') then
+          do I = 1,Mat%NRow
+            do J = 1,Mat%NCol
+              if (abs(Mat%MatR(I,J)).ne.my_thresh) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        Elseif (Mat%Data_Type.eq.'Complex') then
+          do I = 1,Mat%NRow
+            do J = 1,Mat%NCol
+              if (abs(Mat%MatC(I,J)).ne.my_thresh) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        Else
+          Call MQC_Error_A('Matrix type not defined in MQC_Matrix_Check_Zeros', 6, &
+                 'Mat%Data_Type', Mat%Data_Type )
+        EndIf
+      ElseIf (Mat%Storage.eq.'StorSymm'.or.&
+              Mat%Storage.eq.'StorHerm'.or.&
+              Mat%Storage.eq.'StorAhrm'.or.&
+              Mat%Storage.eq.'StorAsym') then
+        If (Mat%Data_Type.eq.'Integer') then
+          do I = 1,Mat%NRow
+            do J = 1,I
+              if (abs(Mat%MatI(I*(I-1)/2+J,1)).ne.zeroI) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        ElseIf (Mat%Data_Type.eq.'Real') then
+          do I = 1,Mat%NRow
+            do J = 1,I
+              if (abs(Mat%MatR(I*(I-1)/2+J,1)).ne.my_thresh) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        ElseIf (Mat%Data_Type.eq.'Complex') then
+          do I = 1,Mat%NRow
+            do J = 1,I
+              if (abs(Mat%MatC(I*(I-1)/2+J,1)).ne.my_thresh) then
+                isZero = .false.
+                return
+              end if
+            end do
+          end do
+        Else
+          Call MQC_Error_A('Matrix type not defined in MQC_Matrix_Check_Zeros', 6, &
+               'Mat%Data_Type', Mat%Data_Type )
+        EndIf
+      ElseIf (Mat%Storage.eq.'StorDiag') then
+        If (Mat%Data_Type.eq.'Integer') then
+          do I = 1,Mat%NRow
+            if (abs(Mat%MatI(I,1)).ne.zeroI) then
+              isZero = .false.
+              return
+            end if
+          end do
+        ElseIf (Mat%Data_Type.eq.'Real') then
+          do I = 1,Mat%NRow
+            if (abs(Mat%MatR(I,1)).ne.my_thresh) then
+              isZero = .false.
+              return
+            end if
+          end do
+        ElseIf (Mat%Data_Type.eq.'Complex') then
+          do I = 1,Mat%NRow
+            if (abs(Mat%MatC(I,1)).ne.my_thresh) then
+              isZero = .false.
+              return
+            end if
+          end do
+        Else
+          Call MQC_Error_A('Matrix type not defined in MQC_Matrix_Check_Zeros', 6, &
+               'Mat%Data_Type', Mat%Data_Type )
+        EndIf
+      Else
+        Call MQC_Error_A('Unrecognized storage type in MQC_Matrix_Check_Zeros', 6, &
+             'Mat%Storage', Mat%Storage )
+      EndIf
+!
+      end function MQC_Matrix_Check_Zeros
 !
 !
 !     PROCEDURE SymIndexHash

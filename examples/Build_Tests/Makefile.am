@@ -62,9 +62,10 @@ endif
 build: $(BUILD_PROGRAM_OBJECTS)
 
 # Gaussian-independent quadrature rules, partitions, and owning-grid contracts.
-TESTS += unitTest10 unitTest11 unitTest12 test_quadrature_invalid.sh test_quadrature_private.sh
-check_PROGRAMS += unitTest10 unitTest11 unitTest12
-unitTest10_SOURCES = ../../unitTests/src/unitTest10.f03
-unitTest11_SOURCES = ../../unitTests/src/unitTest11.f03
-unitTest12_SOURCES = ../../unitTests/src/unitTest12.f03
-EXTRA_DIST += test_quadrature_invalid.sh test_quadrature_private.sh
+# Disabled: upstream (MQCPack 26.9.3) references these sources but never committed them.
+#TESTS += unitTest10 unitTest11 unitTest12 test_quadrature_invalid.sh test_quadrature_private.sh
+#check_PROGRAMS += unitTest10 unitTest11 unitTest12
+#unitTest10_SOURCES = ../../unitTests/src/unitTest10.f03
+#unitTest11_SOURCES = ../../unitTests/src/unitTest11.f03
+#unitTest12_SOURCES = ../../unitTests/src/unitTest12.f03
+#EXTRA_DIST += test_quadrature_invalid.sh test_quadrature_private.sh

@@ -30130,7 +30130,7 @@
               iOut,'Determinants%order',Determinants%order)
           end select
           Do R_A_String = R_A_Start, R_A_End, R_A_Step
-            Do R_B_String = R_B_Start, R_B_End, R_A_Step
+            Do R_B_String = R_B_Start, R_B_End, R_B_Step
 
               Alpha_String_2 = Determinants2%Strings%Alpha(R_A_String) 
               Beta_String_2 = Determinants2%Strings%Beta(R_B_String) 

@@ -10,8 +10,8 @@
 !     **    Lee M. Thompson, Xianghai Sheng, Andrew D. Mahler, Dave        **
 !     **    Mullally, and Hrant P. Hratchian                               **
 !     **                                                                   **
-!     **                          Version 26.8.0                           **
-!     **                          August 3, 2026                           **
+!     **                           Version 26.9.3                          **
+!     **                         September 19, 2026                        **
 !     **                                                                   **
 !     **                                                                   **
 !     ** Modules beloning to MQCPack:                                      **
@@ -36,6 +36,7 @@
       use MQC_General
       use MQC_DataStructures
       use iso_fortran_env, only: int64, real64
+      use, intrinsic :: ieee_arithmetic, only: ieee_is_finite
       implicit none
       integer(kind=int64),parameter,private::iOut=6
       integer(kind=int64),parameter,public::MQC_CGTF_CARTESIAN=0_int64
@@ -95,6 +96,135 @@
         procedure,public::addShell              => MQC_gtoBasisSet_addShell
       end type MQC_gtoBasisSet
 !
+!
+!     Reusable quadrature API. Keep implementation procedures private.
+      integer(kind=int64),parameter,public::  &
+        QUAD_RADIAL_TRAPEZOID=0_int64
+      integer(kind=int64),parameter,public::  &
+        QUAD_RADIAL_GAUSS_LEGENDRE=1_int64
+      integer(kind=int64),parameter,public::  &
+        QUAD_RADIAL_MAPPED_GAUSS_LEGENDRE=2_int64
+!
+      public::setup_quadrature_trapezoid1d
+      public::setup_quadrature_trapezoid3d
+      public::setup_quadrature_gauss_legendre1d
+      public::setup_quadrature_gauss_legendre_semi_infinite
+      public::setup_quadrature_spherical_product
+      public::setup_quadrature_lebedev_spherical
+!
+
+      integer(kind=int64),parameter,public::N_LEBEDEV_RULES=23_int64
+      integer(kind=int64),dimension(N_LEBEDEV_RULES),parameter,public::  &
+        LEBEDEV_POINT_COUNTS=  &
+        [ 6_int64,14_int64,26_int64,38_int64,50_int64,74_int64,  &
+                  86_int64,110_int64,146_int64,170_int64,194_int64,230_int64,  &
+                  266_int64,302_int64,350_int64,434_int64,590_int64,770_int64,  &
+                  974_int64,1202_int64,1454_int64,1730_int64,2030_int64 ]
+      integer(kind=int64),dimension(N_LEBEDEV_RULES),parameter,public::  &
+        LEBEDEV_EXACTNESS_DEGREES=  &
+        [ 3_int64,5_int64,7_int64,9_int64,11_int64,13_int64,  &
+                  15_int64,17_int64,19_int64,21_int64,23_int64,25_int64,  &
+                  27_int64,29_int64,31_int64,35_int64,41_int64,47_int64,  &
+                  53_int64,59_int64,65_int64,71_int64,77_int64 ]
+      public::lebedevRuleDegree,lebedevRuleIsSupported,  &
+        lebedevSelectPointCount,  &
+        setup_lebedev_angular_grid
+!
+
+!
+      public::becke1988_partition_weights
+      public::apply_becke1988_partition
+      public::setup_quadrature_becke_molecular
+!
+
+!
+      public::becke1988_radii_from_atomic_numbers
+      public::setup_quadrature_becke_molecular_from_atomic_numbers
+!
+
+      public::quadrature_grid,molecular_quadrature_grid
+      public::gridFromArrays,gridTakeArrays,gridTrapezoid1D
+      public::gridGaussLegendre1D,gridMappedRadial,gridCartesian
+      public::gridLebedev,gridSphericalProduct,gridFiniteSpherical
+      public::gridBeckeMolecular
+!
+      type::quadrature_grid
+        private
+        real(real64),allocatable::points(:,:),weights(:)
+        integer(int64)::integrationDimension=0,exactnessDegree=-1
+        character(:),allocatable::coordinateUnits,weightUnits,rule,normalization
+      contains
+        procedure::clear => gridClear
+        procedure::isInitialized => gridIsInitialized
+        procedure::pointCount => gridPointCount
+        procedure::getMetadata => gridGetMetadata
+        procedure::copyBlock => gridCopyBlock
+        procedure::integrate => gridIntegrate
+        procedure::overlapMatrix => gridOverlapMatrix
+        procedure::validate => gridValidate
+      end type quadrature_grid
+!
+      type,extends(quadrature_grid)::molecular_quadrature_grid
+        private
+        real(real64),allocatable::centersBohr(:,:),radiiBohr(:)
+        integer(int64),allocatable::generatingAtoms(:)
+        real(real64),allocatable::baseWeights(:),partitionWeights(:)
+        real(real64),allocatable::radialPoints(:),radialWeights(:)
+        real(real64),allocatable::angularPoints(:,:),angularWeights(:)
+      contains
+        procedure::atomCount => molecularAtomCount
+        procedure::copyMolecule => molecularCopyMolecule
+        procedure::copyAtomicRule => molecularCopyAtomicRule
+        procedure::copyPartitionBlock => molecularCopyPartitionBlock
+        procedure::partitionRange => molecularPartitionRange
+      end type molecular_quadrature_grid
+!
+
+      private::gridClear
+      private::gridIsInitialized
+      private::gridPointCount
+      private::requireGrid
+      private::checkGridData
+      private::gridGetMetadata
+      private::checkBlock
+      private::gridCopyBlock
+      private::gridIntegrate
+      private::gridOverlapMatrix
+      private::gridValidate
+      private::checkRules
+      private::molecularAtomCount
+      private::molecularCopyMolecule
+      private::molecularCopyAtomicRule
+      private::molecularCopyPartitionBlock
+      private::molecularPartitionRange
+      private::prepareBecke1988PairData
+      private::becke1988SmoothStep
+      private::becke1988PartitionWeightsPrepared
+      private::buildLebedevRule0006
+      private::buildLebedevRule0014
+      private::buildLebedevRule0026
+      private::buildLebedevRule0038
+      private::buildLebedevRule0050
+      private::buildLebedevRule0074
+      private::buildLebedevRule0086
+      private::buildLebedevRule0110
+      private::buildLebedevRule0146
+      private::buildLebedevRule0170
+      private::buildLebedevRule0194
+      private::buildLebedevRule0230
+      private::buildLebedevRule0266
+      private::buildLebedevRule0302
+      private::buildLebedevRule0350
+      private::buildLebedevRule0434
+      private::buildLebedevRule0590
+      private::buildLebedevRule0770
+      private::buildLebedevRule0974
+      private::buildLebedevRule1202
+      private::buildLebedevRule1454
+      private::buildLebedevRule1730
+      private::buildLebedevRule2030
+      private::addLebedevOrbit
+      private::ieee_is_finite
 !
       CONTAINS
 !
@@ -1063,7 +1193,7 @@
       end function MQC_Value_Primitive_Angular
 
 !
-!PROCEDURE MQC_Overlap_CGTF
+!PROCEDURE MQC_Overlap_CGFT
       subroutine MQC_Overlap_CGFT(bra,ket,basisIntegrals)
 !
 !     This subroutine calculates an overlap integral between two contracted
@@ -1078,14 +1208,14 @@
       implicit none
       class(MQC_CGTF),intent(in)::bra,ket
       real(kind=real64),dimension(:,:),allocatable,intent(out)::basisIntegrals
-      integer(kind=int64)::i,j,k,ixyz,iBasisBra,iBasisKet,nBasisBra,  &
-        nBasisKet,nBasisPairs,nPrimPairs
+      integer(kind=int64)::i,j,k,ixyz,nCartesianBra,nCartesianKet,  &
+        nCartesianPairs,nPrimPairs
       integer(kind=int64),dimension(:,:),allocatable::indexBasisPairs,  &
         indexPrimPairs
       real(kind=real64)::mu,p
       real(kind=real64),dimension(3)::xAB,xPA,xPB
-      real(kind=real64),dimension(:,:),allocatable::tmpSij,primCoeffs,  &
-        primBasisIntsTot
+      real(kind=real64),dimension(:,:),allocatable::cartesianIntegrals,  &
+        tmpSij,primCoeffs,primBasisIntsTot
       real(kind=real64),dimension(:,:,:),allocatable::primBasisInts
       logical,dimension(:,:),allocatable::haveSij
 !
@@ -1095,39 +1225,34 @@
  1021 format(4x,i3,4x,i3,4x,f8.5,6x,f8.5,6x,f8.5,6x,f8.5)
  1030 format(/,/)
 !
-!     Analytical recurrences in this routine currently operate only on the
-!     complete Cartesian shell. Reject pure shells until the Cartesian result
-!     is explicitly transformed at this boundary.
+!     The analytical recurrence operates on complete Cartesian shells. Build
+!     that working-basis block for every shell pair, then transform it to the
+!     requested exposed representations before returning it.
 !
-      if((bra%angularRepresentation.eq.MQC_CGTF_REAL_PURE.and.  &
-        bra%angularMomentum.gt.1).or.  &
-        (ket%angularRepresentation.eq.MQC_CGTF_REAL_PURE.and.  &
-        ket%angularMomentum.gt.1))  &
-        call mqc_error('MQC_Overlap_CGFT: Real-pure shell integrals NYI.')
-!
-!     Calculate nBasisPairs and nPrimPairs. Then allocate some arrays.
+!     Calculate the Cartesian basis-pair and primitive-pair counts. Then
+!     allocate the Cartesian working arrays.
 !
       if(MQC_Integrals_DEBUG) then
         write(iOut,*)' In MQC_Overlap_CGFT, bra and ket:'
         call MQC_CGTF_print(bra,iOut)
         call MQC_CGTF_print(ket,iOut)
       endIf
-      nBasisBra = bra%nBasis
-      nBasisKet = ket%nBasis
-      nBasisPairs = nBasisBra*nBasisKet
+      nCartesianBra = bra%nCartesian
+      nCartesianKet = ket%nCartesian
+      nCartesianPairs = nCartesianBra*nCartesianKet
       nPrimPairs  = bra%nPrim*ket%nPrim
-      if(Allocated(basisIntegrals)) DeAllocate(basisIntegrals)
-      Allocate(basisIntegrals(nBasisBra,nBasisKet))
-      Allocate(indexBasisPairs(2,nBasisPairs),indexPrimPairs(2,nPrimPairs))
-      Allocate(primBasisInts(nPrimPairs,3,nBasisPairs),  &
-        primBasisIntsTot(nPrimPairs,nBasisPairs),  &
-        primCoeffs(nPrimPairs,nBasisPairs))
+      Allocate(cartesianIntegrals(nCartesianBra,nCartesianKet))
+      Allocate(indexBasisPairs(2,nCartesianPairs),  &
+        indexPrimPairs(2,nPrimPairs))
+      Allocate(primBasisInts(nPrimPairs,3,nCartesianPairs),  &
+        primBasisIntsTot(nPrimPairs,nCartesianPairs),  &
+        primCoeffs(nPrimPairs,nCartesianPairs))
 !
 !     Fill indexBasisPairs and indexPrimPairs.
 !
       k = 0
-      do j = 1,nBasisKet
-        do i = 1,nBasisBra
+      do j = 1,nCartesianKet
+        do i = 1,nCartesianBra
           k = k+1
           indexBasisPairs(1,k) = i
           indexBasisPairs(2,k) = j
@@ -1148,7 +1273,7 @@
 !
       Allocate(tmpSij(bra%angularMomentum+1,ket%angularMomentum+1),  &
         haveSij(bra%angularMomentum+1,ket%angularMomentum+1))
-      do i = 1,nBasisPairs
+      do i = 1,nCartesianPairs
         do j = 1,nPrimPairs
           primCoeffs(j,i) =  &
             bra%primitiveNorm(indexPrimPairs(1,j),indexBasisPairs(1,i))*  &
@@ -1172,8 +1297,8 @@
             primBasisInts(j,2,i)*primBasisInts(j,3,i)
         endDo
       endDo
-      do i = 1,nBasisPairs
-        basisIntegrals(indexBasisPairs(1,i),indexBasisPairs(2,i)) =  &
+      do i = 1,nCartesianPairs
+        cartesianIntegrals(indexBasisPairs(1,i),indexBasisPairs(2,i)) =  &
           dot_product(primCoeffs(:,i),primBasisIntsTot(:,i))
         if(MQC_Integrals_DEBUG) then
           write(iOut,1000) indexBasisPairs(1,i),indexBasisPairs(2,i),  &
@@ -1186,6 +1311,26 @@
         endIf
       endDo
       if(MQC_Integrals_DEBUG) write(iOut,1030)
+!
+!     Transform the complete Cartesian block into the exposed bra and ket
+!     representations. During shell initialization the representation is
+!     temporarily Cartesian and the transformation has not yet been built,
+!     so retain a direct Cartesian path.
+!
+      if(bra%angularRepresentation.eq.MQC_CGTF_REAL_PURE) then
+        if(ket%angularRepresentation.eq.MQC_CGTF_REAL_PURE) then
+          basisIntegrals = MatMul(Transpose(bra%cartesianToBasis),  &
+            MatMul(cartesianIntegrals,ket%cartesianToBasis))
+        else
+          basisIntegrals = MatMul(Transpose(bra%cartesianToBasis),  &
+            cartesianIntegrals)
+        endIf
+      elseIf(ket%angularRepresentation.eq.MQC_CGTF_REAL_PURE) then
+        basisIntegrals = MatMul(cartesianIntegrals,  &
+          ket%cartesianToBasis)
+      else
+        call Move_Alloc(cartesianIntegrals,basisIntegrals)
+      endIf
 !
       return
       end subroutine MQC_Overlap_CGFT
@@ -1274,7 +1419,8 @@
           call MQC_Overlap_Primitive_XYZ_OS(ixyz-2,1,mu,p,XAB,XPA,XPB,Sij,haveSij)
         if(.not.haveSij(ixyz,1))  &
           call MQC_Overlap_Primitive_XYZ_OS(ixyz-1,0,mu,p,XAB,XPA,XPB,Sij,haveSij)
-        Sij(ixyz+1,2) = XPA*Sij(ixyz,2)+(ixyz*Sij(ixyz-1,2)+Sij(ixyz,1))/(mqc_float(2)*p)
+        Sij(ixyz+1,2) = XPA*Sij(ixyz,2)+  &
+          ((ixyz-1)*Sij(ixyz-1,2)+Sij(ixyz,1))/(mqc_float(2)*p)
         haveSij(ixyz+1,2) = .true.
 !
 !     >=2,>=2
@@ -1306,4 +1452,6 @@
       end subroutine MQC_Overlap_Primitive_XYZ_OS
 !
 !
+      include 'mqc_integrals_quadrature.F03'
+
       end module MQC_Integrals

@@ -31,8 +31,8 @@
 !     **    Lee M. Thompson, Xianghai Sheng, Andrew D. Mahler, Dave        **
 !     **    Mullally, and Hrant P. Hratchian                               **
 !     **                                                                   **
-!     **                          Version 26.8.0                           **
-!     **                          August 3, 2026                           **
+!     **                           Version 26.9.3                          **
+!     **                         September 19, 2026                        **
 !     **                                                                   **
 !     **                                                                   **
 !     ** Modules beloning to MQCPack:                                      **
@@ -49,11 +49,11 @@
 !     ***********************************************************************
 !     ***********************************************************************
 !
+      Use iso_fortran_env, Only: int64,real64
       Use MQC_General
       Use MQC_Algebra
       Use MQC_DataStructures
       Use MQC_Files
-!
 !>    \brief <b> Nuclear structure information object</b>
       Type MQC_Molecule_Data
         Type(MQC_Scalar)::NAtoms
@@ -886,6 +886,20 @@
         element = 'Ds'
       case (111)
         element = 'Rg'
+      case (112)
+        element = 'Cn'
+      case (113)
+        element = 'Nh'
+      case (114)
+        element = 'Fl'
+      case (115)
+        element = 'Mc'
+      case (116)
+        element = 'Lv'
+      case (117)
+        element = 'Ts'
+      case (118)
+        element = 'Og'
       case default
         call mqc_error_i('Unknown atomic number in mqc_element_symbol',6,'temp',temp)
       end select
@@ -1154,11 +1168,28 @@
         atomic_number = 110
       case ('rg')
         atomic_number = 111
+      case ('cn')
+        atomic_number = 112
+      case ('nh')
+        atomic_number = 113
+      case ('fl')
+        atomic_number = 114
+      case ('mc')
+        atomic_number = 115
+      case ('lv')
+        atomic_number = 116
+      case ('ts')
+        atomic_number = 117
+      case ('og')
+        atomic_number = 118
       case default
         call mqc_error_a('Unknown element symbol in mqc_atomic_number',6,'temp',temp)
       end select
 !
       end function mqc_atomic_number 
+!
+!
+
 !
 !
 !     PROCEDURE MQC_UPDATE_MOL_DATA

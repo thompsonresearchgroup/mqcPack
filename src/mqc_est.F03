@@ -29995,6 +29995,8 @@
       Type(MQC_Determinant)::Determinants2
       Logical::SymmFlag,S2Flag
       Character(len=12)::SymmStr,index_order='genetic'
+      Integer(kind=int64),Dimension(:),Allocatable::RList_A,RList_B,RList_Idx
+      Integer(kind=int64)::nRList,iR
       Integer(kind=int64)::A1_subLevel,A2_subLevel,B1_subLevel,B2_subLevel,T1_subLevel,T2_subLevel,&
         L_Iabk,R_Iabk,L_Xk,R_Xk
 !
@@ -30092,6 +30094,98 @@
           iOut,'Determinants2order',Determinants2%order)
       end select
 
+!
+!     Enumerate the ket determinants once: their string indices and CI index
+!     do not depend on the bra, so they are not recomputed for every bra.
+      allocate(RList_A(Determinants2%NAlpStr*Determinants2%NBetStr),&
+        RList_B(Determinants2%NAlpStr*Determinants2%NBetStr),&
+        RList_Idx(Determinants2%NAlpStr*Determinants2%NBetStr))
+      nRList = 0
+      R_Index = 0
+      R_A_Start = 1
+      Do R_A_Sub = 0, RASub_End
+        if(Determinants2%order.eq.'ci'.and..not.any(rSubsA.eq.R_A_Sub)) cycle
+        R_B_Start = 1
+        Do R_B_Sub = 0, RBSub_End
+          if(Determinants2%order.eq.'ci'.and..not.any(rSubsB.eq.R_B_Sub)) cycle
+          if(Determinants2%order.eq.'ci'.and..not.any(rSubsT.eq.(R_A_Sub+R_B_Sub))) cycle 
+          select case (Determinants2%order)
+          case('lexical')
+            R_A_Start = Determinants2%NAlpStr
+            R_B_Start = Determinants2%NBetStr
+            R_A_End = 1
+            R_B_End = 1
+            R_A_Step = -1
+            R_B_Step = -1
+          case('ci')
+            If (R_A_Sub.ne.0) R_A_Start = sum(Determinants2%NSubsAlpha%vat(1,R_A_Sub))+1
+            If (R_B_Sub.ne.0) R_B_Start = sum(Determinants2%NSubsBeta%vat(1,R_B_Sub))+1
+            If((R_A_Start.gt.Determinants2%NAlpStr).or.(R_B_Start.gt.Determinants2%NBetStr)) cycle
+            R_A_End = R_A_Start + Determinants2%NSubsAlpha%at(R_A_Sub+1) - 1
+            R_B_End = R_B_Start + Determinants2%NSubsBeta%at(R_B_Sub+1) - 1
+            R_A_Step = 1
+            R_B_Step = 1
+          case default
+            call mqc_error_a('Unrecognized determinant storage type in mqc_build_ci_hamiltonian',&
+              iOut,'Determinants%order',Determinants%order)
+          end select
+          Do R_A_String = R_A_Start, R_A_End, R_A_Step
+            Do R_B_String = R_B_Start, R_B_End, R_A_Step
+
+              Alpha_String_2 = Determinants2%Strings%Alpha(R_A_String) 
+              Beta_String_2 = Determinants2%Strings%Beta(R_B_String) 
+
+              A2_subLevel = get_string_sub_level(Alpha_String_2,nAlpha2)
+              B2_sublevel = get_string_sub_level(Beta_String_2,nBeta2)
+              T2_sublevel = A2_subLevel + B2_subLevel
+
+              if(.not.any(A2_subLevel.eq.rSubsA)) cycle
+              if(.not.any(B2_subLevel.eq.rSubsB)) cycle
+              if(.not.any(T2_subLevel.eq.rSubsT)) cycle
+               
+              if(index_order.eq.'genetic') then
+!                       Compute composite index within substituion level k
+!                       I_{alpha,beta}^{k} = I_{alpha}^{k_i}*N_{\beta}^{k_j} + I_{beta}^{k_j}
+                R_Iabk = mqc_get_string_index(Alpha_String_2,&
+                  (determinants2%nBasis-determinants2%nVirt),&
+                  (nAlpha1-determinants2%nCore),'lexical',[A2_subLevel],determinants2%nCore)*&
+                  Determinants2%NSubsBeta%at(B2_SubLevel+1) + &
+                  mqc_get_string_index(Beta_String_2,&
+                  (determinants2%nBasis-determinants2%nVirt),(nBeta2-determinants2%nCore),&
+                  'lexical',[B2_subLevel],determinants2%nCore)
+
+!                       Compute composite substitution level offset 
+!                       X_{k} = sum_{l in Kallowed, l<k}T_{l} 
+!                       where T_{k} = sum_{k_i+k_j=k} N_{alpha}^{k_i}+N_{beta}^{k_j}
+                R_Xk = 0
+                r_offset: do Counter = 0,size(Determinants2%NSubsAlpha)-1
+                  do Counter2 = 0,size(Determinants2%NSubsBeta)-1
+                    if(Counter.eq.A2_subLevel.and.Counter2.eq.B2_subLevel) exit r_offset
+                    if(.not.any(Counter.eq.rSubsA)) cycle
+                    if(.not.any(Counter2.eq.rSubsB)) cycle
+                    if(.not.any(Counter+Counter2.eq.rSubsT)) cycle
+                    R_Xk = R_Xk + Determinants2%NSubsAlpha%at(Counter+1)*&
+                      Determinants2%NSubsBeta%at(Counter2+1)
+                  endDo
+                endDo r_offset
+
+!                       Compute final index I_{alpha,beta} = X_{k} + I_{alpha,beta}^{k}
+                R_Index = R_Xk + R_Iabk + 1
+              elseIf(index_order.eq.'input') then
+                R_Index = R_Index + 1
+              else
+                call mqc_error_a('Unrecognized index order requested in mqc_build_ci_hamiltonian',6,&
+                  'index_order',index_order)
+              endIf
+                nRList = nRList + 1
+                RList_A(nRList) = R_A_String
+                RList_B(nRList) = R_B_String
+                RList_Idx(nRList) = R_Index
+              EndDo
+            EndDo
+          EndDo
+        EndDo
+
       L_Index = 0
       L_A_Start = 1
       Do L_A_Sub = 0, LASub_End
@@ -30168,84 +30262,12 @@
                   'index_order',index_order)
               endIf
 
-              R_Index = 0
-              R_A_Start = 1
-              Do R_A_Sub = 0, RASub_End
-                if(Determinants2%order.eq.'ci'.and..not.any(rSubsA.eq.R_A_Sub)) cycle
-                R_B_Start = 1
-                Do R_B_Sub = 0, RBSub_End
-                  if(Determinants2%order.eq.'ci'.and..not.any(rSubsB.eq.R_B_Sub)) cycle
-                  if(Determinants2%order.eq.'ci'.and..not.any(rSubsT.eq.(R_A_Sub+R_B_Sub))) cycle 
-                  select case (Determinants2%order)
-                  case('lexical')
-                    R_A_Start = Determinants2%NAlpStr
-                    R_B_Start = Determinants2%NBetStr
-                    R_A_End = 1
-                    R_B_End = 1
-                    R_A_Step = -1
-                    R_B_Step = -1
-                  case('ci')
-                    If (R_A_Sub.ne.0) R_A_Start = sum(Determinants2%NSubsAlpha%vat(1,R_A_Sub))+1
-                    If (R_B_Sub.ne.0) R_B_Start = sum(Determinants2%NSubsBeta%vat(1,R_B_Sub))+1
-                    If((R_A_Start.gt.Determinants2%NAlpStr).or.(R_B_Start.gt.Determinants2%NBetStr)) cycle
-                    R_A_End = R_A_Start + Determinants2%NSubsAlpha%at(R_A_Sub+1) - 1
-                    R_B_End = R_B_Start + Determinants2%NSubsBeta%at(R_B_Sub+1) - 1
-                    R_A_Step = 1
-                    R_B_Step = 1
-                  case default
-                    call mqc_error_a('Unrecognized determinant storage type in mqc_build_ci_hamiltonian',&
-                      iOut,'Determinants%order',Determinants%order)
-                  end select
-                  Do R_A_String = R_A_Start, R_A_End, R_A_Step
-                    Do R_B_String = R_B_Start, R_B_End, R_A_Step
-
-                      Alpha_String_2 = Determinants2%Strings%Alpha(R_A_String) 
-                      Beta_String_2 = Determinants2%Strings%Beta(R_B_String) 
-
-                      A2_subLevel = get_string_sub_level(Alpha_String_2,nAlpha2)
-                      B2_sublevel = get_string_sub_level(Beta_String_2,nBeta2)
-                      T2_sublevel = A2_subLevel + B2_subLevel
-
-                      if(.not.any(A2_subLevel.eq.rSubsA)) cycle
-                      if(.not.any(B2_subLevel.eq.rSubsB)) cycle
-                      if(.not.any(T2_subLevel.eq.rSubsT)) cycle
-                       
-                      if(index_order.eq.'genetic') then
-!                       Compute composite index within substituion level k
-!                       I_{alpha,beta}^{k} = I_{alpha}^{k_i}*N_{\beta}^{k_j} + I_{beta}^{k_j}
-                        R_Iabk = mqc_get_string_index(Alpha_String_2,&
-                          (determinants2%nBasis-determinants2%nVirt),&
-                          (nAlpha1-determinants2%nCore),'lexical',[A2_subLevel],determinants2%nCore)*&
-                          Determinants2%NSubsBeta%at(B2_SubLevel+1) + &
-                          mqc_get_string_index(Beta_String_2,&
-                          (determinants2%nBasis-determinants2%nVirt),(nBeta2-determinants2%nCore),&
-                          'lexical',[B2_subLevel],determinants2%nCore)
-
-!                       Compute composite substitution level offset 
-!                       X_{k} = sum_{l in Kallowed, l<k}T_{l} 
-!                       where T_{k} = sum_{k_i+k_j=k} N_{alpha}^{k_i}+N_{beta}^{k_j}
-                        R_Xk = 0
-                        r_offset: do Counter = 0,size(Determinants2%NSubsAlpha)-1
-                          do Counter2 = 0,size(Determinants2%NSubsBeta)-1
-                            if(Counter.eq.A2_subLevel.and.Counter2.eq.B2_subLevel) exit r_offset
-                            if(.not.any(Counter.eq.rSubsA)) cycle
-                            if(.not.any(Counter2.eq.rSubsB)) cycle
-                            if(.not.any(Counter+Counter2.eq.rSubsT)) cycle
-                            R_Xk = R_Xk + Determinants2%NSubsAlpha%at(Counter+1)*&
-                              Determinants2%NSubsBeta%at(Counter2+1)
-                          endDo
-                        endDo r_offset
-
-!                       Compute final index I_{alpha,beta} = X_{k} + I_{alpha,beta}^{k}
-                        R_Index = R_Xk + R_Iabk + 1
-                      elseIf(index_order.eq.'input') then
-                        R_Index = R_Index + 1
-                      else
-                        call mqc_error_a('Unrecognized index order requested in mqc_build_ci_hamiltonian',6,&
-                          'index_order',index_order)
-                      endIf
+              Do iR = 1, nRList
+                      R_Index = RList_Idx(iR)
 
                       if(SymmFlag.and.L_Index.lt.R_Index) cycle
+                      Alpha_String_2 = Determinants2%Strings%Alpha(RList_A(iR))
+                      Beta_String_2 = Determinants2%Strings%Beta(RList_B(iR))
 !                      write(*,*) '-------------------------------------------'
 !                      write(*,*) ' L_Index: ',L_Index,'   R_Index:   ',R_Index 
 !                      write(*,*) '-------------------------------------------'
@@ -30270,9 +30292,6 @@
                           Call MQC_Error('No integrals present in MQC_Build_CI_Hamiltonian')
                         EndIf
                       EndIf
-                    EndDo
-                  EndDo
-                EndDo
               EndDo
             EndDo
           EndDo

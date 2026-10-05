@@ -17066,7 +17066,7 @@
         Elseif (Mat%Data_Type.eq.'Real') then
           do I = 1,Mat%NRow
             do J = 1,Mat%NCol
-              if (abs(Mat%MatR(I,J)).ne.my_thresh) then
+              if (abs(Mat%MatR(I,J)).gt.my_thresh) then
                 isZero = .false.
                 return
               end if
@@ -17075,7 +17075,7 @@
         Elseif (Mat%Data_Type.eq.'Complex') then
           do I = 1,Mat%NRow
             do J = 1,Mat%NCol
-              if (abs(Mat%MatC(I,J)).ne.my_thresh) then
+              if (abs(Mat%MatC(I,J)).gt.my_thresh) then
                 isZero = .false.
                 return
               end if
@@ -17101,7 +17101,7 @@
         ElseIf (Mat%Data_Type.eq.'Real') then
           do I = 1,Mat%NRow
             do J = 1,I
-              if (abs(Mat%MatR(I*(I-1)/2+J,1)).ne.my_thresh) then
+              if (abs(Mat%MatR(I*(I-1)/2+J,1)).gt.my_thresh) then
                 isZero = .false.
                 return
               end if
@@ -17110,7 +17110,7 @@
         ElseIf (Mat%Data_Type.eq.'Complex') then
           do I = 1,Mat%NRow
             do J = 1,I
-              if (abs(Mat%MatC(I*(I-1)/2+J,1)).ne.my_thresh) then
+              if (abs(Mat%MatC(I*(I-1)/2+J,1)).gt.my_thresh) then
                 isZero = .false.
                 return
               end if
@@ -17130,14 +17130,14 @@
           end do
         ElseIf (Mat%Data_Type.eq.'Real') then
           do I = 1,Mat%NRow
-            if (abs(Mat%MatR(I,1)).ne.my_thresh) then
+            if (abs(Mat%MatR(I,1)).gt.my_thresh) then
               isZero = .false.
               return
             end if
           end do
         ElseIf (Mat%Data_Type.eq.'Complex') then
           do I = 1,Mat%NRow
-            if (abs(Mat%MatC(I,1)).ne.my_thresh) then
+            if (abs(Mat%MatC(I,1)).gt.my_thresh) then
               isZero = .false.
               return
             end if

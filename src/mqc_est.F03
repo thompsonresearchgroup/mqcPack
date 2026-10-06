@@ -4648,6 +4648,8 @@
           if(integral%hasBeta()) &
             call matrixOut%mput(integral%beta,[nDimAlpha1+1,nDimTotal1],[nDimAlpha2+1,nDimTotal2]) 
         elseIf (integral%type().eq.'general') then
+          ! Off-diagonal labels use (column spin,row spin): alphaBeta is
+          ! beta-row/alpha-column, while betaAlpha is alpha-row/beta-column.
           if(integral%hasAlpha()) &
             call matrixOut%mput(integral%alpha,[1,nDimAlpha1],[1,nDimAlpha2]) 
           if(integral%hasBeta()) &
@@ -14319,12 +14321,12 @@
                 if(integral%array_type.eq.'general') then
                   if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
                     call alphaBetaLoc%put(alphaBetaLoc%at(l,k)-&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n+nBasis),l,k)
+                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n),l,k)
                   endIf
                 !BA Block
                   if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
                     call betaAlphaLoc%put(betaAlphaLoc%at(l,k)-&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n),l,k)
+                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n+nBasis),l,k)
                   endIf
                 endIf
               end do
@@ -14409,7 +14411,11 @@
       type(mqc_scf_integral)::output
       type(mqc_matrix)::aa,bb,ab,ba,tmpM
       logical::same
-      integer::ia,ib
+      integer::ia,ib,ic,id,iBlock
+      character(len=2)::densityBlock,outputBlock
+      character(len=4),parameter::spinBlocks(16)=[character(len=4)::&
+        'aaaa','aaab','aaba','aabb','abaa','abab','abba','abbb',&
+        'baaa','baab','baba','babb','bbaa','bbab','bbba','bbbb']
 !      
       eris = erisIn
       if(present(inorder)) then
@@ -14433,6 +14439,50 @@
         ib=2
         same=.true.
       endif
+
+!     A two-ERI block label gives the spin of each tensor index in index
+!     order.  An MQC_SCF_Integral off-diagonal label instead uses
+!     (column spin,row spin).  Construct those mappings explicitly for the
+!     fully general case rather than encoding them in separate ab/ba cases.
+      if(eris%type().eq.'general'.and.integral%type().eq.'general') then
+        ic=0
+        id=0
+        do iBlock=1,4
+          if(iBlock.ne.ia.and.iBlock.ne.ib) then
+            if(ic.eq.0) then
+              ic=iBlock
+            else
+              id=iBlock
+            end if
+          end if
+        end do
+        densityBlock=spinBlocks(1)(ib:ib)//spinBlocks(1)(ia:ia)
+        tmpM=MQC_R4Tensor_Matrix_Contraction(eris%getBlock(spinBlocks(1)),&
+                                             integral%getBlock(densityBlock),ind)
+        call aa%init(size(tmpM,1),size(tmpM,2))
+        call bb%init(size(tmpM,1),size(tmpM,2))
+        call ab%init(size(tmpM,1),size(tmpM,2))
+        call ba%init(size(tmpM,1),size(tmpM,2))
+        do iBlock=1,size(spinBlocks)
+          densityBlock=spinBlocks(iBlock)(ib:ib)//spinBlocks(iBlock)(ia:ia)
+          outputBlock=spinBlocks(iBlock)(id:id)//spinBlocks(iBlock)(ic:ic)
+          tmpM=MQC_R4Tensor_Matrix_Contraction(eris%getBlock(spinBlocks(iBlock)),&
+                                               integral%getBlock(densityBlock),ind)
+          select case(outputBlock)
+          case('aa')
+            aa=aa+tmpM
+          case('bb')
+            bb=bb+tmpM
+          case('ab')
+            ab=ab+tmpM
+          case('ba')
+            ba=ba+tmpM
+          end select
+        end do
+        call mqc_integral_allocate(output,'','general',aa,bb,ab,ba)
+        return
+      end if
+
       select case (eris%type())
       case ('space','regular')
         select case (integral%type())
@@ -16336,11 +16386,15 @@
       character(len=64)::mylabel,intType
       integer(kind=int64)::r4t1,r4t2,r4t3,r4t4,nB1,nB2,nB3,nB4
       type(mqc_twoERIs)::temp
-      Integer(kind=int64)::ia,ja,ka,la,ib,jb,kb,lb,i,j,k,l
+      Integer(kind=int64)::ia,ja,ka,la,ib,jb,kb,lb,i,j,k,l,iBlock,jBlock
       Integer(kind=int64)::dimAi,dimAj,dimAk,dimAl,dimBi,dimBj,dimBk,dimBl
       character(len=4)::str1,str2,active_conf
+      character(len=2)::outputBlock
       character(len=4),dimension(4)::allowed_spin,a_bbb_array,aaa_b_array
       character(len=4),dimension(6)::aa_bb_array
+      character(len=4),parameter::spinBlocks(16)=[character(len=4)::&
+        'aaaa','aaab','aaba','aabb','abaa','abab','abba','abbb',&
+        'baaa','baab','baba','babb','bbaa','bbab','bbba','bbbb']
 !
       aa_bb_array=['aabb','abab','abba','baab','baba','bbaa']
       a_bbb_array=['abbb','babb','bbab','bbba']
@@ -16413,6 +16467,42 @@
       call ab%init(eris1%blockSize('alpha',ka),eris1%blockSize('beta',la))
       call ba%init(eris1%blockSize('beta',ka),eris1%blockSize('alpha',la))
       call bb%init(eris1%blockSize('beta',ka),eris1%blockSize('beta',la))
+
+!     A two-ERI label lists spins in tensor-index order, whereas an
+!     MQC_SCF_Integral label uses (column spin,row spin).  For two general
+!     tensors, contract every compatible spin-block pair and classify the
+!     remaining indices explicitly in the SCF-integral convention.
+      if(eris1%type().eq.'general'.and.eris2%type().eq.'general') then
+        do iBlock=1,size(spinBlocks)
+          do jBlock=1,size(spinBlocks)
+            if(spinBlocks(iBlock)(ia:ia).ne.spinBlocks(jBlock)(ib:ib)) cycle
+            if(spinBlocks(iBlock)(ja:ja).ne.spinBlocks(jBlock)(jb:jb)) cycle
+            if(spinBlocks(iBlock)(ka:ka).ne.spinBlocks(jBlock)(kb:kb)) cycle
+            if(spinBlocks(iBlock)(la:la).ne.spinBlocks(jBlock)(lb:lb)) cycle
+            outputBlock=spinBlocks(iBlock)(la:la)//spinBlocks(iBlock)(ka:ka)
+            select case(outputBlock)
+            case('aa')
+              aa=aa+MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                eris1%getBlock(spinBlocks(iBlock)),eris2%getBlock(spinBlocks(jBlock)),&
+                index1,index2)
+            case('bb')
+              bb=bb+MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                eris1%getBlock(spinBlocks(iBlock)),eris2%getBlock(spinBlocks(jBlock)),&
+                index1,index2)
+            case('ab')
+              ab=ab+MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                eris1%getBlock(spinBlocks(iBlock)),eris2%getBlock(spinBlocks(jBlock)),&
+                index1,index2)
+            case('ba')
+              ba=ba+MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                eris1%getBlock(spinBlocks(iBlock)),eris2%getBlock(spinBlocks(jBlock)),&
+                index1,index2)
+            end select
+          end do
+        end do
+        call mqc_integral_allocate(IntOut,'','general',aa,bb,ab,ba)
+        return
+      end if
 
       aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
             eris1%getBlock('aaaa'),eris2%getBlock('aaaa'),index1,index2)
@@ -22033,14 +22123,15 @@
             if(integral%hasBeta()) call integral%beta%put(element,myI,myJ)
           endIf
         elseIf(integral%array_type.eq.'general') then
+          ! Keep the global spin-orbital indexing identical to getBlock('full').
           if(myI.le.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             if(integral%hasAlpha()) call integral%alpha%put(element,myI,myJ)
           elseIf(myI.le.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myJ = myJ - integral%blockSize('alpha',2)
-            if(integral%hasAlphaBeta()) call integral%alphaBeta%put(element,myI,myJ)
+            if(integral%hasBetaAlpha()) call integral%betaAlpha%put(element,myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
-            if(integral%hasBetaAlpha()) call integral%betaAlpha%put(element,myI,myJ)
+            if(integral%hasAlphaBeta()) call integral%alphaBeta%put(element,myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
             myJ = myJ - integral%blockSize('alpha',2)
@@ -22202,14 +22293,15 @@
             if(integral%hasBeta()) element = integral%beta%at(myI,myJ)
           endIf
         elseIf(integral%array_type.eq.'general') then
+          ! Keep the global spin-orbital indexing identical to getBlock('full').
           if(myI.le.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             if(integral%hasAlpha()) element = integral%alpha%at(myI,myJ)
           elseIf(myI.le.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myJ = myJ - integral%blockSize('alpha',2)
-            if(integral%hasAlphaBeta()) element = integral%alphaBeta%at(myI,myJ)
+            if(integral%hasBetaAlpha()) element = integral%betaAlpha%at(myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
-            if(integral%hasBetaAlpha()) element = integral%betaAlpha%at(myI,myJ)
+            if(integral%hasAlphaBeta()) element = integral%alphaBeta%at(myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
             myJ = myJ - integral%blockSize('alpha',2)

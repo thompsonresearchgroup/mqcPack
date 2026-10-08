@@ -3611,7 +3611,6 @@
       call mqc_integral_allocate(generalMO,'complex general test MOs','general',&
                                  moAA,moBB,moAB,moBA)
       moFull=generalMO%getBlock('full')
-
       eriX=generalMO%outer2ERI(dagger(generalMO))
       eriHalf=mqc_eri_eri_partial_contraction_2ERI(eriAO,eriX,&
                                                    [4,3,1,2],[1,4,3,2])

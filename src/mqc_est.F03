@@ -289,6 +289,7 @@
         character(Len=64),private::integralType !regular,raffenetti1,raffenetti2,raffenetti3,space,spin,general
         character(Len=64),private::interactionType !coulomb,exchange,inverted,doublebar,ms,
         character(Len=64),private::storageType !full,symm
+        Integer(kind=int64),Private::nA1=0,nA2=0,nA3=0,nA4=0,nB1=0,nB2=0,nB3=0,nB4=0
 !>
 !>      Definition of non-zero MO elements based on integralType, interactionType and
 !>      storageType
@@ -361,6 +362,7 @@
 !>      \brief <b> Print the MQC_TwoERIs object</b>
         procedure, public::print => mqc_print_twoERIs
         procedure, public::at => mqc_twoERIs_at
+        procedure, public::put => mqc_twoERIs_put
 !>      \brief <b> Initilizes the MQC_twoERIs object</b>
         Procedure, Public::init => mqc_twoERIs_initialize
 !>      \brief <b> Return the spin block dimention of the MQC_TwoERIs object</b>
@@ -1201,13 +1203,13 @@
           call twoERIs%aaba%print(iout,'(aa|ba)',short_print_threshold=print_threshold)
         if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('abaa')) &
           call twoERIs%abaa%print(iout,'(ab|aa)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbba')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baaa')) &
           call twoERIs%baaa%print(iout,'(ba|aa)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbab')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbba')) &
           call twoERIs%bbba%print(iout,'(bb|ba)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('babb')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbab')) &
           call twoERIs%bbab%print(iout,'(bb|ab)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full') &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('babb')) &
           call twoERIs%babb%print(iout,'(ba|bb)',short_print_threshold=print_threshold)
         if(twoERIs%hasSpinBlock('abbb')) &
           call twoERIs%abbb%print(iout,'(ab|bb)',short_print_threshold=print_threshold)
@@ -2720,7 +2722,8 @@
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
-!>    \date 2019
+!>    \author M. M. F. Moraes
+!>    \date 2019, 2026
 !
       function mqc_eris_dimension(eris,label,axis) result(dimBlock)
 !
@@ -2743,27 +2746,16 @@
       call string_change_case(label,'l',myLabel)
 
       select case (myLabel)
-      case('alpha') 
-        if(.not.eris%hasSpinBlock('alpha')) then
-          dimBlock = 0
-        else
-          dimBlock = size(eris%alpha,my_axis)
-        endIf
+      case('alpha')
+        if(my_axis.eq.1) dimBlock = eris%nA1
+        if(my_axis.eq.2) dimBlock = eris%nA2
+        if(my_axis.eq.3) dimBlock = eris%nA3
+        if(my_axis.eq.4) dimBlock = eris%nA4
       case('beta')
-        if(.not.eris%hasSpinBlock('beta')) then
-          if(eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or.eris%type().eq.'raffenetti2'.or.&
-            eris%type().eq.'raffenetti3'.or.eris%type().eq.'space') then
-            if(.not.eris%hasSpinBlock('alpha')) then
-              dimBlock = 0
-            else
-              dimBlock = size(eris%alpha,my_axis)
-            endIf
-          else
-            dimBlock = 0
-          endIf
-        else
-          dimBlock = size(eris%beta,my_axis)
-        endIf
+        if(my_axis.eq.1) dimBlock = eris%nB1
+        if(my_axis.eq.2) dimBlock = eris%nB2
+        if(my_axis.eq.3) dimBlock = eris%nB3
+        if(my_axis.eq.4) dimBlock = eris%nB4
       case default
         call mqc_error_A('label not valid in mqc_eris_dimension', 6, &
              'myLabel', myLabel )
@@ -3055,13 +3047,14 @@
 !
       subroutine mqc_twoeris_allocate(twoERIs,storIntType,integralType,alpha,beta,&
           alphaBeta,betaAlpha,abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba, &
-          bbab,babb,abbb,allocationVector) 
+          bbab,babb,abbb,allocationVector,nA1,nA2,nA3,nA4,nB1,nB2,nB3,nB4)
 !
       implicit none
       class(mqc_twoERIs)::twoERIs
       character(len=*)::storIntType,integralType
       type(mqc_r4tensor),optional::alpha,beta,alphaBeta,betaAlpha,abab,abba,baab, &
         baba,aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb
+      integer,optional::nA1,nA2,nA3,nA4,nB1,nB2,nB3,nB4
       logical,dimension(16),optional::allocationVector
       logical,dimension(16)::allocVec
       integer::i
@@ -3192,6 +3185,111 @@
       if(present(bbab).and.allocVec(14)) twoERIs%bbab = bbab
       if(present(babb).and.allocVec(15)) twoERIs%babb = babb
       if(present(abbb).and.allocVec(16)) twoERIs%abbb = abbb
+
+      if(allocVec(1).and.size(twoERIs%alpha,1).ne.0.and.size(twoERIs%alpha,2).ne.0&
+                    .and.size(twoERIs%alpha,3).ne.0.and.size(twoERIs%alpha,4).ne.0) then
+        twoERIs%nA1 = size(twoERIs%alpha,1)
+        twoERIs%nA2 = size(twoERIs%alpha,2)
+        twoERIs%nA3 = size(twoERIs%alpha,3)
+        twoERIs%nA4 = size(twoERIs%alpha,4)
+        if(present(nA1)) then
+          if(nA1.ne.twoERIs%nA1.and.nA1.ne.0) call mqc_error_i('Mismatch dimensions &
+            &provided in mqc_twoERIs_allocate',6,'nA1',nA1,'twoERIs%nA1',&
+            twoERIs%nA1)
+        endIf
+        if(present(nA2)) then
+          if(nA2.ne.twoERIs%nA2.and.nA2.ne.0) call mqc_error_i('Mismatch dimensions &
+            &provided in mqc_twoERIs_allocate',6,'nA2',nA2,'twoERIs%nA2',&
+            twoERIs%nA2)
+        endIf
+        if(present(nA3)) then
+          if(nA3.ne.twoERIs%nA3.and.nA3.ne.0) call mqc_error_i('Mismatch dimensions &
+            &provided in mqc_twoERIs_allocate',6,'nA3',nA3,'twoERIs%nA3',&
+            twoERIs%nA3)
+        endIf
+        if(present(nA4)) then
+          if(nA4.ne.twoERIs%nA4.and.nA4.ne.0) call mqc_error_i('Mismatch dimensions &
+            &provided in mqc_twoERIs_allocate',6,'nA4',nA4,'twoERIs%nA4',&
+            twoERIs%nA4)
+        endIf
+      else
+        if(present(nA1)) then
+          twoERIs%nA1 = nA1
+        else
+          twoERIs%nA1 = 0
+        endIf
+        if(present(nA2)) then
+          twoERIs%nA2 = nA2
+        else
+          twoERIs%nA2 = 0
+        endIf
+        if(present(nA3)) then
+          twoERIs%nA3 = nA3
+        else
+          twoERIs%nA3 = 0
+        endIf
+        if(present(nA4)) then
+          twoERIs%nA4 = nA4
+        else
+          twoERIs%nA4 = 0
+        endIf
+      endIf
+      if(twoERIs%integralType.eq.'spin'.or.twoERIs%integralType.eq.'general') then
+        if(allocVec(2).and.size(twoERIs%beta,1).ne.0.and.size(twoERIs%beta,2).ne.0&
+                    .and.size(twoERIs%beta,3).ne.0.and.size(twoERIs%beta,4).ne.0) then
+          twoERIs%nB1 = size(twoERIs%beta,1)
+          twoERIs%nB2 = size(twoERIs%beta,2)
+          twoERIs%nB3 = size(twoERIs%beta,3)
+          twoERIs%nB4 = size(twoERIs%beta,4)
+          if(present(nB1)) then
+            if(nB1.ne.twoERIs%nB1.and.nB1.ne.0) call mqc_error_i('Mismatch in dimensions &
+              &provided in mqc_twoERIs_allocate',6,'nB1',nB1,'twoERIs%nB1',&
+              twoERIs%nB1)
+          endIf
+          if(present(nB2)) then
+            if(nB2.ne.twoERIs%nB2.and.nB2.ne.0) call mqc_error_i('Mismatch in dimensions &
+              &provided in mqc_twoERIs_allocate',6,'nB2',nB2,'twoERIs%nB2',&
+              twoERIs%nB2)
+          endIf
+          if(present(nB3)) then
+            if(nB3.ne.twoERIs%nB3.and.nB3.ne.0) call mqc_error_i('Mismatch in dimensions &
+              &provided in mqc_twoERIs_allocate',6,'nB3',nB3,'twoERIs%nB3',&
+              twoERIs%nB3)
+          endIf
+          if(present(nB4)) then
+            if(nB4.ne.twoERIs%nB4.and.nB4.ne.0) call mqc_error_i('Mismatch in dimensions &
+              &provided in mqc_twoERIs_allocate',6,'nB4',nB4,'twoERIs%nB4',&
+              twoERIs%nB4)
+          endIf
+        else
+          if(present(nB1)) then
+            twoERIs%nB1 = nB1
+          else
+            twoERIs%nB1 = 0
+          endIf
+          if(present(nB2)) then
+            twoERIs%nB2 = nB2
+          else
+            twoERIs%nB2 = 0
+          endIf
+          if(present(nB3)) then
+            twoERIs%nB3 = nB3
+          else
+            twoERIs%nB3 = 0
+          endIf
+          if(present(nB4)) then
+            twoERIs%nB4 = nB4
+          else
+            twoERIs%nB4 = 0
+          endIf
+        endIf
+      else
+        twoERIs%nB1 = twoERIs%nA1
+        twoERIs%nB2 = twoERIs%nA2
+        twoERIs%nB3 = twoERIs%nA3
+        twoERIs%nB4 = twoERIs%nA4
+      endIf
+
 !
       end subroutine mqc_twoeris_allocate  
 !
@@ -4548,7 +4646,6 @@
       else
         my_nBeta4 = nBeta4
       endIf
-
       call aaaa%init(nAlpha,my_nAlpha2,my_nAlpha3,my_nAlpha4)
       if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2&
          .and.my_nAlpha3.eq.my_nBeta3.and.my_nAlpha4.eq.my_nBeta4) then
@@ -4572,13 +4669,19 @@
         call aaab%init(nAlpha,my_nAlpha2,my_nAlpha3,my_nBeta4)
       endIf
       if (eriType.eq.'space') then
-        call mqc_twoeris_allocate(eriOut,'full-coulomb','space',aaaa)
+        call mqc_twoeris_allocate(eriOut,'full-coulomb','space',aaaa,&
+             nA1=nAlpha,nA2=my_nAlpha2,nA3=my_nAlpha3,nA4=my_nAlpha4,&
+             nB1=nBeta,nB2=my_nBeta2,nB3=my_nBeta3,nB4=my_nBeta4)
       elseif (eriType.eq.'spin') then
-        call mqc_twoeris_allocate(eriOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa)
+        call mqc_twoeris_allocate(eriOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa,&
+             nA1=nAlpha,nA2=my_nAlpha2,nA3=my_nAlpha3,nA4=my_nAlpha4,&
+             nB1=nBeta,nB2=my_nBeta2,nB3=my_nBeta3,nB4=my_nBeta4)
       elseif (eriType.eq.'general') then
         call mqc_twoeris_allocate(eriOut,'full-coulomb','general',aaaa,bbbb,aabb,bbaa,&
                                   abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,&
-                                  bbab,babb,abbb)
+                                  bbab,babb,abbb,&
+             nA1=nAlpha,nA2=my_nAlpha2,nA3=my_nAlpha3,nA4=my_nAlpha4,&
+             nB1=nBeta,nB2=my_nBeta2,nB3=my_nBeta3,nB4=my_nBeta4)
       endif
 
 !
@@ -8600,13 +8703,21 @@
             case('coulomb')
               !space/coulomb + space/coulomb
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
-              call mqc_twoeris_allocate(ERIOut,'full-coulomb','space',aaaa)
+              call mqc_twoeris_allocate(ERIOut,'full-coulomb','space',aaaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('exchange','doublebar')
               !space/coulomb + space/exchange/doublebar
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('inverted','ms')
               !space/coulomb + space/inverted/ms
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -8614,7 +8725,11 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
-              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -8624,19 +8739,31 @@
             case('exchange')
               !space/exchange + space/exchange
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
-              call mqc_twoeris_allocate(ERIOut,'full-exchange','space',aaaa)
+              call mqc_twoeris_allocate(ERIOut,'full-exchange','space',aaaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('coulomb')
               !space/exchange + space/coulomb
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               !space/exchange + space/doublebar
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('inverted','ms')
               !space/exchange + space/inverted/ms
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -8644,7 +8771,11 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
-              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -8662,7 +8793,11 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
-              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -8674,19 +8809,31 @@
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('exchange')
               !space/doublebar + space/exchange
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('coulomb')
               !space/doublebar + space/coulomb
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('inverted','ms')
               !space/doublebar + space/inverted/ms
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -8694,7 +8841,11 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
-              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -8712,7 +8863,11 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
-              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -8732,9 +8887,17 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               if(ERIB%storType().eq.'full') then
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
-                call mqc_twoeris_allocate(ERIOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa)
+                call mqc_twoeris_allocate(ERIOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-coulomb','spin',aaaa,bbbb,aabb)
+                call mqc_twoeris_allocate(ERIOut,'symm-coulomb','spin',aaaa,bbbb,aabb,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !space/coulomb + spin/exchange
@@ -8748,9 +8911,17 @@
                 bbaa = ERIA%getBlock('bbaa')
                 baab = ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !space/coulomb + spin/inverted
@@ -8763,9 +8934,17 @@
                 bbaa = ERIA%getBlock('bbaa')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                             abab=abab,baba=baba)
+                                                             abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !space/coulomb + spin/doublebar
@@ -8777,9 +8956,17 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baab = ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !space/coulomb + spin/ms
@@ -8793,9 +8980,17 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -8813,9 +9008,17 @@
                 bbaa = ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !space/exchange + spin/exchange
@@ -8824,9 +9027,17 @@
               aabb = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               if(ERIB%storType().eq.'full') then
                 bbaa = ERIA%getBlock('baab')+ERIB%getBlock('baab')
-                call mqc_twoeris_allocate(ERIOut,'full-exchange','spin',aaaa,bbbb,aabb,bbaa)
+                call mqc_twoeris_allocate(ERIOut,'full-exchange','spin',aaaa,bbbb,aabb,bbaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-exchange','spin',aaaa,bbbb,aabb)
+                call mqc_twoeris_allocate(ERIOut,'symm-exchange','spin',aaaa,bbbb,aabb,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !space/exchange + spin/inverted
@@ -8838,10 +9049,18 @@
                 baab = ERIA%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 aabb = ERIA%getBlock('aabb')
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !space/exchange + spin/doublebar
@@ -8853,9 +9072,17 @@
                 bbaa = ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                     abba=abba,baab=baab)
+                                                                     abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !space/exchange + spin/ms
@@ -8869,9 +9096,17 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -8891,10 +9126,18 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                  abab,abba,baab,baba)
+                  abab,abba,baab,baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                  abba=abba,abab=abab)
+                  abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !space/inverted + spin/exchange
@@ -8906,10 +9149,18 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !space/inverted + spin/inverted
@@ -8918,7 +9169,11 @@
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
               baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
               call mqc_twoeris_allocate(ERIOut,'full-inverted','spin',aaaa,bbbb,&
-                                                                 abab,baba)
+                                                                 abab,baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               !space/inverted + spin/doublebar
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -8931,10 +9186,18 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !space/inverted + spin/ms
@@ -8948,10 +9211,18 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -8969,10 +9240,18 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab)
+                                           abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,&
-                                           abba=abba)
+                                           abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !space/doublebar + spin/exchange
@@ -8984,10 +9263,18 @@
                 bbaa = ERIA%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab)
+                                           abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,&
-                                           abba=abba)
+                                           abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !space/doublebar + spin/inverted
@@ -9000,7 +9287,11 @@
               abab = ERIB%getBlock('abab')
               baba = ERIB%getBlock('baba')
               call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                         abba=abba,baab=baab,abab=abab,baba=baba)
+                                         abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               !space/doublebar + spin/doublebar
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -9011,10 +9302,18 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab)
+                                           abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,&
-                                           abba=abba)
+                                           abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !space/doublebar + spin/ms
@@ -9028,10 +9327,18 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -9051,10 +9358,18 @@
                 baab = ERIA%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !space/ms + spin/exchange
@@ -9068,10 +9383,18 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !space/ms + spin/inverted
@@ -9084,7 +9407,11 @@
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
               baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
               call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                         abba=abba,baab=baab,abab=abab,baba=baba)
+                                         abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               !space/ms + spin/doublebar
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -9097,10 +9424,18 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !space/ms + spin/ms
@@ -9114,10 +9449,18 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -9246,9 +9589,17 @@
               aabb = ERIB%getBlock('aaaa')+ERIA%getBlock('aabb')
               if(ERIA%storType().eq.'full') then
                 bbaa = ERIB%getBlock('aaaa')+ERIA%getBlock('bbaa')
-                call mqc_twoeris_allocate(ERIOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa)
+                call mqc_twoeris_allocate(ERIOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-coulomb','spin',aaaa,bbbb,aabb)
+                call mqc_twoeris_allocate(ERIOut,'symm-coulomb','spin',aaaa,bbbb,aabb,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !spin/coulomb + space/exchange
@@ -9260,9 +9611,17 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !spin/coulomb + space/inverted
@@ -9274,9 +9633,17 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                               abab=abab,baba=baba)
+                                                               abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !spin/coulomb + space/doublebar
@@ -9288,9 +9655,17 @@
                 bbaa = ERIB%getBlock('bbaa')+ERIA%getBlock('bbaa')
                 baab = ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                   abba=abba,baab=baab)
+                                                                   abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !spin/coulomb + space/ms
@@ -9304,10 +9679,18 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                                 abba=abba,abab=abab)
+                                                 abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -9325,9 +9708,17 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !spin/exchange + space/exchange
@@ -9336,9 +9727,17 @@
               aabb = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               if(ERIA%storType().eq.'full') then
                 bbaa = ERIA%getBlock('baab')+ERIB%getBlock('baab')
-                call mqc_twoeris_allocate(ERIOut,'full-exchange','spin',aaaa,bbbb,aabb,bbaa)
+                call mqc_twoeris_allocate(ERIOut,'full-exchange','spin',aaaa,bbbb,aabb,bbaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-exchange','spin',aaaa,bbbb,aabb)
+                call mqc_twoeris_allocate(ERIOut,'symm-exchange','spin',aaaa,bbbb,aabb,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !spin/exchange + space/inverted
@@ -9350,9 +9749,17 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !spin/exchange + space/doublebar
@@ -9364,9 +9771,17 @@
                 bbaa = ERIB%getBlock('bbaa')
                 baab = ERIB%getBlock('baab')+ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                   abba=abba,baab=baab)
+                                                                   abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !spin/exchange + space/ms
@@ -9380,10 +9795,18 @@
                 baab = ERIB%getBlock('baab')+ERIA%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                                 abba=abba,abab=abab)
+                                                 abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -9397,12 +9820,20 @@
               aabb = ERIB%getBlock('aabb')
               abab = ERIA%getBlock('abab')
               if(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 bbaa = ERIB%getBlock('bbaa')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                             abab=abab,baba=baba)
+                                                             abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               aaaa = ERIB%getBlock('aaaa')+ERIA%getBlock('aaaa')
@@ -9411,22 +9842,38 @@
               abab = ERIA%getBlock('abab')
               if(ERIA%storType().eq.'symm') then
                 aabb = ERIB%getBlock('aabb')
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 baab = ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               aaaa = ERIB%getBlock('aaaa')+ERIA%getBlock('aaaa')
               bbbb = ERIB%getBlock('aaaa')+ERIA%getBlock('bbbb')
               abab = ERIB%getBlock('abab')+ERIA%getBlock('abab')
               if(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-inverted','spin',aaaa,bbbb,abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-inverted','spin',aaaa,bbbb,abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 baba = ERIB%getBlock('baba')+ERIA%getBlock('baba')
-                call mqc_twoeris_allocate(ERIOut,'full-inverted','spin',aaaa,bbbb,abab,baba)
+                call mqc_twoeris_allocate(ERIOut,'full-inverted','spin',aaaa,bbbb,abab,baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !spin/inverted + space/doublebar
@@ -9439,7 +9886,11 @@
               abab = ERIA%getBlock('abab')
               baba = ERIA%getBlock('baba')
               call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('ms')
               !spin/inverted + space/ms
               aaaa = ERIB%getBlock('aaaa')+ERIA%getBlock('aaaa')
@@ -9451,7 +9902,11 @@
               abab = ERIB%getBlock('abab')+ERIA%getBlock('abab')
               baba = ERIB%getBlock('baba')+ERIA%getBlock('baba')
               call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -9467,9 +9922,17 @@
                 bbaa = ERIB%getBlock('aaaa')+ERIA%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               aaaa = ERIB%getBlock('aaaa')+ERIA%getBlock('aaaa')
@@ -9480,9 +9943,17 @@
                 bbaa = ERIA%getBlock('bbaa')
                 baab = ERIB%getBlock('aaaa')+ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               aaaa = ERIB%getBlock('aaaa')+ERIA%getBlock('aaaa')
@@ -9495,9 +9966,17 @@
                 baab = ERIA%getBlock('baab')
                 baba = ERIB%getBlock('aaaa')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !spin/doublebar + space/doublebar
@@ -9509,9 +9988,17 @@
                 bbaa = ERIB%getBlock('bbaa')+ERIA%getBlock('bbaa')
                 baab = ERIB%getBlock('baab')+ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                   abba=abba,baab=baab)
+                                                                   abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !spin/doublebar + space/ms
@@ -9525,10 +10012,18 @@
                 baab = ERIB%getBlock('baab')+ERIA%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                                 abba=abba,abab=abab)
+                                                 abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -14614,7 +15109,7 @@
             if(ia.eq.3) then
               id=4
             else 
-              id=2
+              id=3
             end if
             if (ib.eq.1) then
               ic=2
@@ -17046,7 +17541,7 @@
       intType='unknown'
       eriType='empty'
       do i=1,16
-        allocVec(i)=.true.
+        allocVec(i)=.false.
       end do
       eriType='space'
       do i=1,16
@@ -17230,7 +17725,9 @@
       if (eriType.eq.'empty') then
         if(allocated(eriOut)) call deallocate(eriOut)
       else if (eriType.eq.'space') then
-        call mqc_twoeris_allocate(eriOut,'full-'//intType,'space',aaaa,allocationVector=allocVec)
+        call mqc_twoeris_allocate(eriOut,'full-'//intType,'space',aaaa,allocationVector=allocVec,&
+             nA1=eris1%blockSize('alpha',ka),nA2=eris1%blockSize('alpha',la),&
+             nA3=eris2%blockSize('alpha',kb),nA4=eris2%blockSize('alpha',lb))
       elseif (eriType.eq.'spin') then
         if (intType.eq.'coulomb') then
           call mqc_twoeris_allocate(eriOut,'full-'//intType,'spin',aaaa,bbbb,aabb,bbaa)
@@ -17238,14 +17735,22 @@
           call mqc_twoeris_allocate(eriOut,'full-'//intType,'spin',aaaa,bbbb,abba,baab)
         else if (intType.eq.'inverted') then
           call mqc_twoeris_allocate(eriOut,'full-'//intType,'spin',aaaa,bbbb,abab,baba)
-        else 
+        else
           call mqc_twoeris_allocate(eriOut,'full-'//intType,'spin',aaaa,bbbb,aabb,bbaa,&
-               abab=abab,baba=baba,abba=abba,baab=baab,allocationVector=allocVec)
+               abab=abab,baba=baba,abba=abba,baab=baab,allocationVector=allocVec,&
+               nA1=eris1%blockSize('alpha',ka),nA2=eris1%blockSize('alpha',la),&
+               nA3=eris2%blockSize('alpha',kb),nA4=eris2%blockSize('alpha',lb),&
+               nB1=eris1%blockSize('beta',ka),nB2=eris1%blockSize('beta',la),&
+               nB3=eris2%blockSize('beta',kb),nB4=eris2%blockSize('beta',lb))
         end if
       elseif (eriType.eq.'general') then
         call mqc_twoeris_allocate(eriOut,'full-'//intType,'general',aaaa,bbbb,aabb,bbaa,&
                                   abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,&
-                                  bbab,babb,abbb,allocationVector=allocVec)
+                                  bbab,babb,abbb,allocationVector=allocVec,&
+                                  nA1=eris1%blockSize('alpha',ka),nA2=eris1%blockSize('alpha',la),&
+                                  nA3=eris2%blockSize('alpha',kb),nA4=eris2%blockSize('alpha',lb),&
+                                  nB1=eris1%blockSize('beta',ka),nB2=eris1%blockSize('beta',la),&
+                                  nB3=eris2%blockSize('beta',kb),nB4=eris2%blockSize('beta',lb))
       endif
  
 !
@@ -17360,6 +17865,8 @@
       integer(kind=int64)::mydim1,mydim2,i,j
       integer(kind=int64)::nB1a,nB2a,nB3a,nB4a
       integer(kind=int64)::nB1b,nB2b,nB3b,nB4b
+      integer(kind=int64),dimension(4)::outDimsA,outDimsB
+      integer(kind=int64)::tmpSwap
       type(mqc_twoERIs)::output
       type(mqc_r4tensor)::alpha,beta,alphaBeta,betaAlpha,abab,abba,baab, &
         baba,aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb
@@ -18651,11 +19158,21 @@
             finalAllocVec(16)=.true.
           end if
         end select
+        outDimsA = [nB1a,nB2a,nB3a,nB4a]
+        tmpSwap = outDimsA(mydim1)
+        outDimsA(mydim1) = outDimsA(mydim2)
+        outDimsA(mydim2) = tmpSwap
+        outDimsB = [nB1b,nB2b,nB3b,nB4b]
+        tmpSwap = outDimsB(mydim1)
+        outDimsB(mydim1) = outDimsB(mydim2)
+        outDimsB(mydim2) = tmpSwap
         call mqc_twoeris_allocate(output,'full-coulomb','general',&
                      alpha,beta,alphaBeta,betaAlpha,&
                      abab,abba,baab,baba,&
                      aaab,aaba,abaa,baaa,&
-                     bbba,bbab,babb,abbb,finalAllocVec)
+                     bbba,bbab,babb,abbb,finalAllocVec,&
+                     nA1=outDimsA(1),nA2=outDimsA(2),nA3=outDimsA(3),nA4=outDimsA(4),&
+                     nB1=outDimsB(1),nB2=outDimsB(2),nB3=outDimsB(3),nB4=outDimsB(4))
       case default
         call mqc_error_a('2ERI type either not recognized or not yet implemented in &
           & mqc_eri_interaction',6,'eris%type()',eris%type()) 
@@ -22071,7 +22588,536 @@
       endIf
 
       end function mqc_twoERIs_At
+!
+!
+!     PROCEDURE MQC_twoERIs_Put
+!
+!>    \brief <b> MQC_twoERIs_Put is a function that replaces the value of an element 
+!>    of a MQC 2ERIs variable</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>       
+!>    MQC_twoERIs_Put is a function that replaces the value of (I,J,K,L)th element of 
+!>    a MQC 2ERIs variable as an MQC scalar. If I, J, K or L is negative, the (N-I+1)th 
+!>    index is selected. Optional argument SpinBlock specifies the spin block of MQC
+!>    2ERIs if the contain MO integrals. If wavefunction is not restricted, the spin 
+!>    block must be specified. The following options are available:
+!>
+!>    1.  SpinBlock = 'aaaa' or 'alpha' or 'alpha-alpha' uses the alpha spin block.
+!>    2.  SpinBlock = 'bbbb' or 'beta' or 'beta-beta' uses the beta spin block.
+!>    3.  SpinBlock = 'aabb' or 'alphaBeta' uses the alpha-beta spin block.
+!>    4.  SpinBlock = 'bbaa' or 'betaAlpha' uses the beta-alpha spin block.
+!>    5.  SpinBlock = 'abab' uses the abab spin block.
+!>    6.  SpinBlock = 'abba' uses the abba spin block.
+!>    7.  SpinBlock = 'baab' uses the baab spin block.
+!>    8.  SpinBlock = 'baba' uses the baba spin block.
+!>    9.  SpinBlock = 'aaab' uses the aaab spin block.
+!>    10. SpinBlock = 'aaba' uses the aaba spin block.
+!>    11. SpinBlock = 'abaa' uses the abaa spin block.
+!>    12. SpinBlock = 'baaa' uses the baaa spin block.
+!>    13. SpinBlock = 'bbba' uses the bbba spin block.
+!>    14. SpinBlock = 'bbab' uses the bbab spin block.
+!>    15. SpinBlock = 'babb' uses the babb spin block.
+!>    16. SpinBlock = 'abbb' uses the abbb spin block.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] TwoERIs
+!>    \verbatim
+!>        TwoERIs is Class(MQC_TwoERIs)
+!>        The MQC 2ERIs to replace the value of the (I,J,K,L)th 
+!>        element.
+!>    \endverbatim
+!>    
+!>    \param[in] Element
+!>    \verbatim
+!>        Element is Type(mqc_scalar)
+!>        The value to put in the twoERIs.
+!>    \endverbatim
+!>    
+!>    \param[in] I  
+!>    \verbatim
+!>        I is Integer(kind=int64)
+!>        The first dimension of the element in MQC 2ERIs
+!>          If I>0 row count is from first index
+!>          If I<0 row count is from last index.
+!>    \endverbatim
+!>    
+!>    \param[in] J  
+!>    \verbatim
+!>        J is Integer(kind=int64)
+!>        The second dimension of the element in MQC 2ERIs
+!>          If J>0 row count is from first index
+!>          If J<0 row count is from last index.
+!>    \endverbatim
+!>    
+!>    \param[in] K  
+!>    \verbatim
+!>        K is Integer(kind=int64)
+!>        The third dimension of the element in MQC 2ERIs
+!>          If K>0 row count is from first index
+!>          If K<0 row count is from last index.
+!>    \endverbatim
+!>    
+!>    \param[in] L  
+!>    \verbatim
+!>        L is Integer(kind=int64)
+!>        The fourth dimension of the element in MQC 2ERIs
+!>          If L>0 row count is from first index
+!>          If L<0 row count is from last index.
+!>    \endverbatim
+!>    
+!>    \param[in] SpinBlockIn
+!>    \verbatim
+!>        SpinBlockIn is character(len=*),optional
+!>        = 'aaaa' or 'alpha':     alpha spin block
+!>        = 'bbbb' or 'beta':      beta spin block
+!>        = 'aabb' or 'alphaBeta': alpha-beta spin block
+!>        = 'bbaa' or 'betaAlpha': beta-alpha spin block.
+!>        = 'abab':                abab spin block.
+!>        = 'abba':                abba spin block.
+!>        = 'baab':                baab spin block.
+!>        = 'baba':                baba spin block.
+!>        = 'aaab':                aaab spin block.
+!>        = 'aaba':                aaba spin block.
+!>        = 'abaa':                abaa spin block.
+!>        = 'baaa':                baaa spin block.
+!>        = 'bbba':                bbba spin block.
+!>        = 'bbab':                bbab spin block.
+!>        = 'babb':                babb spin block.
+!>        = 'abbb':                abbb spin block.
+!>    \endverbatim
+!>    
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine MQC_twoERIs_Put(twoERIs,element,i,j,k,l,spinBlockIn) 
+!
+      implicit none
+      class(mqc_twoERIs)::twoERIs
+      class(*),intent(in)::i,j,k,l
+      type(mqc_scalar),intent(in)::element
+      integer(kind=int64)::myI,myJ,myK,myL
+      character(len=*),optional,intent(in)::spinBlockIn
+      type(MQC_R4Tensor)::aaaa,aaab,aaba,abaa,baaa,aabb,abab,baab,abba,baba,bbaa,&
+                          abbb,babb,bbab,bbba,bbbb
+      character(len=64)::spinBlock,interaction
+      logical,dimension(16)::allocVec
+      real(kind=real64)::zero=0.0d0
+      integer::indx
 
+      select type (i)  
+      type is (integer)
+        myI = i
+      type is (integer(kind=int32))
+        myI = i
+      type is (real(kind=real64))
+        myI = i
+      type is (mqc_scalar)
+        myI = i
+      class default 
+        call mqc_error('index type not defined in MQC_twoERIs_Put')
+      end select
+      select type (j)  
+      type is (integer)
+        myJ = j
+      type is (mqc_scalar)
+        myJ = j
+      class default 
+        call mqc_error('index type not defined in MQC_twoERIs_Put')
+      end select
+      select type (k)  
+      type is (integer)
+        myK = k
+      type is (mqc_scalar)
+        myK = k
+      class default 
+        call mqc_error('index type not defined in MQC_twoERIs_Put')
+      end select
+      select type (l)  
+      type is (integer)
+        myL = l
+      type is (mqc_scalar)
+        myL = l
+      class default 
+        call mqc_error('index type not defined in MQC_twoERIs_Put')
+      end select
+
+      if(myI.gt.twoERIs%blockSize('alpha',1)+twoERIs%blockSize('beta',1)) &
+        call mqc_error('Requested I dimension out of bounds in MQC_twoERIs_Put')
+      if(myJ.gt.twoERIs%blockSize('alpha',2)+twoERIs%blockSize('beta',2)) &
+        call mqc_error('Requested J dimension out of bounds in MQC_twoERIs_Put')
+      if(myK.gt.twoERIs%blockSize('alpha',3)+twoERIs%blockSize('beta',3)) &
+        call mqc_error('Requested K dimension out of bounds in MQC_twoERIs_Put')
+      if(myL.gt.twoERIs%blockSize('alpha',4)+twoERIs%blockSize('beta',4)) &
+        call mqc_error('Requested L dimension out of bounds in MQC_twoERIs_Put')
+
+      if(twoERIs%intType().ne.'coulomb') &
+        call mqc_error_a( 'mqc_twoERIs_Put has been implemented for coulomb interaction-type twoERIs only',6,&
+        'twoERIs%intType',twoERIs%intType())
+
+      if(present(spinBlockIn)) then
+        call string_change_case(spinBlockIn,'L',spinBlock)
+      else
+        spinBlock = 'aaaa'
+      end if
+!     SPACE
+      if(twoERIs%integralType.eq.'space') then
+        if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
+          if(twoERIs%hasSpinBlock('aaaa')) then
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%alpha%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                                   size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          end if
+        elseif (spinBlock.eq.'beta'.or.spinBlock.eq.'bbbb'.or.&
+                spinBlock.eq.'alphabeta'.or.spinBlock.eq.'betaalpha'.or.&
+                spinBlock.eq.'aabb'.or.spinBlock.eq.'bbaa') then
+          aaaa = twoERIs%alpha
+          bbbb = twoERIs%alpha
+          aabb = twoERIs%alpha
+          bbaa = twoERIs%alpha
+          if (spinBlock.eq.'beta'.or.spinBlock.eq.'bbbb') call bbbb%put(element,myI,myJ,myK,myL)
+          if (spinBlock.eq.'alphabeta'.or.spinBlock.eq.'aabb') call aabb%put(element,myI,myJ,myK,myL)
+          if (spinBlock.eq.'betaalpha'.or.spinBlock.eq.'bbaa') call bbaa%put(element,myI,myJ,myK,myL)
+          call mqc_twoeris_allocate(twoERIs,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa,&
+               nA1=size(twoERIs,'alpha',1),nA2=size(twoERIs,'alpha',2),&
+               nA3=size(twoERIs,'alpha',3),nA4=size(twoERIs,'alpha',4),&
+               nB1=size(twoERIs,'beta',1),nB2=size(twoERIs,'beta',2),&
+               nB3=size(twoERIs,'beta',3),nB4=size(twoERIs,'beta',4))
+        else 
+          do indx=1,4
+            allocVec(indx)=.true.
+          end do
+          do indx=5,16
+            allocVec(indx)=.false.
+          end do
+          if (spinBlock.eq.'aaab') then 
+            call aaab%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call aaab%put(element,myI,myJ,myK,myL)
+            allocVec(9)=.true.
+          else if (spinBlock.eq.'aaba') then 
+            call aaba%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call aaba%put(element,myI,myJ,myK,myL)
+            allocVec(10)=.true.
+          else if (spinBlock.eq.'abaa') then 
+            call abaa%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call abaa%put(element,myI,myJ,myK,myL)
+            allocVec(11)=.true.
+          else if (spinBlock.eq.'baaa') then 
+            call baaa%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call baaa%put(element,myI,myJ,myK,myL)
+            allocVec(12)=.true.
+          else if (spinBlock.eq.'abab') then 
+            call abab%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call abab%put(element,myI,myJ,myK,myL)
+            allocVec(5)=.true.
+          else if (spinBlock.eq.'abba') then 
+            call abba%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call abba%put(element,myI,myJ,myK,myL)
+            allocVec(6)=.true.
+          else if (spinBlock.eq.'baab') then 
+            call baab%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call baab%put(element,myI,myJ,myK,myL)
+            allocVec(7)=.true.
+          else if (spinBlock.eq.'baba') then 
+            call baba%init(size(twoERIs,'bata',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call baba%put(element,myI,myJ,myK,myL)
+            allocVec(8)=.true.
+          else if (spinBlock.eq.'abbb') then 
+            call abbb%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call abbb%put(element,myI,myJ,myK,myL)
+            allocVec(16)=.true.
+          else if (spinBlock.eq.'babb') then 
+            call babb%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call babb%put(element,myI,myJ,myK,myL)
+            allocVec(15)=.true.
+          else if (spinBlock.eq.'bbab') then 
+            call bbab%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call bbab%put(element,myI,myJ,myK,myL)
+            allocVec(14)=.true.
+          else if (spinBlock.eq.'bbba') then 
+            call bbba%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call bbba%put(element,myI,myJ,myK,myL)
+            allocVec(13)=.true.
+          end if
+          call mqc_twoeris_allocate(twoERIs,'full-coulomb','general',&
+                      twoERIs%alpha,twoERIs%alpha,twoERIs%alpha,twoERIs%alpha,&
+                               abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,&
+                               bbab,babb,abbb,allocationVector=allocVec,&
+              nA1=size(twoERIs,'alpha',1),nA2=size(twoERIs,'alpha',2),&
+              nA3=size(twoERIs,'alpha',3),nA4=size(twoERIs,'alpha',4),&
+              nB1=size(twoERIs,'beta',1),nB2=size(twoERIs,'beta',2),&
+              nB3=size(twoERIs,'beta',3),nB4=size(twoERIs,'beta',4))
+
+        endIf
+!     SPIN
+      elseIf(twoERIs%integralType.eq.'spin') then
+        if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
+          if(twoERIs%hasSpinBlock('aaaa')) then
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%alpha%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                                   size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'beta'.or.spinBlock.eq.'bbbb') then
+          if(twoERIs%hasSpinBlock('bbbb')) then
+            call twoERIs%beta%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%beta%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                                   size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call twoERIs%beta%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'alphabeta'.or.spinBlock.eq.'aabb') then
+          if(twoERIs%hasSpinBlock('aabb')) then
+            call twoERIs%alphaBeta%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%alphaBeta%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                                   size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call twoERIs%alphabeta%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'betaalpha'.or.spinBlock.eq.'bbaa') then
+          if(twoERIs%hasSpinBlock('aabb')) then
+            call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%betaAlpha%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                                   size(twoERIs,'alphaa',3),size(twoERIs,'alpha',4))
+            call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
+          end if
+        else
+          do indx=1,4
+            allocVec(indx)=.true.
+          end do
+          do indx=5,16
+            allocVec(indx)=.false.
+          end do
+          if (spinBlock.eq.'aaab') then 
+            call aaab%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call aaab%put(element,myI,myJ,myK,myL)
+            allocVec(9)=.true.
+          else if (spinBlock.eq.'aaba') then 
+            call aaba%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call aaba%put(element,myI,myJ,myK,myL)
+            allocVec(10)=.true.
+          else if (spinBlock.eq.'abaa') then 
+            call abaa%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call abaa%put(element,myI,myJ,myK,myL)
+            allocVec(11)=.true.
+          else if (spinBlock.eq.'baaa') then 
+            call baaa%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call baaa%put(element,myI,myJ,myK,myL)
+            allocVec(12)=.true.
+          else if (spinBlock.eq.'abab') then 
+            call abab%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call abab%put(element,myI,myJ,myK,myL)
+            allocVec(5)=.true.
+          else if (spinBlock.eq.'abba') then 
+            call abba%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call abba%put(element,myI,myJ,myK,myL)
+            allocVec(6)=.true.
+          else if (spinBlock.eq.'baab') then 
+            call baab%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call baab%put(element,myI,myJ,myK,myL)
+            allocVec(7)=.true.
+          else if (spinBlock.eq.'baba') then 
+            call baba%init(size(twoERIs,'bata',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call baba%put(element,myI,myJ,myK,myL)
+            allocVec(8)=.true.
+          else if (spinBlock.eq.'abbb') then 
+            call abbb%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call abbb%put(element,myI,myJ,myK,myL)
+            allocVec(16)=.true.
+          else if (spinBlock.eq.'babb') then 
+            call babb%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call babb%put(element,myI,myJ,myK,myL)
+            allocVec(15)=.true.
+          else if (spinBlock.eq.'bbab') then 
+            call bbab%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call bbab%put(element,myI,myJ,myK,myL)
+            allocVec(14)=.true.
+          else if (spinBlock.eq.'bbba') then 
+            call bbba%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call bbba%put(element,myI,myJ,myK,myL)
+            allocVec(13)=.true.
+          end if
+          call mqc_twoeris_allocate(twoERIs,'full-coulomb','general',&
+                      twoERIs%alpha,twoERIs%beta,twoERIs%alphaBeta,twoERIs%betaAlpha,&
+                               abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,&
+                               bbab,babb,abbb,allocationVector=allocVec,&
+              nA1=size(twoERIs,'alpha',1),nA2=size(twoERIs,'alpha',2),&
+              nA3=size(twoERIs,'alpha',3),nA4=size(twoERIs,'alpha',4),&
+              nB1=size(twoERIs,'beta',1),nB2=size(twoERIs,'beta',2),&
+              nB3=size(twoERIs,'beta',3),nB4=size(twoERIs,'beta',4))
+        endIf
+!     GENERAL
+      elseIf(twoERIs%integralType.eq.'general') then
+        if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
+          if(twoERIs%hasSpinBlock('aaaa')) then
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%alpha%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                                   size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'beta'.or.spinBlock.eq.'bbbb') then
+          if(twoERIs%hasSpinBlock('bbbb')) then
+            call twoERIs%beta%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%beta%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                                   size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call twoERIs%beta%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'alphabeta'.or.spinBlock.eq.'aabb') then
+          if(twoERIs%hasSpinBlock('aabb')) then
+            call twoERIs%alphaBeta%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%alphaBeta%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                                   size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call twoERIs%alphabeta%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'betaalpha'.or.spinBlock.eq.'bbaa') then
+          if(twoERIs%hasSpinBlock('aabb')) then
+            call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%betaAlpha%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                                   size(twoERIs,'alphaa',3),size(twoERIs,'alpha',4))
+            call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'aaab') then 
+          if(twoERIs%hasSpinBlock('aaab')) then
+            call aaab%put(element,myI,myJ,myK,myL)
+          else
+            call aaab%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call aaab%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'aaba') then 
+          if(twoERIs%hasSpinBlock('aaba')) then
+            call aaba%put(element,myI,myJ,myK,myL)
+          else
+            call aaba%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call aaba%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'abaa') then 
+          if(twoERIs%hasSpinBlock('abaa')) then
+            call abaa%put(element,myI,myJ,myK,myL)
+          else
+            call abaa%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call abaa%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'baaa') then 
+          if(twoERIs%hasSpinBlock('baaa')) then
+            call baaa%put(element,myI,myJ,myK,myL)
+          else
+            call baaa%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call baaa%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'abab') then 
+          if(twoERIs%hasSpinBlock('abab')) then
+            call abab%put(element,myI,myJ,myK,myL)
+          else
+            call abab%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call abab%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'abba') then 
+          if(twoERIs%hasSpinBlock('abba')) then
+            call abba%put(element,myI,myJ,myK,myL)
+          else
+            call abba%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call abba%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'baab') then 
+          if(twoERIs%hasSpinBlock('baab')) then
+            call baab%put(element,myI,myJ,myK,myL)
+          else
+            call baab%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call baab%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'baba') then 
+          if(twoERIs%hasSpinBlock('baba')) then
+            call baba%put(element,myI,myJ,myK,myL)
+          else
+            call baba%init(size(twoERIs,'bata',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call baba%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'abbb') then 
+          if(twoERIs%hasSpinBlock('abbb')) then
+            call abbb%put(element,myI,myJ,myK,myL)
+          else
+            call abbb%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call abbb%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'babb') then 
+          if(twoERIs%hasSpinBlock('babb')) then
+            call babb%put(element,myI,myJ,myK,myL)
+          else
+            call babb%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call babb%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'bbab') then 
+          if(twoERIs%hasSpinBlock('bbab')) then
+            call bbab%put(element,myI,myJ,myK,myL)
+          else
+            call bbab%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call bbab%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'bbba') then 
+          if(twoERIs%hasSpinBlock('bbba')) then
+            call bbba%put(element,myI,myJ,myK,myL)
+          else
+            call bbba%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call bbba%put(element,myI,myJ,myK,myL)
+          end if
+        end if
+      else
+        call mqc_error_A('Integral type not valid in MQC_TwoERIs_Put',6,'integralType',twoERIs%integralType)
+      endIf
+   end subroutine MQC_twoERIs_Put
 !
 !
 !     PROCEDURE MQC_Integral_Put

@@ -8,9 +8,11 @@ CLEANFILES = ../algebra2/outfile ../fullci/outfile ../hartreefock/outfile \
   unitTest07-numerical.faf
 
 TESTS = ../algebra2/testit.sh unitTest01 unitTest02 unitTestIterative \
-  ../../unitTests/src/testit.sh
+  ../../unitTests/src/testit.sh ../../unitTests/src/unitTest_NEF_collapse_expand \
+  ../../unitTests/src/unitTest_NEF_set_algebra
 check_PROGRAMS = ../algebra2/algebra_fun unitTest01 unitTest02 unitTestIterative \
-  ../../unitTests/src/unitTest_twoERIs
+  ../../unitTests/src/unitTest_twoERIs ../../unitTests/src/unitTest_NEF_collapse_expand \
+  ../../unitTests/src/unitTest_NEF_set_algebra
 
 if WITH_GAUOPEN
 TESTS += ../fullci/testit.sh ../hartreefock/testit.sh \
@@ -41,6 +43,10 @@ unitTest07_SOURCES = ../../unitTests/src/unitTest07.f03
 unitTestIterative_SOURCES = ../../unitTests/src/unitTestIterative.f03
 ______unitTests_src_unitTest_twoERIs_SOURCES = \
   ../../unitTests/src/unitTest_twoERIs.F03
+______unitTests_src_unitTest_NEF_collapse_expand_SOURCES = \
+  ../../unitTests/src/unitTest_NEF_collapse_expand.F03
+______unitTests_src_unitTest_NEF_set_algebra_SOURCES = \
+  ../../unitTests/src/unitTest_NEF_set_algebra.f03
 EXTRA_DIST = test_no_gauopen_matrixfile.sh \
   test_public_gauopen_character.sh ../algebra2/testit.sh \
   ../algebra2/OUTPUT/out ../fullci/testit.sh ../fullci/OUTPUT/out \

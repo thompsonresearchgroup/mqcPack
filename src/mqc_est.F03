@@ -4535,16 +4535,16 @@
                  nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
         else 
           call tmpMatrixBeta%init(nBeta,my_nBeta2,scalar)
-          if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
-            call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2,scalar)
-            call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2,scalar)
-            call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
-              tmpMatrixBetaAlpha,tmpMatrixAlphaBeta,&
-                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
-          else
+         !if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
+         !  call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2,scalar)
+         !  call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2,scalar)
+         !  call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
+         !    tmpMatrixBetaAlpha,tmpMatrixAlphaBeta,&
+         !       nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
+         !else
             call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
                  nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
-          endIf
+         !endIf
         endIf
       else
         call tmpMatrixAlpha%init(nAlpha,my_nAlpha2)
@@ -4553,16 +4553,16 @@
                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
         else 
           call tmpMatrixBeta%init(nBeta,my_nBeta2)
-          if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
-            call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2)
-            call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2)
-            call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
-              tmpMatrixBetaAlpha,tmpMatrixAlphaBeta,&
-              nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
-          else
+         !if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
+         !  call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2)
+         !  call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2)
+         !  call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
+         !    tmpMatrixBetaAlpha,tmpMatrixAlphaBeta,&
+         !    nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
+         !else
             call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
                  nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
-          endIf
+         !endIf
         endIf
       endIf
 !

@@ -23,6 +23,12 @@
 !     Test 11 round-trips Matrix<->R4 with BOTH combined-axis sizes
 !     (map1/map2) simultaneously >1, unlike Tests 2/4/9's one-trivial-
 !     axis fixtures.
+!     Test 12 round-trips MQC_NEF_Set%fullCollapse -> %fullExpand (the
+!     first coverage either gets in this file) on a 2x2 grid of
+!     matrix-kind cells whose 3-space row/col map has DISTINCT alpha
+!     sizes (2,1,3) and DISTINCT beta sizes (2,0,4) -- including a
+!     ZERO-sized beta block in space 2 -- checked element-by-element
+!     against the original NEF_Set.
 !
 !     -M. M. F. Moraes, 2026.
 !
@@ -44,21 +50,27 @@
       type(mqc_scf_eigenvalues),dimension(:),allocatable::map1b,map2b,map3b,map4b
       type(mqc_scf_eigenvalues),dimension(:),allocatable::rowMap4x
       type(mqc_scf_eigenvalues),dimension(:),allocatable::map1c,map2c,map3c,map4c
+      type(mqc_scf_eigenvalues),dimension(:),allocatable::rowMapDistinct
       type(mqc_scf_integral)::fullInt,fullInt3,cellInt,fullInt4
+      type(mqc_scf_integral)::cellInt12
       type(mqc_nef_matrix)::NEFMat,MatBack,MatBack2
       type(mqc_nef_matrix)::NEFMat3,MatBack3,MatBack4,cellMat
       type(mqc_nef_matrix)::NEFMat4,MatBack5,MatBack6,MatBackSwap,MatBack7
       type(mqc_nef_matrix)::NEFMat5,MatBack8,outerMatDefault,outerMatJoint
+      type(mqc_nef_matrix)::cellMat12,origCellMat12,roundCellMat12
       type(mqc_nef_vector)::VecOut,VecOut3,vecPathA,vecPathB
       type(mqc_nef_vector)::VecOut4,VecOut5,VecSwap
       type(mqc_nef_r4)::R4Out,R4Out2,R4Out3,R4Out3b
       type(mqc_nef_set)::NEFSet,SetCollapsed,SetOuter,SetFull
       type(mqc_nef_set)::SetOuterDefault,SetOuterJoint
+      type(mqc_nef_set)::NEFSet12,SetFull12,SetRound12
       type(mqc_vector)::flatA,flatB
       type(mqc_scalar)::sc
       real(kind=real64)::got,expected,base,expectedVal
       integer::row,col,ispin,i,j,rr,cc,ci,cj,kk,nTot
       integer::origRow,origCol,newRow,newCol,G
+      integer::ia,ja,ib,jb
+      integer,dimension(3)::alphaSizes12,betaSizes12
       character(len=5),dimension(2)::spinLabels
       character(len=64)::testLabel
 !
@@ -635,6 +647,103 @@
               write(*,1010) trim(testLabel),got,expected
               nfail = nfail+1
             endIf
+          end do
+        end do
+      end do
+!
+!--------------------------------------------------------------------
+!     Test 12: MQC_NEF_Set%fullCollapse -(fullExpand)-> round trip,
+!     the first test either function gets in this file. Row/col map
+!     has 3 spaces with DISTINCT, non-uniform sizes -- alpha=[2,1,3],
+!     beta=[2,0,4] -- deliberately including a zero-sized beta block
+!     (space 2) to exercise that edge case through fullCollapse's
+!     Matrix->Vector collapse, outerExpand's grid unfold, and expand's
+!     Vector->Matrix rebuild. Built on a fresh 2x2 NEF_Set (NEFSet12)
+!     with distinct values per cell (via a per-cell base offset, same
+!     convention as Test 5).
+!--------------------------------------------------------------------
+!
+      alphaSizes12 = [2,1,3]
+      betaSizes12 = [2,0,4]
+!
+      allocate(rowMapDistinct(3))
+      call rowMapDistinct(1)%init(0,0)
+      call rowMapDistinct(1)%push(1,'alpha')
+      call rowMapDistinct(1)%push(2,'alpha')
+      call rowMapDistinct(1)%push(1,'beta')
+      call rowMapDistinct(1)%push(2,'beta')
+      call rowMapDistinct(2)%init(0,0)
+      call rowMapDistinct(2)%push(3,'alpha')
+      call rowMapDistinct(3)%init(0,0)
+      call rowMapDistinct(3)%push(4,'alpha')
+      call rowMapDistinct(3)%push(5,'alpha')
+      call rowMapDistinct(3)%push(6,'alpha')
+      call rowMapDistinct(3)%push(3,'beta')
+      call rowMapDistinct(3)%push(4,'beta')
+      call rowMapDistinct(3)%push(5,'beta')
+      call rowMapDistinct(3)%push(6,'beta')
+!
+      call NEFSet12%init(2,2)
+      do ci = 1, 2
+        do cj = 1, 2
+          base = real(1000*((ci-1)*2+cj))
+          call cellInt12%init(6,6)
+          do rr = 1, 6
+            do cc = 1, 6
+              sc = base+real((rr-1)*6+cc)
+              call cellInt12%put(sc,rr,cc,'alpha')
+              sc = base+500.0+real((rr-1)*6+cc)
+              call cellInt12%put(sc,rr,cc,'beta')
+            end do
+          end do
+          call cellMat12%init(rowMapDistinct)
+          call cellMat12%imp(cellInt12)
+          call NEFSet12%put(cellMat12,ci,cj)
+        end do
+      end do
+!
+      SetFull12 = NEFSet12%fullCollapse(spinType='singlet')
+      SetRound12 = SetFull12%fullExpand(NEFSet12,spinType='singlet')
+!
+      do ci = 1, 2
+        do cj = 1, 2
+          origCellMat12 = NEFSet12%atMatrix(ci,cj)
+          roundCellMat12 = SetRound12%atMatrix(ci,cj)
+          do row = 1, 3
+            do col = 1, 3
+              do ia = 1, alphaSizes12(row)
+                do ja = 1, alphaSizes12(col)
+                  sc = roundCellMat12%at(ia,ja,row,col,'alpha')
+                  got = sc%rval()
+                  sc = origCellMat12%at(ia,ja,row,col,'alpha')
+                  expected = sc%rval()
+                  write(testLabel,'(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a)') &
+                    'fullCollapse->fullExpand: (',ci,',',cj,') space(',row,',',col,&
+                    ') [',ia,',',ja,'] alpha'
+                  if(abs(got-expected).le.tol) then
+                    write(*,1000) trim(testLabel)
+                  else
+                    write(*,1010) trim(testLabel),got,expected ; nfail=nfail+1
+                  endIf
+                end do
+              end do
+              do ib = 1, betaSizes12(row)
+                do jb = 1, betaSizes12(col)
+                  sc = roundCellMat12%at(ib,jb,row,col,'beta')
+                  got = sc%rval()
+                  sc = origCellMat12%at(ib,jb,row,col,'beta')
+                  expected = sc%rval()
+                  write(testLabel,'(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a)') &
+                    'fullCollapse->fullExpand: (',ci,',',cj,') space(',row,',',col,&
+                    ') [',ib,',',jb,'] beta'
+                  if(abs(got-expected).le.tol) then
+                    write(*,1000) trim(testLabel)
+                  else
+                    write(*,1010) trim(testLabel),got,expected ; nfail=nfail+1
+                  endIf
+                end do
+              end do
+            end do
           end do
         end do
       end do

@@ -445,5 +445,37 @@
  real-general symmetry abbb -> bbab partial=  1.387779E-17 TwoERI_Trans=  0.000000E+00
  real-general symmetry abbb -> babb partial=  1.040834E-17 TwoERI_Trans=  0.000000E+00
  real-general full tensor oracle error=  1.387779E-16
+ PASS  asymmetric four-coefficient transform block aaaa
+ PASS  asymmetric four-coefficient transform block aaab
+ PASS  asymmetric four-coefficient transform block aaba
+ PASS  asymmetric four-coefficient transform block aabb
+ PASS  asymmetric four-coefficient transform block abaa
+ PASS  asymmetric four-coefficient transform block abab
+ PASS  asymmetric four-coefficient transform block abba
+ PASS  asymmetric four-coefficient transform block abbb
+ PASS  asymmetric four-coefficient transform block baaa
+ PASS  asymmetric four-coefficient transform block baab
+ PASS  asymmetric four-coefficient transform block baba
+ PASS  asymmetric four-coefficient transform block babb
+ PASS  asymmetric four-coefficient transform block bbaa
+ PASS  asymmetric four-coefficient transform block bbab
+ PASS  asymmetric four-coefficient transform block bbba
+ PASS  asymmetric four-coefficient transform block bbbb
+ PASS  single-coefficient full_transform vs TwoERI_Trans aaaa
+ PASS  single-coefficient full_transform vs TwoERI_Trans aaab
+ PASS  single-coefficient full_transform vs TwoERI_Trans aaba
+ PASS  single-coefficient full_transform vs TwoERI_Trans aabb
+ PASS  single-coefficient full_transform vs TwoERI_Trans abaa
+ PASS  single-coefficient full_transform vs TwoERI_Trans abab
+ PASS  single-coefficient full_transform vs TwoERI_Trans abba
+ PASS  single-coefficient full_transform vs TwoERI_Trans abbb
+ PASS  single-coefficient full_transform vs TwoERI_Trans baaa
+ PASS  single-coefficient full_transform vs TwoERI_Trans baab
+ PASS  single-coefficient full_transform vs TwoERI_Trans baba
+ PASS  single-coefficient full_transform vs TwoERI_Trans babb
+ PASS  single-coefficient full_transform vs TwoERI_Trans bbaa
+ PASS  single-coefficient full_transform vs TwoERI_Trans bbab
+ PASS  single-coefficient full_transform vs TwoERI_Trans bbba
+ PASS  single-coefficient full_transform vs TwoERI_Trans bbbb
 
  Tests completed: 0 failure(s)

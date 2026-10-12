@@ -112,7 +112,7 @@
         Procedure, public::getBlockMat => mqc_nef_matrix_output_block_matrix
         Procedure, public::getMap => mqc_nef_matrix_get_map
         Procedure, Public::pinvMat => mqc_nef_matrix_block_diagonal_pinv
-        Procedure, Public::getRotation => mqc_nef_matrix_get_rotation
+        Procedure, Public::getRotation => mqc_nef_matrix_get_generator_rotation
         Procedure, Public::getBlockRotation => mqc_nef_matrix_get_block_rotation
       End Type
 !
@@ -140,6 +140,7 @@
         procedure, public::swap => mqc_nef_r4_dimension_swap
         Procedure, Public::pinvR4 => mqc_nef_r4_block_diagonal_pinv
         Procedure, Public::put => mqc_nef_r4_put
+        Procedure, Public::transform => mqc_nef_r4_full_transform
       End Type
 !
 !>    \brief <b> Holds a dynamic (I,J)-indexed grid of exactly one NEF kind, determined lazily on first write </b>
@@ -8478,8 +8479,8 @@
 !>    \verbatim
 !>
 !>    MQC_NEF_Matrix_Get_Map returns a copy of either Map_Matrix_Row or
-!>    Map_Matrix_Col, selected via the optional whichIn argument
-!>    (1=row, 2=col). Defaults to 1 (row) when whichIn is absent.
+!>    Map_Matrix_Col, selected via the optional axis argument
+!>    (1=row, 2=col). Defaults to 1 (row) when axis is absent.
 !>
 !>    \endverbatim
 !
@@ -8491,9 +8492,9 @@
 !>        The MQC NEF Matrix to query.
 !>    \endverbatim
 !>
-!>    \param[in] whichIn
+!>    \param[in] axis
 !>    \verbatim
-!>        whichIn is Integer,Optional
+!>        axis is Integer,Optional
 !>        1 (default) for row, 2 for col.
 !>    \endverbatim
 !
@@ -8503,28 +8504,28 @@
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      function mqc_nef_matrix_get_map(NEFMat,whichIn) result(mapOut)
+      function mqc_nef_matrix_get_map(NEFMat,axis) result(mapOut)
 !
       implicit none
       class(mqc_nef_matrix),intent(in)::NEFMat
-      integer,intent(in),optional::whichIn
-      integer::which
+      integer,intent(in),optional::axis
+      integer::my_axis
       type(mqc_scf_eigenvalues),dimension(:),allocatable::mapOut
 !
-      if(present(whichIn)) then
-        which = whichIn
+      if(present(axis)) then
+        my_axis = axis
       else
-        which = 1
+        my_axis = 1
       end if
 !
-      select case(which)
+      select case(my_axis)
       case(1)
         mapOut = NEFMat%Map_Matrix_row
       case(2)
         mapOut = NEFMat%Map_Matrix_col
       case default
         call mqc_error_I('mqc_nef_matrix_get_map: whichIn must be 1 (row) or 2 (col)',&
-             6,'whichIn',which)
+             6,'my_axis',my_axis)
       end select
 !
       end function mqc_nef_matrix_get_map
@@ -8604,81 +8605,67 @@
 !
 !     PROCEDURE MQC_NEF_Matrix_Get_Rotation
 !
-!>    \brief <b> MQC_NEF_Matrix_Get_Rotation returns the accumulated unitary
-!>    that block-diagonalizes a Hermitian NEF Matrix with respect to its
-!>    own space partitioning, by cyclic Jacobi rotations restricted to
-!>    pairs of basis functions from two distinct spaces. </b>
+!>    \brief <b> MQC_NEF_Matrix_Get_Rotation builds a NEF rotation matrix
+!>    as a product of elementary orbital-pair rotations, one per nonzero
+!>    entry of an input NEF_Matrix whose own values and sign pattern
+!>    specify both the rotation angle and the generator type at each
+!>    orbital pair -- mirroring SNOWMAN_NEF's rotateSolutions/rotateMO
+!>    (OperatorsMod.f03). </b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
 !>
-!>    Every pair of DISTINCT spaces is always rotated against each other
-!>    (unconditionally, regardless of spaceIndices) -- this is the core
-!>    block-diagonalization. Pairs of basis functions WITHIN the same
-!>    space are, by default, never visited, since any such intra-space
-!>    rotation is arbitrary (gauge freedom); spaceIndices (see below) is
-!>    the opt-in to additionally diagonalize specific spaces' own
-!>    intra-space content too. The returned NEF_Matrix RotOut has NEFMat's
-!>    own Map_Matrix_Row/Col structure; applying it (Dagger(RotOut) matmul
-!>    NEFMat matmul RotOut) zeroes every inter-space block, plus the
-!>    intra-space content of any space listed in spaceIndices, while
-!>    leaving every other diagonal (intra-space) block exactly as it was
-!>    in NEFMat. Alpha and beta are rotated independently (never mixed
-!>    with each other).
+!>    Unlike a diagonalization routine, this does not compute anything
+!>    from an input matrix's own structure to drive some entry to zero --
+!>    it takes externally-specified rotation angles and builds the
+!>    corresponding finite rotation as a product of elementary two-orbital
+!>    rotations, exactly as SNOWMAN_NEF's rotateSolutions/rotateMO do when
+!>    applying a quasi-Newton orbital-optimization step. SNOWMAN_NEF uses
+!>    8 named elementary generators (Ka0,KaZ,Ks0,KsZ,KaX,KsX,KaY,KsY,
+!>    GenMod.f03), each an identity matrix save for 4 diagonal cos(theta)
+!>    entries and 4 off-diagonal entries equal to sin(theta) times a fixed
+!>    +-1/+-i sign pattern.
 !>
-!>    Each elementary rotation is a genuinely complex/Hermitian Jacobi
-!>    rotation: for a target pair (p in space si, q in space sj) with
-!>    off-diagonal element W(p,q), the rotation angle is computed from
-!>    |W(p,q)| exactly as in the real case, and the complex phase of
-!>    W(p,q) is absorbed into the rotation's off-diagonal entries so that
-!>    W(p,q) is driven to exactly zero (not just its real part).
+!>    ThetaMat encodes, for every orbital pair (p in space si, q in space
+!>    sj), BOTH the angle and which of the 8 generators to use, via the
+!>    *infinitesimal-generator* convention value = theta*K (K in
+!>    {+-1,+-i}, |K|=1), read across up to 8 slots per pair:
+!>    alpha(p,q), alpha(q,p), beta(p,q), beta(q,p) for the 4 same-spin
+!>    generators (Ka0,KaZ,Ks0,KsZ -- off blocks untouched), and
+!>    alphaBeta(p,q), alphaBeta(q,p), betaAlpha(p,q), betaAlpha(q,p) for
+!>    the 4 spin-flip generators (KaX,KsX,KaY,KsY -- same/beta blocks
+!>    untouched). Each pair's 8 slots are matched against the 8 known
+!>    +-1/+-i sign templates; a match recovers theta exactly (no small-
+!>    angle approximation -- the finite rotation is then built with exact
+!>    cos/sin of that theta). A pair with all 8 slots at zero is skipped;
+!>    a pair whose nonzero content matches none of the 8 templates is an
+!>    error.
+!>
+!>    Elementary rotations are applied in ascending (space,orbital)
+!>    order -- an arbitrary but fixed choice, since these generators do
+!>    not all commute, this is NOT equivalent to rotateSolutions unless
+!>    the caller's own encoding order happens to match. The second-order
+!>    Zassenhaus/BCH correction rotateSolutions applies when its zaussFlag
+!>    is set is NOT implemented here.
 !>
 !>    \endverbatim
 !
 !     Arguments:
 !     ==========
-!>    \param[in] NEFMat
+!>    \param[in] ThetaMat
 !>    \verbatim
-!>        NEFMat is class(mqc_nef_matrix)
-!>        The Hermitian NEF Matrix (square: Map_Matrix_Row==Map_Matrix_
-!>        Col) to block-diagonalize.
+!>        ThetaMat is type(mqc_nef_matrix)
+!>        Encodes the rotation to build, per the convention above. Its
+!>        own Map_Matrix_Row/Col define RotOut's structure.
 !>    \endverbatim
 !>
 !>    \param[in] thresh
 !>    \verbatim
 !>        thresh is real(kind=real64),optional
-!>        Convergence threshold on the largest remaining inter-space
-!>        |element| (default 1.0d-12).
-!>    \endverbatim
-!>
-!>    \param[in] maxSweeps
-!>    \verbatim
-!>        maxSweeps is integer,optional
-!>        Maximum number of cyclic sweeps over all considered space pairs
-!>        (default 50).
-!>    \endverbatim
-!>
-!>    \param[in] spaceIndices
-!>    \verbatim
-!>        spaceIndices is integer,dimension(:),optional
-!>        Does NOT affect inter-space rotation -- ALL pairs of distinct
-!>        spaces are always rotated, with or without this argument. When
-!>        present, it instead OPTS IN specific spaces' own intra-space
-!>        content for diagonalization too (pairs of basis functions within
-!>        that one space are then also rotated, in addition to every
-!>        inter-space pair). Spaces not listed keep their intra-space
-!>        content exactly as in NEFMat. Absent (default): no intra-space
-!>        rotation at all, only the inter-space block-diagonalization.
-!>    \endverbatim
-!>
-!>    \param[out] blockDiagOut
-!>    \verbatim
-!>        blockDiagOut is type(mqc_nef_matrix),optional
-!>        Receives Dagger(RotOut) matmul NEFMat matmul RotOut -- block-
-!>        diagonal (by space) to within thresh among the considered
-!>        spaces, for verification.
+!>        Numerical tolerance for "is this slot nonzero" / "do these
+!>        slots agree on one theta". Default 1.0d-10.
 !>    \endverbatim
 !
 !     Authors:
@@ -8686,40 +8673,26 @@
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      function mqc_nef_matrix_get_rotation(NEFMat,thresh,maxSweeps,&
-           spaceIndices,blockDiagOut) result(RotOut)
+      function mqc_nef_matrix_get_generator_rotation(ThetaMat,thresh) result(RotOut)
 !
       implicit none
-      class(mqc_nef_matrix),intent(in)::NEFMat
+      class(mqc_nef_matrix),intent(in)::ThetaMat
       real(kind=real64),intent(in),optional::thresh
-      integer,intent(in),optional::maxSweeps
-      integer,dimension(:),intent(in),optional::spaceIndices
-      type(mqc_nef_matrix),intent(out),optional::blockDiagOut
       type(mqc_nef_matrix)::RotOut
-!
-      real(kind=real64)::myThresh,maxOffBlock
-      integer::myMaxSweeps,row,sweep,si,sj,idx
-      type(mqc_nef_matrix)::W
-      character(len=5),dimension(2)::spinLabels
+      real(kind=real64)::myThresh
+      integer::row,si,sj,idx
 !
       if(present(thresh)) then
         myThresh = thresh
       else
-        myThresh = 1.0d-12
-      end if
-      if(present(maxSweeps)) then
-        myMaxSweeps = maxSweeps
-      else
-        myMaxSweeps = 50
+        myThresh = 1.0d-10
       end if
 !
-!     RotOut starts as the identity NEF_Matrix matching NEFMat's own
-!     structure -- built from the existing MQC_SCF_Integral identity
-!     constructor per diagonal block; off-diagonal blocks are left zero-
-!     flagged (a true identity has nothing there, not just a zero value).
+!     RotOut starts as the identity NEF_Matrix matching ThetaMat's own
+!     structure.
 !
-      call RotOut%init(NEFMat%Map_Matrix_Row,&
-           initial_map_matrix_col=NEFMat%Map_Matrix_Col)
+      call RotOut%init(ThetaMat%Map_Matrix_Row,&
+           initial_map_matrix_col=ThetaMat%Map_Matrix_Col)
       do row = 1, RotOut%NumSpace_row
         idx = RotOut%blockIndex([1,row],[2,row])
         RotOut%Main_Matrix(idx) = mqc_integral_identity_func(&
@@ -8729,218 +8702,191 @@
         RotOut%Zero_Flag(idx) = .false.
       end do
 !
-      W = NEFMat
-      spinLabels(1) = 'alpha'
-      spinLabels(2) = 'beta'
-!
-      do sweep = 1, myMaxSweeps
-        maxOffBlock = 0.0
-!       Inter-space pairs: ALWAYS rotated, for every pair of distinct
-!       spaces, regardless of spaceIndices.
-        do si = 1, NEFMat%NumSpace_row
-          do sj = si+1, NEFMat%NumSpace_row
-            call rotatePair(si,sj)
-          end do
+      do si = 1, ThetaMat%NumSpace_row
+        do sj = si, ThetaMat%NumSpace_row
+          call applyPair(si,sj)
         end do
-!       Intra-space pairs: only for spaces the caller opted into via
-!       spaceIndices -- absent entirely by default.
-        if(present(spaceIndices)) then
-          do idx = 1, size(spaceIndices)
-            call rotatePair(spaceIndices(idx),spaceIndices(idx))
-          end do
-        end if
-        if(maxOffBlock.lt.myThresh) exit
       end do
-!
-      if(present(blockDiagOut)) blockDiagOut = W
 !
       contains
 !
-!       Applies cyclic Jacobi rotations zeroing every |W(p,q)| above
-!       myThresh for p in space si, q in space sj (both that spin). When
-!       si==sj, p<q runs over that one space's own basis (intra-space);
-!       when si/=sj, p,q range independently over the two distinct
-!       spaces' own bases (inter-space) -- same rotation-building logic
-!       either way, just a single active block instead of four.
-!
-        subroutine rotatePair(si,sj)
+        subroutine classifyPair(V,genIdx,theta,theta2,isError)
         implicit none
-        integer,intent(in)::si,sj
-        integer::p,q,qStart,sizeI,sizeJ,spinIdx,rowSeed,idDiagI,idDiagJ,idOff
-        type(mqc_nef_matrix)::Rk
-        type(mqc_scalar)::sElement
-        complex(kind=real64)::cWpq,cWpp,cWqq
-        real(kind=real64)::theta,phi,absWpq
+        complex(kind=real64),dimension(8),intent(in)::V
+        integer,intent(out)::genIdx
+        complex(kind=real64),intent(out)::theta,theta2
+        logical,intent(out)::isError
+        integer::g,k
+        complex(kind=real64),dimension(8)::Kt
+        complex(kind=real64)::ratio,refRatio
+        logical::anyNonzero,allConsistent
 !
-        do spinIdx = 1, 2
-          if(spinIdx.eq.1) then
-            sizeI = W%Size_vector_alpha_row(si)
-            sizeJ = W%Size_vector_alpha_row(sj)
-          else
-            sizeI = W%Size_vector_beta_row(si)
-            sizeJ = W%Size_vector_beta_row(sj)
-          end if
-          do p = 1, sizeI
-            if(si.eq.sj) then
-              qStart = p+1
-            else
-              qStart = 1
-            end if
-            do q = qStart, sizeJ
-              sElement = W%at(p,q,si,sj,trim(spinLabels(spinIdx)))
-              cWpq = sElement
-              absWpq = abs(cWpq)
-              if(absWpq.gt.maxOffBlock) maxOffBlock = absWpq
-              if(absWpq.gt.myThresh) then
-                sElement = W%at(p,p,si,si,trim(spinLabels(spinIdx)))
-                cWpp = sElement
-                sElement = W%at(q,q,sj,sj,trim(spinLabels(spinIdx)))
-                cWqq = sElement
-                phi = atan2(aimag(cWpq),real(cWpq))
-                theta = 0.5*atan2(2.0*absWpq,real(cWqq)-real(cWpp))
+        genIdx = 0
+        theta = (0.0d0,0.0d0)
+        theta2 = (0.0d0,0.0d0)
+        isError = .false.
+        if(maxval(abs(V)).le.myThresh) return
 !
-                call Rk%init(NEFMat%Map_Matrix_Row,&
-                     initial_map_matrix_col=NEFMat%Map_Matrix_Col)
-                do rowSeed = 1, Rk%NumSpace_row
-                  idDiagI = Rk%blockIndex([1,rowSeed],[2,rowSeed])
-                  Rk%Main_Matrix(idDiagI) = mqc_integral_identity_func(&
-                       Rk%Size_vector_alpha_row(rowSeed),&
-                       Rk%Size_vector_beta_row(rowSeed),&
-                       nAlpha2=Rk%Size_vector_alpha_col(rowSeed),&
-                       nBeta2=Rk%Size_vector_beta_col(rowSeed))
-                  Rk%Zero_Flag(idDiagI) = .false.
-                end do
-!
-                if(si.eq.sj) then
-!                 single block: all four active entries share (si,si)
-                  idDiagI = Rk%blockIndex([1,si],[2,si])
-                  sElement = cos(theta)
-                  call Rk%Main_Matrix(idDiagI)%put(sElement,p,p,trim(spinLabels(spinIdx)))
-                  call Rk%Main_Matrix(idDiagI)%put(sElement,q,q,trim(spinLabels(spinIdx)))
-                  sElement = cmplx(-sin(theta)*cos(phi),sin(theta)*sin(phi),kind=real64)
-                  call Rk%Main_Matrix(idDiagI)%put(sElement,p,q,trim(spinLabels(spinIdx)))
-                  sElement = cmplx(sin(theta)*cos(phi),sin(theta)*sin(phi),kind=real64)
-                  call Rk%Main_Matrix(idDiagI)%put(sElement,q,p,trim(spinLabels(spinIdx)))
-                else
-!                 two diagonal blocks plus two off-diagonal (cross-space)
-!                 blocks, the latter starting zero-flagged and needing an
-!                 explicit %init before their one active entry is put
-                  sElement = cos(theta)
-                  idDiagI = Rk%blockIndex([1,si],[2,si])
-                  call Rk%Main_Matrix(idDiagI)%put(sElement,p,p,trim(spinLabels(spinIdx)))
-                  idDiagJ = Rk%blockIndex([1,sj],[2,sj])
-                  call Rk%Main_Matrix(idDiagJ)%put(sElement,q,q,trim(spinLabels(spinIdx)))
-!
-                  idOff = Rk%blockIndex([1,si],[2,sj])
-                  call Rk%Main_Matrix(idOff)%init(&
-                       Rk%Size_vector_alpha_row(si),Rk%Size_vector_beta_row(si),&
-                       nAlpha2=Rk%Size_vector_alpha_col(sj),&
-                       nBeta2=Rk%Size_vector_beta_col(sj))
-                  sElement = cmplx(-sin(theta)*cos(phi),sin(theta)*sin(phi),kind=real64)
-                  call Rk%Main_Matrix(idOff)%put(sElement,p,q,trim(spinLabels(spinIdx)))
-                  Rk%Zero_Flag(idOff) = .false.
-!
-                  idOff = Rk%blockIndex([1,sj],[2,si])
-                  call Rk%Main_Matrix(idOff)%init(&
-                       Rk%Size_vector_alpha_row(sj),Rk%Size_vector_beta_row(sj),&
-                       nAlpha2=Rk%Size_vector_alpha_col(si),&
-                       nBeta2=Rk%Size_vector_beta_col(si))
-                  sElement = cmplx(sin(theta)*cos(phi),sin(theta)*sin(phi),kind=real64)
-                  call Rk%Main_Matrix(idOff)%put(sElement,q,p,trim(spinLabels(spinIdx)))
-                  Rk%Zero_Flag(idOff) = .false.
-                end if
-!
-                W = matmul(Dagger(Rk),matmul(W,Rk))
-                RotOut = matmul(RotOut,Rk)
+        do g = 1, 8
+          call mqc_nef_generator_template(g,Kt)
+          anyNonzero = .false.
+          allConsistent = .true.
+          refRatio = (0.0d0,0.0d0)
+          do k = 1, 8
+            if(abs(Kt(k)).gt.0.5) then
+              ratio = V(k)/Kt(k)
+              if(.not.anyNonzero) then
+                refRatio = ratio
+                anyNonzero = .true.
+              else if(abs(ratio-refRatio).gt.myThresh) then
+                allConsistent = .false.
               end if
-            end do
+            else
+              if(abs(V(k)).gt.myThresh) allConsistent = .false.
+            end if
           end do
+          if(allConsistent.and.anyNonzero) then
+            genIdx = g
+            theta = refRatio
+            return
+          end if
         end do
 !
-        end subroutine rotatePair
+        if(maxval(abs(V(5:8))).le.myThresh.and.&
+           abs(V(1)+V(2)).le.myThresh.and.abs(V(3)+V(4)).le.myThresh) then
+          genIdx = 9
+          theta = V(1)
+          theta2 = V(3)
+          return
+        end if
+        isError = .true.
+        end subroutine classifyPair
 !
-      end function mqc_nef_matrix_get_rotation
+        subroutine buildElementary(si,p,sj,q,genIdx,theta)
+        implicit none
+        integer,intent(in)::si,sj,p,q,genIdx
+        complex(kind=real64),intent(in)::theta
+        type(mqc_nef_matrix)::Rk
+        type(mqc_scalar)::sElement
+        complex(kind=real64),dimension(8)::Kt
+        complex(kind=real64)::c,s
+        integer::idDiagI,idDiagJ,idFwd,idBwd,rowSeed
+!
+        c = cos(theta)
+        s = sin(theta)
+        call mqc_nef_generator_template(genIdx,Kt)
+!
+        call Rk%init(ThetaMat%Map_Matrix_Row,&
+             initial_map_matrix_col=ThetaMat%Map_Matrix_Col)
+        do rowSeed = 1, Rk%NumSpace_row
+          idDiagI = Rk%blockIndex([1,rowSeed],[2,rowSeed])
+          Rk%Main_Matrix(idDiagI) = mqc_integral_identity_func(&
+               Rk%Size_vector_alpha_row(rowSeed),Rk%Size_vector_beta_row(rowSeed),&
+               nAlpha2=Rk%Size_vector_alpha_col(rowSeed),&
+               nBeta2=Rk%Size_vector_beta_col(rowSeed))
+          Rk%Zero_Flag(idDiagI) = .false.
+        end do
+!
+!       Diagonal: cos(theta) at (p,p),(q,q), both spins -- same for all
+!       8 generators.
+        sElement = c
+        idDiagI = Rk%blockIndex([1,si],[2,si])
+        call Rk%Main_Matrix(idDiagI)%put(sElement,p,p,'alpha')
+        call Rk%Main_Matrix(idDiagI)%put(sElement,p,p,'beta')
+        idDiagJ = Rk%blockIndex([1,sj],[2,sj])
+        call Rk%Main_Matrix(idDiagJ)%put(sElement,q,q,'alpha')
+        call Rk%Main_Matrix(idDiagJ)%put(sElement,q,q,'beta')
+!
+!       Off-diagonal: sin(theta)*K at whichever of the 8 slots this
+!       generator's template has nonzero. idFwd=idBwd when si==sj (the
+!       diagonal block itself, already non-zero-flagged above); when
+!       si/=sj these are the two cross-space blocks, zero-flagged until
+!       the first write below.
+        idFwd = Rk%blockIndex([1,si],[2,sj])
+        idBwd = Rk%blockIndex([1,sj],[2,si])
+        if(Rk%Zero_Flag(idFwd)) then
+          call Rk%Main_Matrix(idFwd)%init(Rk%Size_vector_alpha_row(si),&
+               Rk%Size_vector_beta_row(si),nAlpha2=Rk%Size_vector_alpha_col(sj),&
+               nBeta2=Rk%Size_vector_beta_col(sj))
+          Rk%Zero_Flag(idFwd) = .false.
+        end if
+        if(Rk%Zero_Flag(idBwd)) then
+          call Rk%Main_Matrix(idBwd)%init(Rk%Size_vector_alpha_row(sj),&
+               Rk%Size_vector_beta_row(sj),nAlpha2=Rk%Size_vector_alpha_col(si),&
+               nBeta2=Rk%Size_vector_beta_col(si))
+          Rk%Zero_Flag(idBwd) = .false.
+        end if
+!
+        call mqc_nef_generator_write_slots(Rk,idFwd,idBwd,p,q,s,Kt)
+!
+        RotOut = matmul(RotOut,Rk)
+        end subroutine buildElementary
+!
+        subroutine applyPair(si,sj)
+        implicit none
+        integer,intent(in)::si,sj
+        integer::p,q,qStart,sizeI,sizeJ,genIdx
+        type(mqc_scalar)::sElement
+        complex(kind=real64),dimension(8)::V
+        complex(kind=real64)::theta,theta2
+        logical::isError
+!
+        sizeI = ThetaMat%Size_vector_alpha_row(si)
+        sizeJ = ThetaMat%Size_vector_alpha_row(sj)
+        do p = 1, sizeI
+          if(si.eq.sj) then
+            qStart = p+1
+          else
+            qStart = 1
+          end if
+          do q = qStart, sizeJ
+            sElement = ThetaMat%at(p,q,si,sj,'alpha');     V(1) = sElement
+            sElement = ThetaMat%at(q,p,sj,si,'alpha');     V(2) = sElement
+            sElement = ThetaMat%at(p,q,si,sj,'beta');      V(3) = sElement
+            sElement = ThetaMat%at(q,p,sj,si,'beta');      V(4) = sElement
+            sElement = ThetaMat%at(p,q,si,sj,'alphaBeta'); V(5) = sElement
+            sElement = ThetaMat%at(q,p,sj,si,'alphaBeta'); V(6) = sElement
+            sElement = ThetaMat%at(p,q,si,sj,'betaAlpha'); V(7) = sElement
+            sElement = ThetaMat%at(q,p,sj,si,'betaAlpha'); V(8) = sElement
+            call classifyPair(V,genIdx,theta,theta2,isError)
+            if(isError) call mqc_error_i('mqc_nef_matrix_get_generator_rotation: '//&
+                 'entries at this orbital pair match none of the 8 known '//&
+                 'generator sign patterns (Ka0/KaZ/Ks0/KsZ/KaX/KsX/KaY/KsY) or Zero',6,&
+                 'space si',si,'space sj',sj,'orbital p',p,'orbital q',q)
+            if(genIdx.eq.9) then
+              call buildElementary(si,p,sj,q,1,(theta+theta2)/2)
+              call buildElementary(si,p,sj,q,2,(theta-theta2)/2)
+            else if(genIdx.gt.0) then
+              call buildElementary(si,p,sj,q,genIdx,theta)
+            end if
+          end do
+        end do
+        end subroutine applyPair
+!
+      end function mqc_nef_matrix_get_generator_rotation
 !
 !
-!     PROCEDURE MQC_NEF_Matrix_Get_Block_Rotation
+!     PROCEDURE MQC_NEF_Generator_Template
 !
-!>    \brief <b> MQC_NEF_Matrix_Get_Block_Rotation returns the rotation
-!>    that zeroes a single inter-space coupling block, supplied from a
-!>    (possibly differently-indexed and differently-shaped) source NEF
-!>    Matrix, embedded at a caller-chosen space-pair position within a
-!>    template's own structure. </b>
-!>
-!>    \par Purpose:
-!     =============
-!>
-!>    \verbatim
-!>
-!>    Since MQC_NEF_Matrix_Get_Rotation treats every diagonal (intra-
-!>    space) block as arbitrary/don't-care, a Hermitian matrix being
-!>    rotated only truly needs its off-diagonal (inter-space) content
-!>    supplied -- and by Hermiticity, only one triangle of that (the
-!>    caller's choice of which space is "row" and which is "col" in
-!>    inputPair/templatePair) needs to be given; the conjugate-transpose
-!>    counterpart is derived automatically. This mirrors slice's own
-!>    space-index selection/mapping convention, just for a single block
-!>    instead of an arbitrary row/column subset.
-!>
-!>    Implementation: builds a working NEF_Matrix with templateMat's own
-!>    Map_Matrix_Row/Col structure, copies NEFMat's block at inputPair
-!>    into it at templatePair (and NEFMat's block's Dagger into the
-!>    conjugate position, templatePair reversed), leaves every other
-!>    block (including all diagonal ones) zero-flagged, then simply calls
-!>    MQC_NEF_Matrix_Get_Rotation on that working matrix with no
-!>    spaceIndices -- every other space-pair is already exactly zero so
-!>    no rotation is ever triggered for them, and the one populated pair
-!>    sweeps/converges to zero exactly as it would inside a full matrix.
-!>
-!>    \endverbatim
+!>    \brief <b> MQC_NEF_Generator_Template returns the 8-slot +-1/+-i sign
+!>    pattern for one of SNOWMAN_NEF's 8 orbital-rotation generators
+!>    (Ka0,KaZ,Ks0,KsZ,KaX,KsX,KaY,KsY, GenMod.f03), shared by
+!>    MQC_NEF_Matrix_Get_Rotation and MQC_NEF_Matrix_Get_Block_Rotation.
+!>    </b>
 !
 !     Arguments:
 !     ==========
-!>    \param[in] NEFMat
+!>    \param[in] genIdx
 !>    \verbatim
-!>        NEFMat is class(mqc_nef_matrix)
-!>        Holds the actual values of the one inter-space block to use (at
-!>        its own space-index numbering, which may differ entirely from
-!>        templateMat's).
+!>        genIdx is integer
+!>        1=Ka0, 2=KaZ, 3=Ks0, 4=KsZ, 5=KaX, 6=KsX, 7=KaY, 8=KsY.
 !>    \endverbatim
 !>
-!>    \param[in] templateMat
+!>    \param[out] K
 !>    \verbatim
-!>        templateMat is class(mqc_nef_matrix)
-!>        Used only for its own Map_Matrix_Row/Col structure (shape), not
-!>        its content -- defines the row/column structure of the returned
-!>        rotation.
-!>    \endverbatim
-!>
-!>    \param[in] inputPair
-!>    \verbatim
-!>        inputPair is integer,dimension(2)
-!>        [row-space,col-space] identifying, within NEFMat, the block
-!>        whose values are to be used.
-!>    \endverbatim
-!>
-!>    \param[in] templatePair
-!>    \verbatim
-!>        templatePair is integer,dimension(2)
-!>        [row-space,col-space] identifying, within templateMat's own
-!>        structure, where inputPair's block is to be placed (its
-!>        conjugate-transpose is placed at the reversed position
-!>        automatically).
-!>    \endverbatim
-!>
-!>    \param[in] thresh
-!>    \verbatim
-!>        thresh is real(kind=real64),optional
-!>        Forwarded to MQC_NEF_Matrix_Get_Rotation (default 1.0d-12).
-!>    \endverbatim
-!>
-!>    \param[in] maxSweeps
-!>    \verbatim
-!>        maxSweeps is integer,optional
-!>        Forwarded to MQC_NEF_Matrix_Get_Rotation (default 50).
+!>        K is complex(kind=real64),dimension(8)
+!>        Slot order: alpha(p,q), alpha(q,p), beta(p,q), beta(q,p),
+!>        alphaBeta(p,q), alphaBeta(q,p), betaAlpha(p,q), betaAlpha(q,p).
 !>    \endverbatim
 !
 !     Authors:
@@ -8948,47 +8894,378 @@
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      function mqc_nef_matrix_get_block_rotation(NEFMat,templateMat,&
-           inputPair,templatePair,thresh,maxSweeps) result(RotOut)
+      subroutine mqc_nef_generator_template(genIdx,K)
 !
       implicit none
-      class(mqc_nef_matrix),intent(in)::NEFMat,templateMat
-      integer,dimension(2),intent(in)::inputPair,templatePair
-      real(kind=real64),intent(in),optional::thresh
-      integer,intent(in),optional::maxSweeps
-      type(mqc_nef_matrix)::RotOut
+      integer,intent(in)::genIdx
+      complex(kind=real64),dimension(8),intent(out)::K
+      complex(kind=real64),parameter::zero=(0.0d0,0.0d0),one=(1.0d0,0.0d0),&
+           ii=(0.0d0,1.0d0)
+      select case(genIdx)
+      case(1)
+        K = [one,-one,one,-one,zero,zero,zero,zero]
+      case(2)
+        K = [one,-one,-one,one,zero,zero,zero,zero]
+      case(3)
+        K = [ii,ii,ii,ii,zero,zero,zero,zero]
+      case(4)
+        K = [ii,ii,-ii,-ii,zero,zero,zero,zero]
+      case(5)
+        K = [zero,zero,zero,zero,one,-one,one,-one]
+      case(6)
+        K = [zero,zero,zero,zero,ii,ii,ii,ii]
+      case(7)
+        K = [zero,zero,zero,zero,ii,-ii,-ii,ii]
+      case(8)
+        K = [zero,zero,zero,zero,one,one,-one,-one]
+      case default
+        call mqc_error_i('mqc_nef_generator_template: genIdx must be 1-8 '//&
+             '(Ka0/KaZ/Ks0/KsZ/KaX/KsX/KaY/KsY) -- generator 9 (Zero) has no '//&
+             'single template, it decomposes into Ka0+KaZ',6,'genIdx',genIdx)
+      end select
 !
-      type(mqc_nef_matrix)::W
-      integer::idIn,idFwd,idRev
+      end subroutine mqc_nef_generator_template
 !
-      if(NEFMat%Size_vector_alpha_row(inputPair(1)).ne.&
-           templateMat%Size_vector_alpha_row(templatePair(1)).or.&
-         NEFMat%Size_vector_beta_row(inputPair(1)).ne.&
-           templateMat%Size_vector_beta_row(templatePair(1)).or.&
-         NEFMat%Size_vector_alpha_col(inputPair(2)).ne.&
-           templateMat%Size_vector_alpha_col(templatePair(2)).or.&
-         NEFMat%Size_vector_beta_col(inputPair(2)).ne.&
-           templateMat%Size_vector_beta_col(templatePair(2))) &
-        call mqc_error_i('mqc_nef_matrix_get_block_rotation: NEFMat''s '//&
-             'block at inputPair does not match templateMat''s own size '//&
-             'at templatePair',6,&
-             'inputPair(1)',inputPair(1),'templatePair(1)',templatePair(1),&
-             'inputPair(2)',inputPair(2),'templatePair(2)',templatePair(2))
 !
-      call W%init(templateMat%Map_Matrix_Row,&
-           initial_map_matrix_col=templateMat%Map_Matrix_Col)
+!     PROCEDURE MQC_NEF_Generator_Name_To_Index
 !
-      idIn = NEFMat%blockIndex([1,inputPair(1)],[2,inputPair(2)])
-      if(.not.NEFMat%Zero_Flag(idIn)) then
-        idFwd = W%blockIndex([1,templatePair(1)],[2,templatePair(2)])
-        W%Main_Matrix(idFwd) = NEFMat%Main_Matrix(idIn)
-        W%Zero_Flag(idFwd) = .false.
-        idRev = W%blockIndex([1,templatePair(2)],[2,templatePair(1)])
-        W%Main_Matrix(idRev) = Dagger(NEFMat%Main_Matrix(idIn))
-        W%Zero_Flag(idRev) = .false.
+!>    \brief <b> MQC_NEF_Generator_Name_To_Index maps one of the 8
+!>    generator-type labels ('Ka0','KaZ','Ks0','KsZ','KaX','KsX','KaY',
+!>    'KsY', case-insensitive) to its index 1-8, erroring on anything
+!>    else. </b>
+!
+!     Arguments:
+!     ==========
+!>    \param[in] nameIn
+!>    \verbatim
+!>        nameIn is character(len=*)
+!>    \endverbatim
+!>
+!>    \param[out] genIdx
+!>    \verbatim
+!>        genIdx is integer
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_nef_generator_name_to_index(nameIn,genIdx)
+!
+      implicit none
+      character(len=*),intent(in)::nameIn
+      integer,intent(out)::genIdx
+      character(len=4)::myName
+!
+      call string_change_case(nameIn,'L',myName)
+      select case(trim(myName))
+      case('ka0')
+        genIdx = 1
+      case('kaz')
+        genIdx = 2
+      case('ks0')
+        genIdx = 3
+      case('ksz')
+        genIdx = 4
+      case('kax')
+        genIdx = 5
+      case('ksx')
+        genIdx = 6
+      case('kay')
+        genIdx = 7
+      case('ksy')
+        genIdx = 8
+      case('zero')
+        genIdx = 9
+      case default
+        call mqc_error_a('mqc_nef_generator_name_to_index: unrecognized generator '//&
+             'type (expected one of Ka0/KaZ/Ks0/KsZ/KaX/KsX/KaY/KsY/Zero)',6,&
+             'nameIn',trim(nameIn))
+      end select
+!
+      end subroutine mqc_nef_generator_name_to_index
+!
+!
+!     PROCEDURE MQC_NEF_Generator_Write_Slots
+!
+!>    \brief <b> MQC_NEF_Generator_Write_Slots writes mag*K(slot) into
+!>    TargetMat's two cross blocks (idFwd for (p,q), idBwd for (q,p)) at
+!>    whichever of the 8 generator slots are nonzero -- the off-diagonal
+!>    placement logic shared by MQC_NEF_Matrix_Get_Rotation (mag=sin(theta),
+!>    building an elementary rotation) and MQC_NEF_Matrix_Get_Block_Rotation
+!>    (mag=theta, building a ThetaMat to feed into getRotation). </b>
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] TargetMat
+!>    \verbatim
+!>        TargetMat is type(mqc_nef_matrix)
+!>        Main_Matrix(idFwd)/(idBwd) must already be allocated/non-zero-
+!>        flagged with the correct (p,q)/(q,p) dimensions.
+!>    \endverbatim
+!>
+!>    \param[in] idFwd, idBwd
+!>    \verbatim
+!>        idFwd, idBwd are integer
+!>        Flat block indices for the (si,sj) and (sj,si) blocks (equal
+!>        when si==sj).
+!>    \endverbatim
+!>
+!>    \param[in] p, q
+!>    \verbatim
+!>        p, q are integer
+!>        Local orbital indices within spaces si, sj respectively.
+!>    \endverbatim
+!>
+!>    \param[in] mag
+!>    \verbatim
+!>        mag is complex(kind=real64)
+!>    \endverbatim
+!>
+!>    \param[in] K
+!>    \verbatim
+!>        K is complex(kind=real64),dimension(8)
+!>        One generator's sign template, from mqc_nef_generator_template.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_nef_generator_write_slots(TargetMat,idFwd,idBwd,p,q,mag,K)
+!
+      implicit none
+      type(mqc_nef_matrix),intent(inout)::TargetMat
+      integer,intent(in)::idFwd,idBwd,p,q
+      complex(kind=real64),intent(in)::mag
+      complex(kind=real64),dimension(8),intent(in)::K
+      type(mqc_scalar)::sElement
+      complex(kind=real64)::cVal
+!
+      if(abs(K(1)).gt.0.5) then
+        cVal = mag*K(1); sElement = cVal
+        call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'alpha')
+      end if
+      if(abs(K(2)).gt.0.5) then
+        cVal = mag*K(2); sElement = cVal
+        call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'alpha')
+      end if
+      if(abs(K(3)).gt.0.5) then
+        cVal = mag*K(3); sElement = cVal
+        call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'beta')
+      end if
+      if(abs(K(4)).gt.0.5) then
+        cVal = mag*K(4); sElement = cVal
+        call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'beta')
+      end if
+      if(abs(K(5)).gt.0.5) then
+        cVal = mag*K(5); sElement = cVal
+        call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'alphaBeta')
+      end if
+      if(abs(K(6)).gt.0.5) then
+        cVal = mag*K(6); sElement = cVal
+        call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'alphaBeta')
+      end if
+      if(abs(K(7)).gt.0.5) then
+        cVal = mag*K(7); sElement = cVal
+        call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'betaAlpha')
+      end if
+      if(abs(K(8)).gt.0.5) then
+        cVal = mag*K(8); sElement = cVal
+        call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'betaAlpha')
       end if
 !
-      RotOut = W%getRotation(thresh=thresh,maxSweeps=maxSweeps)
+      end subroutine mqc_nef_generator_write_slots
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Get_Block_Rotation
+!
+!>    \brief <b> MQC_NEF_Matrix_Get_Block_Rotation builds the rotation
+!>    corresponding to one off-diagonal block of orbital-rotation angles
+!>    (InputNEF's block at InputPair), of a caller-specified generator
+!>    type, placed at a given position (TemplatePair) within a larger
+!>    output structure (TemplateMat). </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    A single off-diagonal block of values cannot, by itself, say which
+!>    of the 8 generators (Ka0,KaZ,Ks0,KsZ,KaX,KsX,KaY,KsY) it represents
+!>    -- GeneratorType supplies that missing information. Depending on
+!>    GeneratorType, the block is read from InputNEF%Main_Matrix(InputPair)
+!>    via %getBlock('alpha') (the 4 same-spin generators) or
+!>    %getBlock('alphaBeta') (the 4 spin-flip generators). Each entry
+!>    (p,q) of that block is a (generally complex) rotation angle theta;
+!>    a fresh ThetaMat, shaped like TemplateMat and zero everywhere except
+!>    the two blocks at TemplatePair and its reverse, is populated at
+!>    every (p,q) via mqc_nef_generator_write_slots(...,mag=theta,...),
+!>    then handed to %getRotation() to build the actual rotation. When
+!>    TemplatePair's two space-indices are equal (intra-space), only the
+!>    upper triangle (p<q) of the input block is used, matching
+!>    getRotation's own intra-space convention.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] InputNEF
+!>    \verbatim
+!>        InputNEF is type(mqc_nef_matrix)
+!>        Holds the (generally complex) rotation-angle values.
+!>    \endverbatim
+!>
+!>    \param[in] TemplateMat
+!>    \verbatim
+!>        TemplateMat is type(mqc_nef_matrix)
+!>        Defines RotOut's full structure (Map_Matrix_Row/Col).
+!>    \endverbatim
+!>
+!>    \param[in] InputPair
+!>    \verbatim
+!>        InputPair is integer,dimension(2)
+!>        The space-index pair of InputNEF holding the block to use.
+!>    \endverbatim
+!>
+!>    \param[in] TemplatePair
+!>    \verbatim
+!>        TemplatePair is integer,dimension(2)
+!>        Where that block's space-indices map to within TemplateMat.
+!>    \endverbatim
+!>
+!>    \param[in] GeneratorType
+!>    \verbatim
+!>        GeneratorType is character(len=*)
+!>        One of 'Ka0','KaZ','Ks0','KsZ','KaX','KsX','KaY','KsY'
+!>        (case-insensitive).
+!>    \endverbatim
+!>
+!>    \param[in] thresh
+!>    \verbatim
+!>        thresh is real(kind=real64),optional
+!>        Forwarded to %getRotation(). Default 1.0d-10.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_matrix_get_block_rotation(InputNEF,TemplateMap,InputPair,&
+           TemplatePair,GeneratorType,thresh) result(RotOut)
+!
+      implicit none
+      class(mqc_nef_matrix),intent(in)::InputNEF
+      Type(MQC_SCF_Eigenvalues),Dimension(:),Allocatable,intent(in)::TemplateMap
+      integer,dimension(2),intent(in)::InputPair,TemplatePair
+      character(len=*),intent(in)::GeneratorType
+      real(kind=real64),intent(in),optional::thresh
+      type(mqc_nef_matrix)::RotOut
+      type(mqc_nef_matrix)::ThetaMat
+      type(mqc_matrix)::baseBlock,baseBlockAlpha,baseBlockBeta
+      complex(kind=real64),dimension(8)::K,KAlphaOnly,KBetaOnly
+      type(mqc_scalar)::sElement
+      complex(kind=real64)::theta,thetaAlpha,thetaBeta
+      real(kind=real64)::myThresh
+      integer::genIdx,idIn,idFwd,idBwd,p,q,qStart
+      integer::nRowIn,nColIn,nRowTemplate,nColTemplate
+!
+      if(present(thresh)) then
+        myThresh = thresh
+      else
+        myThresh = 1.0d-10
+      end if
+!
+      call mqc_nef_generator_name_to_index(GeneratorType,genIdx)
+      if(genIdx.ne.9) call mqc_nef_generator_template(genIdx,K)
+!
+      call ThetaMat%init(templateMap)
+!
+      idIn = InputNEF%blockIndex([1,InputPair(1)],[2,InputPair(2)])
+      if(genIdx.le.4.or.genIdx.eq.9) then
+        nRowIn = InputNEF%Size_vector_alpha_row(InputPair(1))
+        nColIn = InputNEF%Size_vector_alpha_col(InputPair(2))
+      else
+        nRowIn = InputNEF%Size_vector_beta_row(InputPair(1))
+        nColIn = InputNEF%Size_vector_alpha_col(InputPair(2))
+      end if
+!
+      nRowTemplate = ThetaMat%Size_vector_alpha_row(TemplatePair(1))
+      nColTemplate = ThetaMat%Size_vector_alpha_col(TemplatePair(2))
+      if(nRowIn.ne.nRowTemplate.or.nColIn.ne.nColTemplate) call mqc_error_i(&
+        'mqc_nef_matrix_get_block_rotation: input block dimensions do not '//&
+        'match the template dimensions at templatePair',6,&
+        'nRowIn',nRowIn,'nRowTemplate',nRowTemplate,&
+        'nColIn',nColIn,'nColTemplate',nColTemplate)
+!
+      idFwd = ThetaMat%blockIndex([1,TemplatePair(1)],[2,TemplatePair(2)])
+      idBwd = ThetaMat%blockIndex([1,TemplatePair(2)],[2,TemplatePair(1)])
+      if(ThetaMat%Zero_Flag(idFwd)) then
+        call ThetaMat%Main_Matrix(idFwd)%init(&
+             ThetaMat%Size_vector_alpha_row(TemplatePair(1)),&
+             ThetaMat%Size_vector_beta_row(TemplatePair(1)),&
+             nAlpha2=ThetaMat%Size_vector_alpha_col(TemplatePair(2)),&
+             nBeta2=ThetaMat%Size_vector_beta_col(TemplatePair(2)))
+        ThetaMat%Zero_Flag(idFwd) = .false.
+      end if
+      if(ThetaMat%Zero_Flag(idBwd)) then
+        call ThetaMat%Main_Matrix(idBwd)%init(&
+             ThetaMat%Size_vector_alpha_row(TemplatePair(2)),&
+             ThetaMat%Size_vector_beta_row(TemplatePair(2)),&
+             nAlpha2=ThetaMat%Size_vector_alpha_col(TemplatePair(1)),&
+             nBeta2=ThetaMat%Size_vector_beta_col(TemplatePair(1)))
+        ThetaMat%Zero_Flag(idBwd) = .false.
+      end if
+!
+      if(.not.InputNEF%Zero_Flag(idIn)) then
+        if(genIdx.eq.9) then
+          KAlphaOnly = [(1.0d0,0.0d0),(-1.0d0,0.0d0),(0.0d0,0.0d0),(0.0d0,0.0d0),&
+               (0.0d0,0.0d0),(0.0d0,0.0d0),(0.0d0,0.0d0),(0.0d0,0.0d0)]
+          KBetaOnly = [(0.0d0,0.0d0),(0.0d0,0.0d0),(1.0d0,0.0d0),(-1.0d0,0.0d0),&
+               (0.0d0,0.0d0),(0.0d0,0.0d0),(0.0d0,0.0d0),(0.0d0,0.0d0)]
+          baseBlockAlpha = InputNEF%Main_Matrix(idIn)%getBlock('alpha')
+          baseBlockBeta = InputNEF%Main_Matrix(idIn)%getBlock('beta')
+          do p = 1, nRowIn
+            if(TemplatePair(1).eq.TemplatePair(2)) then
+              qStart = p+1
+            else
+              qStart = 1
+            end if
+            do q = qStart, nColIn
+              sElement = baseBlockAlpha%at(p,q); thetaAlpha = sElement
+              sElement = baseBlockBeta%at(p,q); thetaBeta = sElement
+              if(abs(thetaAlpha).gt.myThresh) &
+                call mqc_nef_generator_write_slots(ThetaMat,idFwd,idBwd,p,q,thetaAlpha,KAlphaOnly)
+              if(abs(thetaBeta).gt.myThresh) &
+                call mqc_nef_generator_write_slots(ThetaMat,idFwd,idBwd,p,q,thetaBeta,KBetaOnly)
+            end do
+          end do
+        else
+          if(genIdx.le.4) then
+            baseBlock = InputNEF%Main_Matrix(idIn)%getBlock('alpha')
+          else
+            baseBlock = InputNEF%Main_Matrix(idIn)%getBlock('alphaBeta')
+          end if
+          do p = 1, nRowIn
+            if(TemplatePair(1).eq.TemplatePair(2)) then
+              qStart = p+1
+            else
+              qStart = 1
+            end if
+            do q = qStart, nColIn
+              sElement = baseBlock%at(p,q)
+              theta = sElement
+              if(abs(theta).le.myThresh) cycle
+              call mqc_nef_generator_write_slots(ThetaMat,idFwd,idBwd,p,q,theta,K)
+            end do
+          end do
+        end if
+      end if
+!
+      RotOut = ThetaMat%getRotation(thresh=myThresh)
 !
       end function mqc_nef_matrix_get_block_rotation
 !
@@ -9261,6 +9538,534 @@
 !
       end function mqc_nef_r4_dimension_swap
 !
+!
+!     PROCEDURE MQC_NEF_R4_Full_Transform
+!
+!>    \brief <b> MQC_NEF_R4_Full_Transform transforms a MQC NEF R4
+!>    two-electron integral set to a new basis using four independent
+!>    MQC NEF Matrix coefficients, one per axis, each of which may freely
+!>    mix NEF spaces (e.g. a getRotation()-style coefficient). </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Generalizes TwoERI_Trans_Full (mqc_est.F03) -- which applies four
+!>    independent, dense MO coefficient matrices to a flat mqc_twoeris --
+!>    to the NEF level, in two ways at once: (1) the four coefficients are
+!>    MQC_NEF_Matrix objects that may have nonzero blocks between ANY pair
+!>    of NEF spaces, not just the diagonal, so an output space can receive
+!>    contributions mixed in from multiple input spaces; and (2) every
+!>    nonzero block of NEFR4A and of the four coefficients may be of ANY
+!>    type (regular/space/spin/general for NEFR4A; space/spin/general for
+!>    the coefficients).
+!>
+!>    This is achieved by working entirely in the merged ('full',
+!>    alpha+beta-combined) representation throughout the transform itself
+!>    (via the existing, already-type-agnostic %getBlock('full') on both
+!>    the integral and the coefficient blocks), and only splitting the
+!>    result back into named alpha/beta/alphaBeta/betaAlpha/... blocks at
+!>    the very end, once the output type (space/spin/general) has been
+!>    resolved. Implemented as two sequential stages (axes 3,4 then axes
+!>    1,2), mirroring TwoERI_Trans_Full's own split, with each stage
+!>    summing over every NEF-space combination that is not structurally
+!>    zero-flagged.
+!>
+!>    Output is 'general'-type (16 blocks per space-quadruple) if any
+!>    nonzero block of NEFR4A or of the four coefficients is 'general'-
+!>    type; else 'spin'-type (4 blocks) if any is 'spin'-type; else
+!>    'space'-type (1 block). storage is always 'full'.
+!>
+!>    Every output space-quadruple is built, even when every contribution
+!>    to it is structurally zero -- this does not yet exploit the NEF-level
+!>    sparsity a more optimized version could. Known, deferred performance
+!>    limitation, not a correctness one.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] NEFR4A
+!>    \verbatim
+!>        NEFR4A is type(mqc_nef_r4)
+!>        The two-electron integrals to transform. Any block type.
+!>    \endverbatim
+!>
+!>    \param[in] NEFCoeff_1
+!>    \verbatim
+!>        NEFCoeff_1 is type(mqc_nef_matrix)
+!>        Coefficients driving axis 1 (P). Required.
+!>    \endverbatim
+!>
+!>    \param[in] NEFCoeff_2
+!>    \verbatim
+!>        NEFCoeff_2 is type(mqc_nef_matrix),optional
+!>        Coefficients driving axis 2 (Q). Defaults to NEFCoeff_1.
+!>    \endverbatim
+!>
+!>    \param[in] NEFCoeff_3
+!>    \verbatim
+!>        NEFCoeff_3 is type(mqc_nef_matrix),optional
+!>        Coefficients driving axis 3 (R). Defaults to NEFCoeff_1.
+!>    \endverbatim
+!>
+!>    \param[in] NEFCoeff_4
+!>    \verbatim
+!>        NEFCoeff_4 is type(mqc_nef_matrix),optional
+!>        Coefficients driving axis 4 (S). Defaults to NEFCoeff_1.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_r4_full_transform(NEFR4A,NEFCoeff_1,NEFCoeff_2,&
+           NEFCoeff_3,NEFCoeff_4) result(NEFR4Out)
+!
+      implicit none
+      class(mqc_nef_r4),intent(in)::NEFR4A
+      type(mqc_nef_matrix),intent(in)::NEFCoeff_1
+      type(mqc_nef_matrix),optional,intent(in)::NEFCoeff_2,NEFCoeff_3,NEFCoeff_4
+      type(mqc_nef_r4)::NEFR4Out
+      type(mqc_nef_matrix)::myCoeff_2,myCoeff_3,myCoeff_4
+      type(mqc_nef_r4)::stageFull,finalFull
+      character(len=15)::intType
+      logical::hasSpin,hasGeneral,anySpin,anyGeneral
+      integer(kind=int64)::P,Q,R,S,idOut
+      integer(kind=int64)::nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4
+      type(mqc_r4tensor)::fullTensor
+      type(mqc_r4tensor)::tAlpha,tBeta,tAlphaBeta,tBetaAlpha
+      type(mqc_r4tensor)::tABAB,tABBA,tBAAB,tBABA,tAAAB,tAABA,tABAA,tBAAA
+      type(mqc_r4tensor)::tBBBA,tBBAB,tBABB,tABBB
+!
+      if(present(NEFCoeff_2)) then
+        myCoeff_2 = NEFCoeff_2
+      else
+        myCoeff_2 = NEFCoeff_1
+      end if
+      if(present(NEFCoeff_3)) then
+        myCoeff_3 = NEFCoeff_3
+      else
+        myCoeff_3 = NEFCoeff_1
+      end if
+      if(present(NEFCoeff_4)) then
+        myCoeff_4 = NEFCoeff_4
+      else
+        myCoeff_4 = NEFCoeff_1
+      end if
+!
+      anySpin = .false.
+      anyGeneral = .false.
+      call detectR4SpinGeneral(NEFR4A,hasSpin,hasGeneral)
+      anySpin = anySpin.or.hasSpin; anyGeneral = anyGeneral.or.hasGeneral
+      call detectCoeffSpinGeneral(NEFCoeff_1,hasSpin,hasGeneral)
+      anySpin = anySpin.or.hasSpin; anyGeneral = anyGeneral.or.hasGeneral
+      call detectCoeffSpinGeneral(myCoeff_2,hasSpin,hasGeneral)
+      anySpin = anySpin.or.hasSpin; anyGeneral = anyGeneral.or.hasGeneral
+      call detectCoeffSpinGeneral(myCoeff_3,hasSpin,hasGeneral)
+      anySpin = anySpin.or.hasSpin; anyGeneral = anyGeneral.or.hasGeneral
+      call detectCoeffSpinGeneral(myCoeff_4,hasSpin,hasGeneral)
+      anySpin = anySpin.or.hasSpin; anyGeneral = anyGeneral.or.hasGeneral
+!
+      if(anyGeneral) then
+        intType = 'general'
+      else if(anySpin) then
+        intType = 'spin'
+      else
+        intType = 'space'
+      end if
+!
+      stageFull = buildStage(NEFR4A,3,4,myCoeff_3,myCoeff_4)
+      finalFull = buildStage(stageFull,1,2,NEFCoeff_1,myCoeff_2)
+!
+!     Final assembly: wrap each output space-quadruple's merged 'full'
+!     result into the appropriately-typed mqc_twoeris block.
+!
+      NEFR4Out%NumSpace_1 = NEFCoeff_1%NumSpace_col
+      NEFR4Out%NumSpace_2 = myCoeff_2%NumSpace_col
+      NEFR4Out%NumSpace_3 = myCoeff_3%NumSpace_col
+      NEFR4Out%NumSpace_4 = myCoeff_4%NumSpace_col
+      allocate(NEFR4Out%Main_R4(NEFR4Out%NumSpace_1*NEFR4Out%NumSpace_2*&
+           NEFR4Out%NumSpace_3*NEFR4Out%NumSpace_4))
+      allocate(NEFR4Out%Zero_Flag(size(NEFR4Out%Main_R4)))
+      NEFR4Out%Zero_Flag = .false.
+      NEFR4Out%Map_Matrix_1 = NEFCoeff_1%getMap(2)
+      NEFR4Out%Map_Matrix_2 = myCoeff_2%getMap(2)
+      NEFR4Out%Map_Matrix_3 = myCoeff_3%getMap(2)
+      NEFR4Out%Map_Matrix_4 = myCoeff_4%getMap(2)
+      NEFR4Out%Size_vector_alpha_1 = NEFCoeff_1%Size_vector_alpha_col
+      NEFR4Out%Size_vector_beta_1  = NEFCoeff_1%Size_vector_beta_col
+      NEFR4Out%Size_vector_alpha_2 = myCoeff_2%Size_vector_alpha_col
+      NEFR4Out%Size_vector_beta_2  = myCoeff_2%Size_vector_beta_col
+      NEFR4Out%Size_vector_alpha_3 = myCoeff_3%Size_vector_alpha_col
+      NEFR4Out%Size_vector_beta_3  = myCoeff_3%Size_vector_beta_col
+      NEFR4Out%Size_vector_alpha_4 = myCoeff_4%Size_vector_alpha_col
+      NEFR4Out%Size_vector_beta_4  = myCoeff_4%Size_vector_beta_col
+!
+      do P = 1, NEFR4Out%NumSpace_1
+        do Q = 1, NEFR4Out%NumSpace_2
+          do R = 1, NEFR4Out%NumSpace_3
+            do S = 1, NEFR4Out%NumSpace_4
+              idOut = NEFR4Out%blockIndex([1,P],[2,Q],[3,R],[4,S])
+              nA1 = NEFCoeff_1%Size_vector_alpha_col(P); nB1 = NEFCoeff_1%Size_vector_beta_col(P)
+              nA2 = myCoeff_2%Size_vector_alpha_col(Q);  nB2 = myCoeff_2%Size_vector_beta_col(Q)
+              nA3 = myCoeff_3%Size_vector_alpha_col(R);  nB3 = myCoeff_3%Size_vector_beta_col(R)
+              nA4 = myCoeff_4%Size_vector_alpha_col(S);  nB4 = myCoeff_4%Size_vector_beta_col(S)
+              call fetchFull(finalFull,P,Q,R,S,nA1+nB1,nA2+nB2,nA3+nB3,nA4+nB4,fullTensor)
+              tAlpha = sliceCorner(fullTensor,'a','a','a','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+              select case(intType)
+              case('space')
+                call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-coulomb','space',tAlpha)
+              case('spin')
+                tBeta = sliceCorner(fullTensor,'b','b','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tAlphaBeta = sliceCorner(fullTensor,'a','a','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tBetaAlpha = sliceCorner(fullTensor,'b','b','a','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-coulomb','spin',&
+                     tAlpha,tBeta,tAlphaBeta,tBetaAlpha)
+              case('general')
+                tBeta = sliceCorner(fullTensor,'b','b','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tAlphaBeta = sliceCorner(fullTensor,'a','a','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tBetaAlpha = sliceCorner(fullTensor,'b','b','a','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tABAB = sliceCorner(fullTensor,'a','b','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tABBA = sliceCorner(fullTensor,'a','b','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tBAAB = sliceCorner(fullTensor,'b','a','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tBABA = sliceCorner(fullTensor,'b','a','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tAAAB = sliceCorner(fullTensor,'a','a','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tAABA = sliceCorner(fullTensor,'a','a','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tABAA = sliceCorner(fullTensor,'a','b','a','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tBAAA = sliceCorner(fullTensor,'b','a','a','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tBBBA = sliceCorner(fullTensor,'b','b','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tBBAB = sliceCorner(fullTensor,'b','b','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tBABB = sliceCorner(fullTensor,'b','a','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                tABBB = sliceCorner(fullTensor,'a','b','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-coulomb','general',&
+                     tAlpha,tBeta,tAlphaBeta,tBetaAlpha,tABAB,tABBA,tBAAB,tBABA,&
+                     tAAAB,tAABA,tABAA,tBAAA,tBBBA,tBBAB,tBABB,tABBB)
+              end select
+            end do
+          end do
+        end do
+      end do
+!
+      Contains
+!
+        subroutine detectR4SpinGeneral(R4In,hasSpinOut,hasGeneralOut)
+        implicit none
+        type(mqc_nef_r4),intent(in)::R4In
+        logical,intent(out)::hasSpinOut,hasGeneralOut
+        integer(kind=int64)::i1,i2,i3,i4,bid
+        hasSpinOut = .false.
+        hasGeneralOut = .false.
+        do i1=1,R4In%blockSize(1)
+          do i2=1,R4In%blockSize(2)
+            do i3=1,R4In%blockSize(3)
+              do i4=1,R4In%blockSize(4)
+                bid = R4In%blockIndex([1,i1],[2,i2],[3,i3],[4,i4])
+                if(R4In%Zero_Flag(bid)) cycle
+                if(R4In%Main_R4(bid)%type().eq.'general') hasGeneralOut = .true.
+                if(R4In%Main_R4(bid)%type().eq.'spin') hasSpinOut = .true.
+              end do
+            end do
+          end do
+        end do
+        end subroutine detectR4SpinGeneral
+!
+        subroutine detectCoeffSpinGeneral(CoeffIn,hasSpinOut,hasGeneralOut)
+        implicit none
+        type(mqc_nef_matrix),intent(in)::CoeffIn
+        logical,intent(out)::hasSpinOut,hasGeneralOut
+        integer(kind=int64)::i1,i2,bid
+        hasSpinOut = .false.
+        hasGeneralOut = .false.
+        do i1=1,CoeffIn%NumSpace_row
+          do i2=1,CoeffIn%NumSpace_col
+            bid = CoeffIn%blockIndex([1,i1],[2,i2])
+            if(CoeffIn%Zero_Flag(bid)) cycle
+            if(CoeffIn%Main_Matrix(bid)%type().eq.'general') hasGeneralOut = .true.
+            if(CoeffIn%Main_Matrix(bid)%type().eq.'spin') hasSpinOut = .true.
+          end do
+        end do
+        end subroutine detectCoeffSpinGeneral
+!
+        function buildStage(srcR4,axisRow,axisCol,CoeffRow,CoeffCol) result(outR4)
+        implicit none
+        type(mqc_nef_r4),intent(in)::srcR4
+        integer(kind=int64),intent(in)::axisRow,axisCol
+        type(mqc_nef_matrix),intent(in)::CoeffRow,CoeffCol
+        type(mqc_nef_r4)::outR4
+        integer(kind=int64)::axisO1,axisO2,nRowOut,nColOut,nO1,nO2
+        integer(kind=int64)::pOut,qOut,idO1,idO2,idOutLocal,iRow,iCol,idA,idCR,idCC
+        type(mqc_r4tensor)::rawSrc,contribution,acc
+        type(mqc_matrix)::denseRow,denseCol
+        logical::first
+!
+        if(axisRow.eq.3.and.axisCol.eq.4) then
+          axisO1=1; axisO2=2
+        else if(axisRow.eq.1.and.axisCol.eq.2) then
+          axisO1=3; axisO2=4
+        else
+          call mqc_error_a('mqc_nef_r4_full_transform: unsupported axis pair in buildStage',6,&
+               'axisRow',' ')
+        end if
+!
+        nRowOut = CoeffRow%NumSpace_col
+        nColOut = CoeffCol%NumSpace_col
+        nO1 = srcR4%blockSize(axisO1)
+        nO2 = srcR4%blockSize(axisO2)
+!
+        call setAxisCount(outR4,axisRow,nRowOut)
+        call setAxisCount(outR4,axisCol,nColOut)
+        call setAxisCount(outR4,axisO1,nO1)
+        call setAxisCount(outR4,axisO2,nO2)
+        allocate(outR4%Main_R4(nRowOut*nColOut*nO1*nO2))
+        allocate(outR4%Zero_Flag(size(outR4%Main_R4)))
+        outR4%Zero_Flag = .true.
+        call setAxisMap(outR4,axisRow,CoeffRow%getMap(2),&
+             CoeffRow%Size_vector_alpha_col,CoeffRow%Size_vector_beta_col)
+        call setAxisMap(outR4,axisCol,CoeffCol%getMap(2),&
+             CoeffCol%Size_vector_alpha_col,CoeffCol%Size_vector_beta_col)
+        call setAxisMap(outR4,axisO1,srcR4%blockMap(axisO1),&
+             srcR4%blockSizeVec(axisO1,'alpha'),srcR4%blockSizeVec(axisO1,'beta'))
+        call setAxisMap(outR4,axisO2,srcR4%blockMap(axisO2),&
+             srcR4%blockSizeVec(axisO2,'alpha'),srcR4%blockSizeVec(axisO2,'beta'))
+!
+        do idO1 = 1, nO1
+          do idO2 = 1, nO2
+            do pOut = 1, nRowOut
+              do qOut = 1, nColOut
+                idOutLocal = outR4%blockIndex([axisRow,pOut],[axisCol,qOut],&
+                     [axisO1,idO1],[axisO2,idO2])
+                first = .true.
+                do iRow = 1, srcR4%blockSize(axisRow)
+                  do iCol = 1, srcR4%blockSize(axisCol)
+                    idA = srcR4%blockIndex([axisRow,iRow],[axisCol,iCol],&
+                         [axisO1,idO1],[axisO2,idO2])
+                    if(srcR4%Zero_Flag(idA)) cycle
+                    idCR = CoeffRow%blockIndex([1,iRow],[2,pOut])
+                    if(CoeffRow%Zero_Flag(idCR)) cycle
+                    idCC = CoeffCol%blockIndex([1,iCol],[2,qOut])
+                    if(CoeffCol%Zero_Flag(idCC)) cycle
+                    rawSrc = srcR4%Main_R4(idA)%getBlock('full')
+                    denseRow = CoeffRow%Main_Matrix(idCR)%getBlock('full')
+                    denseCol = CoeffCol%Main_Matrix(idCC)%getBlock('full')
+                    contribution = rawAxisTransform(rawSrc,axisRow,axisCol,denseRow,denseCol)
+                    if(first) then
+                      acc = contribution
+                      first = .false.
+                    else
+                      acc = acc + contribution
+                    end if
+                  end do
+                end do
+                if(.not.first) then
+                  call mqc_twoeris_allocate(outR4%Main_R4(idOutLocal),'full-coulomb','space',acc)
+                  outR4%Zero_Flag(idOutLocal) = .false.
+                end if
+              end do
+            end do
+          end do
+        end do
+        end function buildStage
+!
+        subroutine setAxisCount(r4Obj,axisNum,nVal)
+        implicit none
+        type(mqc_nef_r4),intent(inout)::r4Obj
+        integer(kind=int64),intent(in)::axisNum,nVal
+        if(axisNum.eq.1) then
+          r4Obj%NumSpace_1 = nVal
+        else if(axisNum.eq.2) then
+          r4Obj%NumSpace_2 = nVal
+        else if(axisNum.eq.3) then
+          r4Obj%NumSpace_3 = nVal
+        else
+          r4Obj%NumSpace_4 = nVal
+        end if
+        end subroutine setAxisCount
+!
+        subroutine setAxisMap(r4Obj,axisNum,mapIn,sizeAlphaIn,sizeBetaIn)
+        implicit none
+        type(mqc_nef_r4),intent(inout)::r4Obj
+        integer(kind=int64),intent(in)::axisNum
+        type(mqc_scf_eigenvalues),dimension(:),intent(in)::mapIn
+        integer,dimension(:),intent(in)::sizeAlphaIn,sizeBetaIn
+        if(axisNum.eq.1) then
+          r4Obj%Map_Matrix_1 = mapIn
+          r4Obj%Size_vector_alpha_1 = sizeAlphaIn
+          r4Obj%Size_vector_beta_1 = sizeBetaIn
+        else if(axisNum.eq.2) then
+          r4Obj%Map_Matrix_2 = mapIn
+          r4Obj%Size_vector_alpha_2 = sizeAlphaIn
+          r4Obj%Size_vector_beta_2 = sizeBetaIn
+        else if(axisNum.eq.3) then
+          r4Obj%Map_Matrix_3 = mapIn
+          r4Obj%Size_vector_alpha_3 = sizeAlphaIn
+          r4Obj%Size_vector_beta_3 = sizeBetaIn
+        else
+          r4Obj%Map_Matrix_4 = mapIn
+          r4Obj%Size_vector_alpha_4 = sizeAlphaIn
+          r4Obj%Size_vector_beta_4 = sizeBetaIn
+        end if
+        end subroutine setAxisMap
+!
+        function rawAxisTransform(rawIn,axisRow,axisCol,coeffRowDense,coeffColDense) result(rawOut)
+        implicit none
+        type(mqc_r4tensor),intent(in)::rawIn
+        integer(kind=int64),intent(in)::axisRow,axisCol
+        type(mqc_matrix),intent(in)::coeffRowDense,coeffColDense
+        type(mqc_r4tensor)::rawOut
+        type(mqc_matrix)::X
+        integer(kind=int64)::i,j,nOther1,nOther2,nRowOutLocal,nColOutLocal
+!
+        nRowOutLocal = size(coeffRowDense,2)
+        nColOutLocal = size(coeffColDense,2)
+!
+        if(axisRow.eq.3.and.axisCol.eq.4) then
+          nOther1 = size(rawIn,1)
+          nOther2 = size(rawIn,2)
+          call rawOut%init(nOther1,nOther2,nRowOutLocal,nColOutLocal)
+          do i=1,nOther1
+            do j=1,nOther2
+              X = rawIn%mat([i],[j],[0],[0])
+              X = Dagger(coeffRowDense).dot.X.dot.coeffColDense
+              call rawOut%mput(X,[i],[j],[0],[0])
+            end do
+          end do
+        else
+          nOther1 = size(rawIn,3)
+          nOther2 = size(rawIn,4)
+          call rawOut%init(nRowOutLocal,nColOutLocal,nOther1,nOther2)
+          do i=1,nOther1
+            do j=1,nOther2
+              X = rawIn%mat([0],[0],[i],[j])
+              X = Dagger(coeffRowDense).dot.X.dot.coeffColDense
+              call rawOut%mput(X,[0],[0],[i],[j])
+            end do
+          end do
+        end if
+        end function rawAxisTransform
+!
+        subroutine fetchFull(R4In,pIn,qIn,rIn,sIn,d1,d2,d3,d4,tOut)
+        implicit none
+        type(mqc_nef_r4),intent(in)::R4In
+        integer(kind=int64),intent(in)::pIn,qIn,rIn,sIn,d1,d2,d3,d4
+        type(mqc_r4tensor),intent(out)::tOut
+        integer(kind=int64)::bid
+        bid = R4In%blockIndex([1,pIn],[2,qIn],[3,rIn],[4,sIn])
+        if(R4In%Zero_Flag(bid)) then
+          call tOut%init(d1,d2,d3,d4)
+        else
+          tOut = R4In%Main_R4(bid)%getBlock('full')
+        end if
+        end subroutine fetchFull
+!
+        function sliceCorner(fullR4,spin1,spin2,spin3,spin4,nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4) &
+             result(blockOut)
+        implicit none
+        type(mqc_r4tensor),intent(in)::fullR4
+        character(len=1),intent(in)::spin1,spin2,spin3,spin4
+        integer(kind=int64),intent(in)::nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4
+        type(mqc_r4tensor)::blockOut
+        integer(kind=int64)::lo1,hi1,lo2,hi2,lo3,hi3,lo4,hi4
+!
+        if(spin1.eq.'a') then; lo1=1; hi1=nA1; else; lo1=nA1+1; hi1=nA1+nB1; end if
+        if(spin2.eq.'a') then; lo2=1; hi2=nA2; else; lo2=nA2+1; hi2=nA2+nB2; end if
+        if(spin3.eq.'a') then; lo3=1; hi3=nA3; else; lo3=nA3+1; hi3=nA3+nB3; end if
+        if(spin4.eq.'a') then; lo4=1; hi4=nA4; else; lo4=nA4+1; hi4=nA4+nB4; end if
+        if(hi1.lt.lo1.or.hi2.lt.lo2.or.hi3.lt.lo3.or.hi4.lt.lo4) then
+          call blockOut%init(max(hi1-lo1+1,0),max(hi2-lo2+1,0),max(hi3-lo3+1,0),max(hi4-lo4+1,0))
+        else
+          blockOut = fullR4%tat([lo1,hi1],[lo2,hi2],[lo3,hi3],[lo4,hi4])
+        end if
+        end function sliceCorner
+!
+      end function mqc_nef_r4_full_transform
+!
+      function mqc_twoeris_nef_r4_transform(ERIs,NEFCoeff_1,NEFCoeff_2,&
+           NEFCoeff_3,NEFCoeff_4) result(NEFR4Out)
+!
+! Rotates all 4 legs of a flat AO-basis mqc_twoERIs into up to 4 independent
+! NEF_Matrix bases. Built directly on TwoERI_Trans_Full (mqc_est.F03), which
+! already handles 'space'/'spin'/'general' coefficient types against a flat
+! 'regular' ERI correctly, with no space->spin duplication needed --
+! independent of mqc_nef_r4_full_transform.
+!
+      implicit none
+      type(mqc_twoERIs),intent(in)::ERIs
+      type(mqc_nef_matrix),intent(in)::NEFCoeff_1
+      type(mqc_nef_matrix),optional,intent(in)::NEFCoeff_2,NEFCoeff_3,NEFCoeff_4
+      type(mqc_nef_r4)::NEFR4Out
+      type(mqc_nef_matrix)::myCoeff_2,myCoeff_3,myCoeff_4
+      type(mqc_scf_integral)::block_1,block_2,block_3,block_4
+      type(mqc_twoERIs)::localERIs,MO_ERIs
+      integer(kind=int64)::p,q,r,s,idC1,idC2,idC3,idC4,idOut
+!
+      if(present(NEFCoeff_2)) then
+        myCoeff_2 = NEFCoeff_2
+      else
+        myCoeff_2 = NEFCoeff_1
+      end if
+      if(present(NEFCoeff_3)) then
+        myCoeff_3 = NEFCoeff_3
+      else
+        myCoeff_3 = NEFCoeff_1
+      end if
+      if(present(NEFCoeff_4)) then
+        myCoeff_4 = NEFCoeff_4
+      else
+        myCoeff_4 = NEFCoeff_1
+      end if
+!
+      NEFR4Out%NumSpace_1 = NEFCoeff_1%NumSpace_col
+      NEFR4Out%NumSpace_2 = myCoeff_2%NumSpace_col
+      NEFR4Out%NumSpace_3 = myCoeff_3%NumSpace_col
+      NEFR4Out%NumSpace_4 = myCoeff_4%NumSpace_col
+      allocate(NEFR4Out%Main_R4(NEFR4Out%NumSpace_1*NEFR4Out%NumSpace_2*&
+           NEFR4Out%NumSpace_3*NEFR4Out%NumSpace_4))
+      allocate(NEFR4Out%Zero_Flag(size(NEFR4Out%Main_R4)))
+      NEFR4Out%Zero_Flag = .true.
+      NEFR4Out%Map_Matrix_1 = NEFCoeff_1%getMap(2)
+      NEFR4Out%Map_Matrix_2 = myCoeff_2%getMap(2)
+      NEFR4Out%Map_Matrix_3 = myCoeff_3%getMap(2)
+      NEFR4Out%Map_Matrix_4 = myCoeff_4%getMap(2)
+      NEFR4Out%Size_vector_alpha_1 = NEFCoeff_1%Size_vector_alpha_col
+      NEFR4Out%Size_vector_beta_1  = NEFCoeff_1%Size_vector_beta_col
+      NEFR4Out%Size_vector_alpha_2 = myCoeff_2%Size_vector_alpha_col
+      NEFR4Out%Size_vector_beta_2  = myCoeff_2%Size_vector_beta_col
+      NEFR4Out%Size_vector_alpha_3 = myCoeff_3%Size_vector_alpha_col
+      NEFR4Out%Size_vector_beta_3  = myCoeff_3%Size_vector_beta_col
+      NEFR4Out%Size_vector_alpha_4 = myCoeff_4%Size_vector_alpha_col
+      NEFR4Out%Size_vector_beta_4  = myCoeff_4%Size_vector_beta_col
+!
+      do p = 1, NEFR4Out%NumSpace_1
+        idC1 = NEFCoeff_1%blockIndex([1,1],[2,p])
+        if(NEFCoeff_1%Zero_Flag(idC1)) cycle
+        block_1 = NEFCoeff_1%Main_Matrix(idC1)
+        do q = 1, NEFR4Out%NumSpace_2
+          idC2 = myCoeff_2%blockIndex([1,1],[2,q])
+          if(myCoeff_2%Zero_Flag(idC2)) cycle
+          block_2 = myCoeff_2%Main_Matrix(idC2)
+          do r = 1, NEFR4Out%NumSpace_3
+            idC3 = myCoeff_3%blockIndex([1,1],[2,r])
+            if(myCoeff_3%Zero_Flag(idC3)) cycle
+            block_3 = myCoeff_3%Main_Matrix(idC3)
+            do s = 1, NEFR4Out%NumSpace_4
+              idC4 = myCoeff_4%blockIndex([1,1],[2,s])
+              if(myCoeff_4%Zero_Flag(idC4)) cycle
+              block_4 = myCoeff_4%Main_Matrix(idC4)
+              idOut = NEFR4Out%blockIndex([1,p],[2,q],[3,r],[4,s])
+              localERIs = ERIs
+              call TwoERI_Trans_Full(6,0,block_1,block_2,block_3,block_4,localERIs,MO_ERIs)
+              NEFR4Out%Main_R4(idOut) = MO_ERIs
+              NEFR4Out%Zero_Flag(idOut) = .false.
+            end do
+          end do
+        end do
+      end do
+!
+      end function mqc_twoeris_nef_r4_transform
+!
 !----------------------------------------------------------------
 !                                                               |
 !     MQC_NEF_SET PROCEDURES                                   |
@@ -9402,7 +10207,7 @@
       case('vector')
         dimStr = 'dims: alpha='//trim(axisDimsStr(NEFSet%Size_vector_alpha_1))//&
                  ' beta='//trim(axisDimsStr(NEFSet%Size_vector_beta_1))
-        do myI = loI, hiI
+       do myI = loI, hiI
           do myJ = loJ, hiJ
             cellHeader = '(I,J) = ('//trim(num2char(myI))//','//trim(num2char(myJ))//')'
             if(NEFSet%isZero(myI,myJ)) then

@@ -26,17 +26,21 @@
       type(mqc_scalar)::sc
       type(mqc_twoERIs)::eriA,eriB,eriC
       type(mqc_twoERIs)::eriAO,eriX,eriHalf,eriPartial,eriTrans,eriTransLR,eriFull,eriSymm
+      type(mqc_twoERIs)::eriAsymAO,eriDegenAO
       type(mqc_matrix)::mA,mB,mC,mD,outBlk
       type(mqc_matrix)::moAA,moBB,moAB,moBA,moFull,moAA2,moBB2,moAB2,moBA2,moFull2
+      type(mqc_matrix)::moAAk,moBBk,moABk,moBAk
+      type(mqc_matrix),dimension(4)::coeffMoFull
       type(mqc_scf_integral)::intSp,intSpin,intGen,intOut
       type(mqc_scf_integral)::generalMO,generalMO2
+      type(mqc_scf_integral),dimension(4)::coeffFull
       real(kind=real64)::got,expected
       real(kind=real64)::partialError,transError,partialPairError,transPairError,fullError,atError
       real(kind=real64)::v1,v2,v3,v4,v5,v6,v7
       real(kind=real64)::v8,v9,v10,v11,v12
       complex(kind=real64)::directValue,partialValue,transValue
       complex(kind=real64)::coef1,coef2,coef3,coef4
-      integer::p,q,r,s,mu,nu,lambda,sigma,spin1,spin2,iblock,jblock,iinteraction
+      integer::p,q,r,s,mu,nu,lambda,sigma,spin1,spin2,iblock,jblock,iinteraction,kCoeff
       integer::colP,colQ,colR,colS
       character(len=4),dimension(16)::spinLabels
       character(len=9),dimension(3)::interactionLabels
@@ -3924,6 +3928,121 @@
         fullError=max(fullError,abs(sc%cval()-directValue))
       end do; end do; end do; end do
       write(*,'(1X,A,ES14.6)') 'real-general full tensor oracle error=',fullError
+!
+!--------------------------------------------------------------------
+!     Test 162: asymmetric four-independent-coefficient full transform
+!     (mqc_twoeris_full_transform / TwoERI_Trans_Full).
+!
+!     Unlike every transform tested above, the four MO coefficient
+!     matrices driving legs P,Q,R,S are genuinely distinct -- not reused
+!     pairwise -- a combination TwoERI_Trans itself cannot express at
+!     all. There is no existing trusted routine to compare against, so
+!     (exactly as Test 159 does for TwoERI_Trans) the reference is an
+!     explicit spin-orbital four-index sum built directly from the four
+!     coefficients and the same fixed AO tensor tA used throughout this
+!     file.
+!--------------------------------------------------------------------
+!
+      do kCoeff=1,4
+        call moAAk%init(n,n,(0.0_real64,0.0_real64))
+        call moBBk%init(n,n,(0.0_real64,0.0_real64))
+        call moABk%init(n,n,(0.0_real64,0.0_real64))
+        call moBAk%init(n,n,(0.0_real64,0.0_real64))
+        do p=1,n
+          do q=1,n
+            call moAAk%put(cmplx(real(kCoeff*100+10+3*p+q,real64)/173.0_real64,&
+              real(kCoeff*7-5+p-2*q,real64)/97.0_real64,real64),p,q)
+            call moBBk%put(cmplx(real(kCoeff*100+20+3*p+q,real64)/173.0_real64,&
+              real(kCoeff*7-10+p-2*q,real64)/97.0_real64,real64),p,q)
+            call moABk%put(cmplx(real(kCoeff*100+30+3*p+q,real64)/173.0_real64,&
+              real(kCoeff*7-15+p-2*q,real64)/97.0_real64,real64),p,q)
+            call moBAk%put(cmplx(real(kCoeff*100+40+3*p+q,real64)/173.0_real64,&
+              real(kCoeff*7-20+p-2*q,real64)/97.0_real64,real64),p,q)
+          end do
+        end do
+        call mqc_integral_allocate(coeffFull(kCoeff),'asymmetric test MOs','general',&
+                                    moAAk,moBBk,moABk,moBAk)
+        coeffMoFull(kCoeff)=coeffFull(kCoeff)%getBlock('full')
+      end do
+!
+      call mqc_twoeris_allocate(eriAsymAO,'full-coulomb','regular',tA)
+      call mqc_twoeris_full_transform(eriAsymAO,'molecular',coeffFull(1),coeffFull(2),&
+                                       coeffFull(3),coeffFull(4))
+!
+      do iblock=1,size(spinLabels)
+        spinLabel=spinLabels(iblock)
+        tC=eriAsymAO%getBlock(spinLabel)
+        fullError=0.0_real64
+        do p=1,n
+          do q=1,n
+            do r=1,n
+              do s=1,n
+                directValue=(0.0_real64,0.0_real64)
+                colP=p+merge(0,n,spinLabel(1:1).eq.'a')
+                colQ=q+merge(0,n,spinLabel(2:2).eq.'a')
+                colR=r+merge(0,n,spinLabel(3:3).eq.'a')
+                colS=s+merge(0,n,spinLabel(4:4).eq.'a')
+                do spin1=0,1
+                  do spin2=0,1
+                    do mu=1,n
+                      do nu=1,n
+                        do lambda=1,n
+                          do sigma=1,n
+                            sc=coeffMoFull(1)%at(mu+spin1*n,colP); coef1=sc%cval()
+                            sc=coeffMoFull(2)%at(nu+spin1*n,colQ); coef2=sc%cval()
+                            sc=coeffMoFull(3)%at(lambda+spin2*n,colR); coef3=sc%cval()
+                            sc=coeffMoFull(4)%at(sigma+spin2*n,colS); coef4=sc%cval()
+                            sc=tA%at(mu,nu,lambda,sigma)
+                            directValue=directValue+conjg(coef1)*coef2*&
+                              conjg(coef3)*coef4*sc%cval()
+                          end do
+                        end do
+                      end do
+                    end do
+                  end do
+                end do
+                sc=tC%at(p,q,r,s)
+                fullError=max(fullError,abs(sc%cval()-directValue))
+              end do
+            end do
+          end do
+        end do
+        if(fullError.le.tol) then
+          write(*,'(1X,A,1X,A4)') 'PASS  asymmetric four-coefficient transform block',spinLabel
+        else
+          write(*,'(1X,A,1X,A4,A,ES14.6)') 'FAIL  asymmetric four-coefficient transform block',&
+            spinLabel,' error=',fullError
+          nfail=nfail+1
+        end if
+      end do
+!
+!--------------------------------------------------------------------
+!     Test 162b: degenerate sanity check -- mqc_twoeris_full_transform
+!     called with a single coefficient (all four legs default to it)
+!     must exactly reproduce the already-validated TwoERI_Trans/eriTrans
+!     result from Test 161 (same generalMO, same AO tensor tA).
+!--------------------------------------------------------------------
+!
+      call mqc_twoeris_allocate(eriDegenAO,'full-coulomb','regular',tA)
+      call mqc_twoeris_full_transform(eriDegenAO,'molecular',generalMO)
+      do iblock=1,size(spinLabels)
+        spinLabel=spinLabels(iblock)
+        tC=eriDegenAO%getBlock(spinLabel)
+        tD=eriTrans%getBlock(spinLabel)
+        fullError=0.0_real64
+        do p=1,n; do q=1,n; do r=1,n; do s=1,n
+          sc=tC%at(p,q,r,s); coef1=sc%cval()
+          sc=tD%at(p,q,r,s); coef2=sc%cval()
+          fullError=max(fullError,abs(coef1-coef2))
+        end do; end do; end do; end do
+        if(fullError.le.tol) then
+          write(*,'(1X,A,1X,A4)') 'PASS  single-coefficient full_transform vs TwoERI_Trans',spinLabel
+        else
+          write(*,'(1X,A,1X,A4,A,ES14.6)') 'FAIL  single-coefficient full_transform vs TwoERI_Trans',&
+            spinLabel,' error=',fullError
+          nfail=nfail+1
+        end if
+      end do
 !
       write(*,9000) nfail
       if(nfail.gt.0) stop 1

@@ -161,6 +161,8 @@
         Procedure, Public::crossouter2ERI => mqc_integral_integral_crossouter_product
 !>    \brief <b> Returns the diagonal elements of an MQC_SCF_Integral object</b>
         Procedure, Public::diagonal => mqc_scf_integral_diagonal_elements
+!>      \brief <b> Check if all values in a MQC_SCF_Integral dimension are zero.</b>
+        Procedure, Public::iszero => MQC_SCF_Integral_Check_Zeros
       End Type
 !
 !>    \brief <b> EST intermediate diagonal matrix variable</b>
@@ -287,6 +289,7 @@
         character(Len=64),private::integralType !regular,raffenetti1,raffenetti2,raffenetti3,space,spin,general
         character(Len=64),private::interactionType !coulomb,exchange,inverted,doublebar,ms,
         character(Len=64),private::storageType !full,symm
+        Integer(kind=int64),Private::nA1=0,nA2=0,nA3=0,nA4=0,nB1=0,nB2=0,nB3=0,nB4=0
 !>
 !>      Definition of non-zero MO elements based on integralType, interactionType and
 !>      storageType
@@ -359,6 +362,7 @@
 !>      \brief <b> Print the MQC_TwoERIs object</b>
         procedure, public::print => mqc_print_twoERIs
         procedure, public::at => mqc_twoERIs_at
+        procedure, public::put => mqc_twoERIs_put
 !>      \brief <b> Initilizes the MQC_twoERIs object</b>
         Procedure, Public::init => mqc_twoERIs_initialize
 !>      \brief <b> Return the spin block dimention of the MQC_TwoERIs object</b>
@@ -566,6 +570,12 @@
         Module Procedure MQC_Scalar_twoERIs_Multiply
         Module Procedure MQC_twoERIs_Scalar_Multiply
       End Interface
+!
+!>    \brief <b> Computes the dot product of two objects</b>
+      Interface Operator (.dot.)
+        Module Procedure MQC_Integral_Eigenvalues_DotProduct
+      End Interface
+!
 !
 !>    \brief <b> Computes the element-wise product of two objects</b>
       Interface Operator (.ewp.)
@@ -1193,13 +1203,13 @@
           call twoERIs%aaba%print(iout,'(aa|ba)',short_print_threshold=print_threshold)
         if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('abaa')) &
           call twoERIs%abaa%print(iout,'(ab|aa)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbba')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baaa')) &
           call twoERIs%baaa%print(iout,'(ba|aa)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbab')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbba')) &
           call twoERIs%bbba%print(iout,'(bb|ba)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('babb')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbab')) &
           call twoERIs%bbab%print(iout,'(bb|ab)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full') &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('babb')) &
           call twoERIs%babb%print(iout,'(ba|bb)',short_print_threshold=print_threshold)
         if(twoERIs%hasSpinBlock('abbb')) &
           call twoERIs%abbb%print(iout,'(ab|bb)',short_print_threshold=print_threshold)
@@ -2200,7 +2210,7 @@
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
-!>    \date 2025
+!>    \date 2025, 2026
 !
       function mqc_integral_change_type(integral,newType) result(integralOut)
 !
@@ -2238,7 +2248,9 @@
            call mqc_error_a('New type is more restrictive than the original one in mqc_integral_change_type',&
                              6,'Original Type:',oldArrayType,'New Type:',newArrayType)
         aa = integral%getBlock('alpha')
-        call mqc_integral_allocate(integralOut,integral%Array_Name,'spin',aa,aa)
+        call mqc_integral_allocate(integralOut,integral%Array_Name,'spin',aa,aa,&
+                       nDimA1=Integral%nARows,nDimA2=Integral%nACols,&
+                       nDimB1=Integral%nBRows,nDimB2=Integral%nBCols)
       case ('general')
         if (oldArrayType.eq.'space') then
           aa = integral%getBlock('alpha')
@@ -2249,12 +2261,13 @@
         end if
         call ab%init(nDimBeta1,nDimAlpha2,zeroR)
         call ba%init(nDimAlpha1,nDimBeta2,zeroR)
-        call mqc_integral_allocate(integralOut,integral%Array_Name,'general',aa,bb,ab,ba)
+        call mqc_integral_allocate(integralOut,integral%Array_Name,'general',aa,bb,ab,ba,&
+                       nDimA1=Integral%nARows,nDimA2=Integral%nACols,&
+                       nDimB1=Integral%nBRows,nDimB2=Integral%nBCols)
       case default
         call mqc_error_A('Unrecognised integral type in mqc_integral_change_type', 6, &
              'New Type:', newArrayType )
       end select
-
 !
       end function mqc_integral_change_type
 !
@@ -2285,7 +2298,7 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
+!>    \author L. M. Thompson, M. M. F. Moraes
 !>    \date 2026
 !
       subroutine mqc_integral_update_type(integral) 
@@ -2302,7 +2315,9 @@
         if(integral%blockSize('Alpha',1).ne.integral%blockSize('Beta',1).or.&
           integral%blockSize('Alpha',2).ne.integral%blockSize('Beta',2)) return
         if(MQC_Matrix_Norm(integral%getBlock('aa')-integral%getBlock('bb')).lt.1.0e-14) &
-          call mqc_integral_allocate(integral,'','space',integral%getBlock('aa'))
+          call mqc_integral_allocate(integral,'','space',integral%getBlock('aa'),&
+                       nDimA1=Integral%nARoWs,nDimA2=Integral%nACols,&
+                       nDimB1=Integral%nBRoWs,nDimB2=Integral%nBCols)
         return
       case('general')
         if(integral%blockSize('Alpha',1).eq.integral%blockSize('Beta',1).and.&
@@ -2313,11 +2328,15 @@
             call mqc_integral_allocate(integral,'','space',integral%getBlock('aa'))
           elseIf(MQC_Matrix_Norm(integral%getBlock('ab')).lt.zeroThresh.and.&
               MQC_Matrix_Norm(integral%getBlock('ba')).lt.zeroThresh) then
-            call mqc_integral_allocate(integral,'','spin',integral%getBlock('aa'),integral%getBlock('bb'))
+            call mqc_integral_allocate(integral,'','spin',integral%getBlock('aa'),integral%getBlock('bb'),&
+                       nDimA1=Integral%nARoWs,nDimA2=Integral%nACols,&
+                       nDimB1=Integral%nBRoWs,nDimB2=Integral%nBCols)
           endIf
         elseIf(MQC_Matrix_Norm(integral%getBlock('ab')).lt.zeroThresh.and.&
             MQC_Matrix_Norm(integral%getBlock('ba')).lt.zeroThresh) then
-          call mqc_integral_allocate(integral,'','spin',integral%getBlock('aa'),integral%getBlock('bb'))
+          call mqc_integral_allocate(integral,'','spin',integral%getBlock('aa'),integral%getBlock('bb'),&
+                       nDimA1=Integral%nARoWs,nDimA2=Integral%nACols,&
+                       nDimB1=Integral%nBRoWs,nDimB2=Integral%nBCols)
         endIf
         return
       case default
@@ -2641,7 +2660,11 @@
         endif
       endIf
       eigenvalues%Alpha = vecAlpha
-      if(eigenvaluesType.eq.'spin') eigenvalues%Beta = vecBeta
+      if(eigenvaluesType.eq.'spin') then 
+        eigenvalues%Beta = vecBeta
+      else
+        if(Allocated(eigenvalues%Beta)) call mqc_deallocate_vector(eigenvalues%Beta)
+      end if
 !
       end subroutine mqc_eigenvalues_initialize
 !
@@ -2699,7 +2722,8 @@
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
-!>    \date 2019
+!>    \author M. M. F. Moraes
+!>    \date 2019, 2026
 !
       function mqc_eris_dimension(eris,label,axis) result(dimBlock)
 !
@@ -2722,27 +2746,16 @@
       call string_change_case(label,'l',myLabel)
 
       select case (myLabel)
-      case('alpha') 
-        if(.not.eris%hasSpinBlock('alpha')) then
-          dimBlock = 0
-        else
-          dimBlock = size(eris%alpha,my_axis)
-        endIf
+      case('alpha')
+        if(my_axis.eq.1) dimBlock = eris%nA1
+        if(my_axis.eq.2) dimBlock = eris%nA2
+        if(my_axis.eq.3) dimBlock = eris%nA3
+        if(my_axis.eq.4) dimBlock = eris%nA4
       case('beta')
-        if(.not.eris%hasSpinBlock('beta')) then
-          if(eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or.eris%type().eq.'raffenetti2'.or.&
-            eris%type().eq.'raffenetti3'.or.eris%type().eq.'space') then
-            if(.not.eris%hasSpinBlock('alpha')) then
-              dimBlock = 0
-            else
-              dimBlock = size(eris%alpha,my_axis)
-            endIf
-          else
-            dimBlock = 0
-          endIf
-        else
-          dimBlock = size(eris%beta,my_axis)
-        endIf
+        if(my_axis.eq.1) dimBlock = eris%nB1
+        if(my_axis.eq.2) dimBlock = eris%nB2
+        if(my_axis.eq.3) dimBlock = eris%nB3
+        if(my_axis.eq.4) dimBlock = eris%nB4
       case default
         call mqc_error_A('label not valid in mqc_eris_dimension', 6, &
              'myLabel', myLabel )
@@ -3034,13 +3047,14 @@
 !
       subroutine mqc_twoeris_allocate(twoERIs,storIntType,integralType,alpha,beta,&
           alphaBeta,betaAlpha,abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba, &
-          bbab,babb,abbb,allocationVector) 
+          bbab,babb,abbb,allocationVector,nA1,nA2,nA3,nA4,nB1,nB2,nB3,nB4)
 !
       implicit none
       class(mqc_twoERIs)::twoERIs
       character(len=*)::storIntType,integralType
       type(mqc_r4tensor),optional::alpha,beta,alphaBeta,betaAlpha,abab,abba,baab, &
         baba,aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb
+      integer,optional::nA1,nA2,nA3,nA4,nB1,nB2,nB3,nB4
       logical,dimension(16),optional::allocationVector
       logical,dimension(16)::allocVec
       integer::i
@@ -3171,6 +3185,111 @@
       if(present(bbab).and.allocVec(14)) twoERIs%bbab = bbab
       if(present(babb).and.allocVec(15)) twoERIs%babb = babb
       if(present(abbb).and.allocVec(16)) twoERIs%abbb = abbb
+
+      if(allocVec(1).and.size(twoERIs%alpha,1).ne.0.and.size(twoERIs%alpha,2).ne.0&
+                    .and.size(twoERIs%alpha,3).ne.0.and.size(twoERIs%alpha,4).ne.0) then
+        twoERIs%nA1 = size(twoERIs%alpha,1)
+        twoERIs%nA2 = size(twoERIs%alpha,2)
+        twoERIs%nA3 = size(twoERIs%alpha,3)
+        twoERIs%nA4 = size(twoERIs%alpha,4)
+        if(present(nA1)) then
+          if(nA1.ne.twoERIs%nA1.and.nA1.ne.0) call mqc_error_i('Mismatch dimensions &
+            &provided in mqc_twoERIs_allocate',6,'nA1',nA1,'twoERIs%nA1',&
+            twoERIs%nA1)
+        endIf
+        if(present(nA2)) then
+          if(nA2.ne.twoERIs%nA2.and.nA2.ne.0) call mqc_error_i('Mismatch dimensions &
+            &provided in mqc_twoERIs_allocate',6,'nA2',nA2,'twoERIs%nA2',&
+            twoERIs%nA2)
+        endIf
+        if(present(nA3)) then
+          if(nA3.ne.twoERIs%nA3.and.nA3.ne.0) call mqc_error_i('Mismatch dimensions &
+            &provided in mqc_twoERIs_allocate',6,'nA3',nA3,'twoERIs%nA3',&
+            twoERIs%nA3)
+        endIf
+        if(present(nA4)) then
+          if(nA4.ne.twoERIs%nA4.and.nA4.ne.0) call mqc_error_i('Mismatch dimensions &
+            &provided in mqc_twoERIs_allocate',6,'nA4',nA4,'twoERIs%nA4',&
+            twoERIs%nA4)
+        endIf
+      else
+        if(present(nA1)) then
+          twoERIs%nA1 = nA1
+        else
+          twoERIs%nA1 = 0
+        endIf
+        if(present(nA2)) then
+          twoERIs%nA2 = nA2
+        else
+          twoERIs%nA2 = 0
+        endIf
+        if(present(nA3)) then
+          twoERIs%nA3 = nA3
+        else
+          twoERIs%nA3 = 0
+        endIf
+        if(present(nA4)) then
+          twoERIs%nA4 = nA4
+        else
+          twoERIs%nA4 = 0
+        endIf
+      endIf
+      if(twoERIs%integralType.eq.'spin'.or.twoERIs%integralType.eq.'general') then
+        if(allocVec(2).and.size(twoERIs%beta,1).ne.0.and.size(twoERIs%beta,2).ne.0&
+                    .and.size(twoERIs%beta,3).ne.0.and.size(twoERIs%beta,4).ne.0) then
+          twoERIs%nB1 = size(twoERIs%beta,1)
+          twoERIs%nB2 = size(twoERIs%beta,2)
+          twoERIs%nB3 = size(twoERIs%beta,3)
+          twoERIs%nB4 = size(twoERIs%beta,4)
+          if(present(nB1)) then
+            if(nB1.ne.twoERIs%nB1.and.nB1.ne.0) call mqc_error_i('Mismatch in dimensions &
+              &provided in mqc_twoERIs_allocate',6,'nB1',nB1,'twoERIs%nB1',&
+              twoERIs%nB1)
+          endIf
+          if(present(nB2)) then
+            if(nB2.ne.twoERIs%nB2.and.nB2.ne.0) call mqc_error_i('Mismatch in dimensions &
+              &provided in mqc_twoERIs_allocate',6,'nB2',nB2,'twoERIs%nB2',&
+              twoERIs%nB2)
+          endIf
+          if(present(nB3)) then
+            if(nB3.ne.twoERIs%nB3.and.nB3.ne.0) call mqc_error_i('Mismatch in dimensions &
+              &provided in mqc_twoERIs_allocate',6,'nB3',nB3,'twoERIs%nB3',&
+              twoERIs%nB3)
+          endIf
+          if(present(nB4)) then
+            if(nB4.ne.twoERIs%nB4.and.nB4.ne.0) call mqc_error_i('Mismatch in dimensions &
+              &provided in mqc_twoERIs_allocate',6,'nB4',nB4,'twoERIs%nB4',&
+              twoERIs%nB4)
+          endIf
+        else
+          if(present(nB1)) then
+            twoERIs%nB1 = nB1
+          else
+            twoERIs%nB1 = 0
+          endIf
+          if(present(nB2)) then
+            twoERIs%nB2 = nB2
+          else
+            twoERIs%nB2 = 0
+          endIf
+          if(present(nB3)) then
+            twoERIs%nB3 = nB3
+          else
+            twoERIs%nB3 = 0
+          endIf
+          if(present(nB4)) then
+            twoERIs%nB4 = nB4
+          else
+            twoERIs%nB4 = 0
+          endIf
+        endIf
+      else
+        twoERIs%nB1 = twoERIs%nA1
+        twoERIs%nB2 = twoERIs%nA2
+        twoERIs%nB3 = twoERIs%nA3
+        twoERIs%nB4 = twoERIs%nA4
+      endIf
+
 !
       end subroutine mqc_twoeris_allocate  
 !
@@ -4121,6 +4240,144 @@
       end subroutine mqc_twoeris_transform
 !
 !
+!     PROCEDURE MQC_TwoERIs_Full_Transform
+!
+!>    \brief <b> MQC_TwoERIs_Full_Transform transforms a regular (AO)
+!>    MQC_TwoERIs variable to the molecular-orbital basis using four fully
+!>    independent MO coefficient matrices, one per AO leg (P,Q,R,S). </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Modeled on mqc_twoeris_transform, generalized from two coefficient
+!>    matrices (reused pairwise across the four AO legs) to four fully
+!>    independent ones. Only IntegralType = 'Molecular' is implemented;
+!>    any other request mirrors mqc_twoeris_transform's own NYI-error idiom.
+!>
+!>    TwoERIs may hold either 'regular' (AO) or 'space' (spin-free MO)
+!>    integrals on input -- both are stored identically (a single dense
+!>    alpha-labeled block, 'coulomb' interaction), so the same four-
+!>    coefficient transform applies whether this is a first AO->MO
+!>    transform or a further MO->MO basis change (e.g. narrowing to an
+!>    active space, or rotating to natural orbitals) of an already-
+!>    transformed spin-free integral set.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] TwoERIs
+!>    \verbatim
+!>        TwoERIs is type(mqc_twoERIs)
+!>        The 'regular' (AO) or 'space' (spin-free MO) MQC_TwoERIs variable
+!>        to transform in place.
+!>    \endverbatim
+!>
+!>    \param[in] IntegralType
+!>    \verbatim
+!>        IntegralType is Character(len=*)
+!>        = 'Molecular': transform to the molecular orbital basis. This is
+!>                       the only value currently implemented.
+!>    \endverbatim
+!>
+!>    \param[in] mo_coeff_1
+!>    \verbatim
+!>        mo_coeff_1 is type(mqc_scf_integral)
+!>        MO coefficients driving AO leg P (axis 1). Required.
+!>    \endverbatim
+!>
+!>    \param[in] mo_coeff_2
+!>    \verbatim
+!>        mo_coeff_2 is type(mqc_scf_integral),optional
+!>        MO coefficients driving AO leg Q (axis 2). Defaults to mo_coeff_1.
+!>    \endverbatim
+!>
+!>    \param[in] mo_coeff_3
+!>    \verbatim
+!>        mo_coeff_3 is type(mqc_scf_integral),optional
+!>        MO coefficients driving AO leg R (axis 3). Defaults to mo_coeff_1.
+!>    \endverbatim
+!>
+!>    \param[in] mo_coeff_4
+!>    \verbatim
+!>        mo_coeff_4 is type(mqc_scf_integral),optional
+!>        MO coefficients driving AO leg S (axis 4). Defaults to mo_coeff_1.
+!>    \endverbatim
+!>
+!>    \param[out] Transform
+!>    \verbatim
+!>        Transform is logical,optional
+!>        If present, returns true if the requested transform can be formed
+!>        and false otherwise (instead of raising an error).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_twoeris_full_transform(twoERIs,integralType,&
+           mo_coeff_1,mo_coeff_2,mo_coeff_3,mo_coeff_4,transform)
+!
+      implicit none
+      type(mqc_twoERIs)::twoERIs
+      character(len=*),intent(in)::integralType
+      type(mqc_scf_integral),intent(in)::mo_coeff_1
+      type(mqc_scf_integral),optional,intent(in)::mo_coeff_2,mo_coeff_3,mo_coeff_4
+      logical,optional,intent(out)::transform
+      character(len=64)::my_integralType
+      type(mqc_scf_integral)::my_coeff_2,my_coeff_3,my_coeff_4
+      type(mqc_twoERIs)::temp
+      integer::iOut=6,iPrint=0
+!
+      call string_change_case(integralType,'l',my_integralType)
+      if(present(transform)) transform = .true.
+!
+      if(present(mo_coeff_2)) then
+        my_coeff_2 = mo_coeff_2
+      else
+        my_coeff_2 = mo_coeff_1
+      end if
+      if(present(mo_coeff_3)) then
+        my_coeff_3 = mo_coeff_3
+      else
+        my_coeff_3 = mo_coeff_1
+      end if
+      if(present(mo_coeff_4)) then
+        my_coeff_4 = mo_coeff_4
+      else
+        my_coeff_4 = mo_coeff_1
+      end if
+!
+      select case (twoERIs%type())
+      case ('regular','space')
+        if(trim(my_integralType).eq.'molecular') then
+          call TwoERI_Trans_Full(iOut,iPrint,mo_coeff_1,my_coeff_2,my_coeff_3,&
+               my_coeff_4,twoERIs,temp)
+          twoERIs = temp
+          return
+        else
+          if(present(transform)) then
+            transform = .false.
+          else
+            call mqc_error_a('Unrecognized 2ERIs type requested in '//&
+              'mqc_twoeris_full_transform',6,'my_integralType',trim(my_integralType))
+          endIf
+        endIf
+      case default
+        if(present(transform)) then
+          transform = .false.
+        else
+          call mqc_error_a('mqc_twoeris_full_transform only supports regular '//&
+            '(AO) or space (spin-free MO) input 2ERIs',6,'twoERIs%type()',twoERIs%type())
+        endIf
+      end select
+!
+      end subroutine mqc_twoeris_full_transform
+!
+!
 !     PROCEDURE MQC_Integral_Identity
 !
 !>    \brief <b> MQC_Integral_Identity is used to set an MQC integral type variable
@@ -4181,8 +4438,8 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2017
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2017, 2026
 !
       subroutine mqc_integral_identity(integral,nAlpha,nBeta,label,nAlpha2,nBeta2) 
 !
@@ -4214,10 +4471,12 @@
       call tmpMatrixAlpha%identity(nAlpha,my_nAlpha2)
 
       if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2) then
-        call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha)
+        call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
       else 
         call tmpMatrixBeta%identity(nBeta,my_nBeta2)
-        call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+        call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
       endIf
 !
       end subroutine mqc_integral_identity  
@@ -4378,7 +4637,7 @@
 !     Authors:
 !     ========
 !>    \author L. M. Thompson, M. M. F. Moraes
-!>    \date 2017, 2025
+!>    \date 2017, 2025, 2026
 !
       subroutine mqc_integral_initialize(integral,nAlpha,nBeta,scalar,label,nAlpha2,nBeta2) 
 !
@@ -4410,32 +4669,38 @@
       if(present(scalar)) then
         call tmpMatrixAlpha%init(nAlpha,my_nAlpha2,scalar)
         if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2) then
-          call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha)
+          call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
         else 
           call tmpMatrixBeta%init(nBeta,my_nBeta2,scalar)
-          if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
-            call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2,scalar)
-            call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2,scalar)
-            call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
-              tmpMatrixBetaAlpha,tmpMatrixAlphaBeta)
-          else
-            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
-          endIf
+         !if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
+         !  call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2,scalar)
+         !  call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2,scalar)
+         !  call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
+         !    tmpMatrixBetaAlpha,tmpMatrixAlphaBeta,&
+         !       nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
+         !else
+            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
+         !endIf
         endIf
       else
         call tmpMatrixAlpha%init(nAlpha,my_nAlpha2)
         if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2) then
-          call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha)
+          call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha,&
+                nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
         else 
           call tmpMatrixBeta%init(nBeta,my_nBeta2)
-          if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
-            call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2)
-            call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2)
-            call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
-              tmpMatrixBetaAlpha,tmpMatrixAlphaBeta)
-          else
-            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
-          endIf
+         !if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
+         !  call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2)
+         !  call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2)
+         !  call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
+         !    tmpMatrixBetaAlpha,tmpMatrixAlphaBeta,&
+         !    nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
+         !else
+            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
+         !endIf
         endIf
       endIf
 !
@@ -4519,7 +4784,6 @@
       else
         my_nBeta4 = nBeta4
       endIf
-
       call aaaa%init(nAlpha,my_nAlpha2,my_nAlpha3,my_nAlpha4)
       if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2&
          .and.my_nAlpha3.eq.my_nBeta3.and.my_nAlpha4.eq.my_nBeta4) then
@@ -4543,13 +4807,19 @@
         call aaab%init(nAlpha,my_nAlpha2,my_nAlpha3,my_nBeta4)
       endIf
       if (eriType.eq.'space') then
-        call mqc_twoeris_allocate(eriOut,'full-coulomb','space',aaaa)
+        call mqc_twoeris_allocate(eriOut,'full-coulomb','space',aaaa,&
+             nA1=nAlpha,nA2=my_nAlpha2,nA3=my_nAlpha3,nA4=my_nAlpha4,&
+             nB1=nBeta,nB2=my_nBeta2,nB3=my_nBeta3,nB4=my_nBeta4)
       elseif (eriType.eq.'spin') then
-        call mqc_twoeris_allocate(eriOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa)
+        call mqc_twoeris_allocate(eriOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa,&
+             nA1=nAlpha,nA2=my_nAlpha2,nA3=my_nAlpha3,nA4=my_nAlpha4,&
+             nB1=nBeta,nB2=my_nBeta2,nB3=my_nBeta3,nB4=my_nBeta4)
       elseif (eriType.eq.'general') then
         call mqc_twoeris_allocate(eriOut,'full-coulomb','general',aaaa,bbbb,aabb,bbaa,&
                                   abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,&
-                                  bbab,babb,abbb)
+                                  bbab,babb,abbb,&
+             nA1=nAlpha,nA2=my_nAlpha2,nA3=my_nAlpha3,nA4=my_nAlpha4,&
+             nB1=nBeta,nB2=my_nBeta2,nB3=my_nBeta3,nB4=my_nBeta4)
       endif
 
 !
@@ -8296,8 +8566,8 @@
       integer(kind=int64)::nA1,nA2,nB1,nB2
 !
       if(size(integralA,'alpha',1).ne.size(integralB,'alpha',1).or.size(integralA,'alpha',2).ne.&
-        size(integralA,'alpha',2).or.size(integralA,'beta',1).ne.size(integralA,'beta',1).or.&
-        size(integralA,'beta',2).ne.size(integralA,'beta',2)) call mqc_error_i('Integral blocks are &
+        size(integralB,'alpha',2).or.size(integralA,'beta',1).ne.size(integralB,'beta',1).or.&
+        size(integralA,'beta',2).ne.size(integralB,'beta',2)) call mqc_error_i('Integral blocks are &
         &not conformable in mqc_integral_sum',6,'size(integralA,alpha,1)-size(integralB,alpha,1)',&
         size(integralA,'alpha',1)-size(integralB,'alpha',1),'size(integralA,alpha,2)-size(integralB,alpha,2)',&
         size(integralA,'alpha',2)-size(integralB,'alpha',2),'size(integralA,beta,1)-size(integralB,beta,1)',&
@@ -8573,13 +8843,21 @@
             case('coulomb')
               !space/coulomb + space/coulomb
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
-              call mqc_twoeris_allocate(ERIOut,'full-coulomb','space',aaaa)
+              call mqc_twoeris_allocate(ERIOut,'full-coulomb','space',aaaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('exchange','doublebar')
               !space/coulomb + space/exchange/doublebar
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('inverted','ms')
               !space/coulomb + space/inverted/ms
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -8587,7 +8865,11 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
-              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -8597,19 +8879,31 @@
             case('exchange')
               !space/exchange + space/exchange
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
-              call mqc_twoeris_allocate(ERIOut,'full-exchange','space',aaaa)
+              call mqc_twoeris_allocate(ERIOut,'full-exchange','space',aaaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('coulomb')
               !space/exchange + space/coulomb
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               !space/exchange + space/doublebar
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('inverted','ms')
               !space/exchange + space/inverted/ms
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -8617,7 +8911,11 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
-              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -8635,7 +8933,11 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
-              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -8647,19 +8949,31 @@
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('exchange')
               !space/doublebar + space/exchange
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('coulomb')
               !space/doublebar + space/coulomb
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
-              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba)
+              call mqc_twoeris_allocate(ERIOut,'full-doublebar','space',aaaa,alphaBeta=aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('inverted','ms')
               !space/doublebar + space/inverted/ms
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -8667,7 +8981,11 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
-              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -8685,7 +9003,11 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
-              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+              call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -8705,9 +9027,17 @@
               aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
               if(ERIB%storType().eq.'full') then
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
-                call mqc_twoeris_allocate(ERIOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa)
+                call mqc_twoeris_allocate(ERIOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-coulomb','spin',aaaa,bbbb,aabb)
+                call mqc_twoeris_allocate(ERIOut,'symm-coulomb','spin',aaaa,bbbb,aabb,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !space/coulomb + spin/exchange
@@ -8721,9 +9051,17 @@
                 bbaa = ERIA%getBlock('bbaa')
                 baab = ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !space/coulomb + spin/inverted
@@ -8736,9 +9074,17 @@
                 bbaa = ERIA%getBlock('bbaa')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                             abab=abab,baba=baba)
+                                                             abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !space/coulomb + spin/doublebar
@@ -8750,9 +9096,17 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baab = ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !space/coulomb + spin/ms
@@ -8766,9 +9120,17 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -8786,9 +9148,17 @@
                 bbaa = ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !space/exchange + spin/exchange
@@ -8797,9 +9167,17 @@
               aabb = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               if(ERIB%storType().eq.'full') then
                 bbaa = ERIA%getBlock('baab')+ERIB%getBlock('baab')
-                call mqc_twoeris_allocate(ERIOut,'full-exchange','spin',aaaa,bbbb,aabb,bbaa)
+                call mqc_twoeris_allocate(ERIOut,'full-exchange','spin',aaaa,bbbb,aabb,bbaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-exchange','spin',aaaa,bbbb,aabb)
+                call mqc_twoeris_allocate(ERIOut,'symm-exchange','spin',aaaa,bbbb,aabb,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !space/exchange + spin/inverted
@@ -8811,10 +9189,18 @@
                 baab = ERIA%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 aabb = ERIA%getBlock('aabb')
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !space/exchange + spin/doublebar
@@ -8826,9 +9212,17 @@
                 bbaa = ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                     abba=abba,baab=baab)
+                                                                     abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !space/exchange + spin/ms
@@ -8842,9 +9236,17 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -8864,10 +9266,18 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                  abab,abba,baab,baba)
+                  abab,abba,baab,baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                  abba=abba,abab=abab)
+                  abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !space/inverted + spin/exchange
@@ -8879,10 +9289,18 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !space/inverted + spin/inverted
@@ -8891,7 +9309,11 @@
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
               baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
               call mqc_twoeris_allocate(ERIOut,'full-inverted','spin',aaaa,bbbb,&
-                                                                 abab,baba)
+                                                                 abab,baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               !space/inverted + spin/doublebar
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -8904,10 +9326,18 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !space/inverted + spin/ms
@@ -8921,10 +9351,18 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -8942,10 +9380,18 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab)
+                                           abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,&
-                                           abba=abba)
+                                           abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !space/doublebar + spin/exchange
@@ -8957,10 +9403,18 @@
                 bbaa = ERIA%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab)
+                                           abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,&
-                                           abba=abba)
+                                           abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !space/doublebar + spin/inverted
@@ -8973,7 +9427,11 @@
               abab = ERIB%getBlock('abab')
               baba = ERIB%getBlock('baba')
               call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                         abba=abba,baab=baab,abab=abab,baba=baba)
+                                         abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               !space/doublebar + spin/doublebar
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -8984,10 +9442,18 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab)
+                                           abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,&
-                                           abba=abba)
+                                           abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !space/doublebar + spin/ms
@@ -9001,10 +9467,18 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -9024,10 +9498,18 @@
                 baab = ERIA%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !space/ms + spin/exchange
@@ -9041,10 +9523,18 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !space/ms + spin/inverted
@@ -9057,7 +9547,11 @@
               abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
               baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
               call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                         abba=abba,baab=baab,abab=abab,baba=baba)
+                                         abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               !space/ms + spin/doublebar
               aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
@@ -9070,10 +9564,18 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !space/ms + spin/ms
@@ -9087,10 +9589,18 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIB%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                           abba=abba,abab=abab)
+                                           abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -9219,9 +9729,17 @@
               aabb = ERIB%getBlock('aaaa')+ERIA%getBlock('aabb')
               if(ERIA%storType().eq.'full') then
                 bbaa = ERIB%getBlock('aaaa')+ERIA%getBlock('bbaa')
-                call mqc_twoeris_allocate(ERIOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa)
+                call mqc_twoeris_allocate(ERIOut,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-coulomb','spin',aaaa,bbbb,aabb)
+                call mqc_twoeris_allocate(ERIOut,'symm-coulomb','spin',aaaa,bbbb,aabb,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !spin/coulomb + space/exchange
@@ -9233,9 +9751,17 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !spin/coulomb + space/inverted
@@ -9247,9 +9773,17 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                               abab=abab,baba=baba)
+                                                               abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !spin/coulomb + space/doublebar
@@ -9261,9 +9795,17 @@
                 bbaa = ERIB%getBlock('bbaa')+ERIA%getBlock('bbaa')
                 baab = ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                   abba=abba,baab=baab)
+                                                                   abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !spin/coulomb + space/ms
@@ -9277,10 +9819,18 @@
                 baab = ERIB%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                                 abba=abba,abab=abab)
+                                                 abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -9298,9 +9848,17 @@
                 bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               !spin/exchange + space/exchange
@@ -9309,9 +9867,17 @@
               aabb = ERIA%getBlock('abba')+ERIB%getBlock('abba')
               if(ERIA%storType().eq.'full') then
                 bbaa = ERIA%getBlock('baab')+ERIB%getBlock('baab')
-                call mqc_twoeris_allocate(ERIOut,'full-exchange','spin',aaaa,bbbb,aabb,bbaa)
+                call mqc_twoeris_allocate(ERIOut,'full-exchange','spin',aaaa,bbbb,aabb,bbaa,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-exchange','spin',aaaa,bbbb,aabb)
+                call mqc_twoeris_allocate(ERIOut,'symm-exchange','spin',aaaa,bbbb,aabb,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               !spin/exchange + space/inverted
@@ -9323,9 +9889,17 @@
                 baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !spin/exchange + space/doublebar
@@ -9337,9 +9911,17 @@
                 bbaa = ERIB%getBlock('bbaa')
                 baab = ERIB%getBlock('baab')+ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                   abba=abba,baab=baab)
+                                                                   abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !spin/exchange + space/ms
@@ -9353,10 +9935,18 @@
                 baab = ERIB%getBlock('baab')+ERIA%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                                 abba=abba,abab=abab)
+                                                 abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -9370,12 +9960,20 @@
               aabb = ERIB%getBlock('aabb')
               abab = ERIA%getBlock('abab')
               if(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 bbaa = ERIB%getBlock('bbaa')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                             abab=abab,baba=baba)
+                                                             abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               aaaa = ERIB%getBlock('aaaa')+ERIA%getBlock('aaaa')
@@ -9384,22 +9982,38 @@
               abab = ERIA%getBlock('abab')
               if(ERIA%storType().eq.'symm') then
                 aabb = ERIB%getBlock('aabb')
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 baab = ERIB%getBlock('baab')
                 baba = ERIA%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               aaaa = ERIB%getBlock('aaaa')+ERIA%getBlock('aaaa')
               bbbb = ERIB%getBlock('aaaa')+ERIA%getBlock('bbbb')
               abab = ERIB%getBlock('abab')+ERIA%getBlock('abab')
               if(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-inverted','spin',aaaa,bbbb,abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-inverted','spin',aaaa,bbbb,abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 baba = ERIB%getBlock('baba')+ERIA%getBlock('baba')
-                call mqc_twoeris_allocate(ERIOut,'full-inverted','spin',aaaa,bbbb,abab,baba)
+                call mqc_twoeris_allocate(ERIOut,'full-inverted','spin',aaaa,bbbb,abab,baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !spin/inverted + space/doublebar
@@ -9412,7 +10026,11 @@
               abab = ERIA%getBlock('abab')
               baba = ERIA%getBlock('baba')
               call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('ms')
               !spin/inverted + space/ms
               aaaa = ERIB%getBlock('aaaa')+ERIA%getBlock('aaaa')
@@ -9424,7 +10042,11 @@
               abab = ERIB%getBlock('abab')+ERIA%getBlock('abab')
               baba = ERIB%getBlock('baba')+ERIA%getBlock('baba')
               call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
                    'ERIB%inttype', ERIB%inttype() )
@@ -9440,9 +10062,17 @@
                 bbaa = ERIB%getBlock('aaaa')+ERIA%getBlock('bbaa')
                 baab = ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('exchange')
               aaaa = ERIB%getBlock('aaaa')+ERIA%getBlock('aaaa')
@@ -9453,9 +10083,17 @@
                 bbaa = ERIA%getBlock('bbaa')
                 baab = ERIB%getBlock('aaaa')+ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                    abba=abba,baab=baab)
+                                                                    abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('inverted')
               aaaa = ERIB%getBlock('aaaa')+ERIA%getBlock('aaaa')
@@ -9468,9 +10106,17 @@
                 baab = ERIA%getBlock('baab')
                 baba = ERIB%getBlock('aaaa')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                           abba=abba,baab=baab,abab=abab,baba=baba)
+                                           abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab)
+                call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('doublebar')
               !spin/doublebar + space/doublebar
@@ -9482,9 +10128,17 @@
                 bbaa = ERIB%getBlock('bbaa')+ERIA%getBlock('bbaa')
                 baab = ERIB%getBlock('baab')+ERIA%getBlock('baab')
                 call mqc_twoeris_allocate(ERIOut,'full-doublebar','spin',aaaa,bbbb,aabb,bbaa,&
-                                                                   abba=abba,baab=baab)
+                                                                   abba=abba,baab=baab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
-                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba)
+                call mqc_twoeris_allocate(ERIOut,'symm-doublebar','spin',aaaa,bbbb,aabb,abba=abba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case('ms')
               !spin/doublebar + space/ms
@@ -9498,10 +10152,18 @@
                 baab = ERIB%getBlock('baab')+ERIA%getBlock('baab')
                 baba = ERIB%getBlock('baba')
                 call mqc_twoeris_allocate(ERIOut,'full-ms','spin',aaaa,bbbb,aabb,bbaa,&
-                                                 abba=abba,baab=baab,abab=abab,baba=baba)
+                                                 abba=abba,baab=baab,abab=abab,baba=baba,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               elseIf(ERIA%storType().eq.'symm') then
                 call mqc_twoeris_allocate(ERIOut,'symm-ms','spin',aaaa,bbbb,aabb,&
-                                                 abba=abba,abab=abab)
+                                                 abba=abba,abab=abab,&
+                   nA1=size(ERIA,'alpha',1),nA2=size(ERIA,'alpha',2),&
+                   nA3=size(ERIA,'alpha',3),nA4=size(ERIA,'alpha',4),&
+                   nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),&
+                   nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               endIf
             case default
               call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -10820,21 +11482,25 @@
       nBB1 = size(integralB,'beta',1)
       nBB2 = size(integralB,'beta',2)
 
-      if (nAA2.eq.0.or.nBA1.eq.0) then
-        if (nAB2.ne.0.and.nBB1.ne.0) then
-          if (nAB2.ne.nBB1) call mqc_error_i('Integral dimensions are &
+
+     if (nAA2.ne.nBA1.or.nAB2.ne.nBB1) call mqc_error_i('Integral dimensions are &
           &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
           'nAB2',nAB2,'nBB1',nBB1)
-        end if
-      elseif (nAB2.eq.0.or.nBB1.eq.0) then
-        if (nAA2.ne.nBA1) call mqc_error_i('Integral dimensions are &
-          &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
-          'nAB2',nAB2,'nBB1',nBB1)
-      elseif(nAA2.ne.nBA1.or.nAB2.ne.nBB1) then 
-        call mqc_error_i('Integral dimensions are &
-        &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
-        'nAB2',nAB2,'nBB1',nBB1)
-      end if
+     ! if (nAA2.eq.0.or.nBA1.eq.0) then
+     !   if (nAB2.ne.0.and.nBB1.ne.0) then
+     !    if (nAB2.ne.nBB1) call mqc_error_i('Integral dimensions are &
+     !    &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
+     !    'nAB2',nAB2,'nBB1',nBB1)
+     !   end if
+     ! elseif (nAB2.eq.0.or.nBB1.eq.0) then
+     !  if (nAA2.ne.nBA1) call mqc_error_i('Integral dimensions are &
+     !    &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
+     !    'nAB2',nAB2,'nBB1',nBB1)
+     ! elseif(nAA2.ne.nBA1.or.nAB2.ne.nBB1) then 
+     !   call mqc_error_i('Integral dimensions are &
+     !   &not conformable in mqc_integral_integral_multiply',6,'nAA2',nAA2,'nBA1',nBA1,&
+     !   'nAB2',nAB2,'nBB1',nBB1)
+     ! end if
 
       select case (integralA%array_type)
       case('space')
@@ -12674,6 +13340,133 @@
       end function mqc_eigenvalue_eigenvalue_dotProduct
 !
 !
+!     PROCEDURE MQC_Integral_Eigenvalues_DotProduct
+!
+!>    \brief <b> MQC_Integral_Eigenvalues_DotProduct is used to compute the true
+!>    matrix-vector product of an MQC integral type variable and an MQC
+!>    eigenvalues type variable (treated as a column vector), and returns an
+!>    MQC eigenvalues (vector)</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Integral_Eigenvalues_DotProduct is used to compute the true
+!>    matrix-vector product of an MQC integral type variable and an MQC
+!>    eigenvalues type variable, where the eigenvalues variable is treated as
+!>    a column vector (not a diagonal matrix, unlike MatMul(Integral,Eigenvalues)).
+!>    Returns an MQC eigenvalues (vector).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] IntegralA
+!>    \verbatim
+!>        IntegralA is type(mqc_scf_integral)
+!>        The MQC integral variable to multiply.
+!>    \endverbatim
+!>
+!>    \param[in] EigenvaluesB
+!>    \verbatim
+!>        EigenvaluesB is type(mqc_scf_eigenvalues)
+!>        The MQC eigenvalues type variable, treated as a column vector.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_eigenvalues_dotproduct(integralA,eigenvaluesB) result(eigenvaluesOut)
+!
+      implicit none
+      type(mqc_scf_integral),intent(in)::integralA
+      type(mqc_scf_eigenvalues),intent(in)::eigenvaluesB
+      type(mqc_scf_eigenvalues)::eigenvaluesOut
+      type(mqc_vector)::tmpVectorAlpha,tmpVectorBeta
+      integer(kind=int64)::nA2Alpha,nA2Beta,nBAlpha,nBBeta
+!
+      nA2Alpha = size(integralA,'alpha',2)
+      nA2Beta = size(integralA,'beta',2)
+      nBAlpha = size(eigenvaluesB,'alpha')
+      nBBeta = size(eigenvaluesB,'beta')
+
+      if(nA2Alpha.ne.nBAlpha.or.(eigenvaluesB%type().ne.'space'.and.nA2Beta.ne.nBBeta)) &
+        call mqc_error_i('Integral and eigenvalues are not conformable in &
+        &mqc_integral_eigenvalues_dotproduct',6,&
+        'nA2Alpha',nA2Alpha,'nBAlpha',nBAlpha,'nA2Beta',nA2Beta,'nBBeta',nBBeta)
+
+      select case (integralA%array_type)
+      case('space')
+        if(integralA%hasAlpha().and.eigenvaluesB%hasAlpha()) &
+          tmpVectorAlpha = integralA%alpha.dot.eigenvaluesB%alpha
+        if(eigenvaluesB%type().eq.'space') then
+          call mqc_eigenvalues_allocate(eigenvaluesOut,'','space',tmpVectorAlpha)
+        else
+          if(integralA%hasAlpha().and.eigenvaluesB%hasBeta()) &
+            tmpVectorBeta = integralA%alpha.dot.eigenvaluesB%beta
+          call mqc_eigenvalues_allocate(eigenvaluesOut,'','spin',tmpVectorAlpha,tmpVectorBeta)
+        endIf
+      case('spin')
+        if(integralA%hasAlpha().and.eigenvaluesB%hasAlpha()) &
+          tmpVectorAlpha = integralA%alpha.dot.eigenvaluesB%alpha
+        if(eigenvaluesB%type().eq.'space') then
+          if(integralA%hasBeta().and.eigenvaluesB%hasAlpha()) &
+            tmpVectorBeta = integralA%beta.dot.eigenvaluesB%alpha
+        else
+          if(integralA%hasBeta().and.eigenvaluesB%hasBeta()) &
+            tmpVectorBeta = integralA%beta.dot.eigenvaluesB%beta
+        endIf
+        call mqc_eigenvalues_allocate(eigenvaluesOut,'','spin',tmpVectorAlpha,tmpVectorBeta)
+      case('general')
+        if(integralA%hasAlpha().and.eigenvaluesB%hasAlpha()) &
+          tmpVectorAlpha = integralA%alpha.dot.eigenvaluesB%alpha
+        if(eigenvaluesB%type().eq.'space') then
+          if(integralA%hasBetaAlpha().and.eigenvaluesB%hasAlpha()) then
+            if(allocated(tmpVectorAlpha)) then
+              tmpVectorAlpha = tmpVectorAlpha + (integralA%betaAlpha.dot.eigenvaluesB%alpha)
+            else
+              tmpVectorAlpha = integralA%betaAlpha.dot.eigenvaluesB%alpha
+            endIf
+          endIf
+          if(integralA%hasBeta().and.eigenvaluesB%hasAlpha()) &
+            tmpVectorBeta = integralA%beta.dot.eigenvaluesB%alpha
+          if(integralA%hasAlphaBeta().and.eigenvaluesB%hasAlpha()) then
+            if(allocated(tmpVectorBeta)) then
+              tmpVectorBeta = tmpVectorBeta + (integralA%alphaBeta.dot.eigenvaluesB%alpha)
+            else
+              tmpVectorBeta = integralA%alphaBeta.dot.eigenvaluesB%alpha
+            endIf
+          endIf
+        else
+          if(integralA%hasBetaAlpha().and.eigenvaluesB%hasBeta()) then
+            if(allocated(tmpVectorAlpha)) then
+              tmpVectorAlpha = tmpVectorAlpha + (integralA%betaAlpha.dot.eigenvaluesB%beta)
+            else
+              tmpVectorAlpha = integralA%betaAlpha.dot.eigenvaluesB%beta
+            endIf
+          endIf
+          if(integralA%hasBeta().and.eigenvaluesB%hasBeta()) &
+            tmpVectorBeta = integralA%beta.dot.eigenvaluesB%beta
+          if(integralA%hasAlphaBeta().and.eigenvaluesB%hasAlpha()) then
+            if(allocated(tmpVectorBeta)) then
+              tmpVectorBeta = tmpVectorBeta + (integralA%alphaBeta.dot.eigenvaluesB%alpha)
+            else
+              tmpVectorBeta = integralA%alphaBeta.dot.eigenvaluesB%alpha
+            endIf
+          endIf
+        endIf
+        call mqc_eigenvalues_allocate(eigenvaluesOut,'','spin',tmpVectorAlpha,tmpVectorBeta)
+      case default
+        call mqc_error_A('Unknown integral type in mqc_integral_eigenvalues_dotproduct', 6, &
+             'integralA%array_type', integralA%array_type )
+      end select
+!
+      end function mqc_integral_eigenvalues_dotproduct
+!
+!
 !     PROCEDURE MQC_Integral_Transpose
 !
 !>    \brief <b> MQC_Integral_Transpose is used to compute the transpose of a MQC
@@ -12705,8 +13498,8 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2017
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2017, 2026
 !
       function mqc_integral_transpose(integral,label) result(integralOut)
 !
@@ -12727,18 +13520,24 @@
       select case (integral%array_type)
       case('space')
           tmpMatrixAlpha = transpose(integral%alpha)
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha)
+          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,&
+                       nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
+                       nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
       case('spin')
           tmpMatrixAlpha = transpose(integral%alpha)
           tmpMatrixBeta = transpose(integral%beta)
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+                       nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
+                       nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
       case('general')
           tmpMatrixAlpha = transpose(integral%alpha)
           tmpMatrixBeta = transpose(integral%beta)
           tmpMatrixAlphaBeta = transpose(integral%betaAlpha)
           tmpMatrixBetaAlpha = transpose(integral%alphaBeta)
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+                tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,&
+                nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
+                nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
       case default
         call mqc_error_A('Unknown integral type in mqc_integral_transpose', 6, &
              'integral%array_type', integral%array_type )
@@ -14429,14 +15228,46 @@
              'Index out of range in MQC_ERI_Integral_Contraction', 6, &
                 'ia', ia,'ib',ib)
         if (ia.eq.1.or.ia.eq.2) then
-          if (ib.eq.1.or.ib.eq.2) same=.true.
+          if (ib.eq.1.or.ib.eq.2) then 
+            same=.true.
+            ic=3
+            id=4
+          else 
+            if(ia.eq.1) then
+              ic=2
+            else 
+              ic=1
+            end if
+            if (ib.eq.3) then
+              id=4
+            else
+              id=3
+            end if
+          end if
         else
-          if (ib.eq.3.or.ib.eq.4) same=.true.
+          if (ib.eq.3.or.ib.eq.4) then
+            same=.true.
+            ic=1
+            id=2
+          else
+            if(ia.eq.3) then
+              id=4
+            else 
+              id=3
+            end if
+            if (ib.eq.1) then
+              ic=2
+            else
+              ic=1
+            end if
+          end if
         endif
       else
         ind=[1,2]
         ia=1
         ib=2
+        ic=3
+        id=4
         same=.true.
       endif
 
@@ -15095,11 +15926,17 @@
       
       select case (FinalType)
       case ('space')
-        call mqc_integral_allocate(output,'','space',aa)
+        call mqc_integral_allocate(output,'','space',aa,&
+               nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
+               nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id))
       case ('spin')
-        call mqc_integral_allocate(output,'','spin',aa,bb)
+        call mqc_integral_allocate(output,'','spin',aa,bb,&
+               nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
+               nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id))
       case ('general')
-        call mqc_integral_allocate(output,'','general',aa,bb,ab,ba)
+        call mqc_integral_allocate(output,'','general',aa,bb,ab,ba,&
+               nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
+               nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id))
       end select
 !
       end function mqc_eri_integral_contraction
@@ -16932,7 +17769,7 @@
       intType='unknown'
       eriType='empty'
       do i=1,16
-        allocVec(i)=.true.
+        allocVec(i)=.false.
       end do
       eriType='space'
       do i=1,16
@@ -17116,7 +17953,9 @@
       if (eriType.eq.'empty') then
         if(allocated(eriOut)) call deallocate(eriOut)
       else if (eriType.eq.'space') then
-        call mqc_twoeris_allocate(eriOut,'full-'//intType,'space',aaaa,allocationVector=allocVec)
+        call mqc_twoeris_allocate(eriOut,'full-'//intType,'space',aaaa,allocationVector=allocVec,&
+             nA1=eris1%blockSize('alpha',ka),nA2=eris1%blockSize('alpha',la),&
+             nA3=eris2%blockSize('alpha',kb),nA4=eris2%blockSize('alpha',lb))
       elseif (eriType.eq.'spin') then
         if (intType.eq.'coulomb') then
           call mqc_twoeris_allocate(eriOut,'full-'//intType,'spin',aaaa,bbbb,aabb,bbaa)
@@ -17124,14 +17963,22 @@
           call mqc_twoeris_allocate(eriOut,'full-'//intType,'spin',aaaa,bbbb,abba,baab)
         else if (intType.eq.'inverted') then
           call mqc_twoeris_allocate(eriOut,'full-'//intType,'spin',aaaa,bbbb,abab,baba)
-        else 
+        else
           call mqc_twoeris_allocate(eriOut,'full-'//intType,'spin',aaaa,bbbb,aabb,bbaa,&
-               abab=abab,baba=baba,abba=abba,baab=baab,allocationVector=allocVec)
+               abab=abab,baba=baba,abba=abba,baab=baab,allocationVector=allocVec,&
+               nA1=eris1%blockSize('alpha',ka),nA2=eris1%blockSize('alpha',la),&
+               nA3=eris2%blockSize('alpha',kb),nA4=eris2%blockSize('alpha',lb),&
+               nB1=eris1%blockSize('beta',ka),nB2=eris1%blockSize('beta',la),&
+               nB3=eris2%blockSize('beta',kb),nB4=eris2%blockSize('beta',lb))
         end if
       elseif (eriType.eq.'general') then
         call mqc_twoeris_allocate(eriOut,'full-'//intType,'general',aaaa,bbbb,aabb,bbaa,&
                                   abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,&
-                                  bbab,babb,abbb,allocationVector=allocVec)
+                                  bbab,babb,abbb,allocationVector=allocVec,&
+                                  nA1=eris1%blockSize('alpha',ka),nA2=eris1%blockSize('alpha',la),&
+                                  nA3=eris2%blockSize('alpha',kb),nA4=eris2%blockSize('alpha',lb),&
+                                  nB1=eris1%blockSize('beta',ka),nB2=eris1%blockSize('beta',la),&
+                                  nB3=eris2%blockSize('beta',kb),nB4=eris2%blockSize('beta',lb))
       endif
  
 !
@@ -17246,6 +18093,8 @@
       integer(kind=int64)::mydim1,mydim2,i,j
       integer(kind=int64)::nB1a,nB2a,nB3a,nB4a
       integer(kind=int64)::nB1b,nB2b,nB3b,nB4b
+      integer(kind=int64),dimension(4)::outDimsA,outDimsB
+      integer(kind=int64)::tmpSwap
       type(mqc_twoERIs)::output
       type(mqc_r4tensor)::alpha,beta,alphaBeta,betaAlpha,abab,abba,baab, &
         baba,aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb
@@ -18537,11 +19386,21 @@
             finalAllocVec(16)=.true.
           end if
         end select
+        outDimsA = [nB1a,nB2a,nB3a,nB4a]
+        tmpSwap = outDimsA(mydim1)
+        outDimsA(mydim1) = outDimsA(mydim2)
+        outDimsA(mydim2) = tmpSwap
+        outDimsB = [nB1b,nB2b,nB3b,nB4b]
+        tmpSwap = outDimsB(mydim1)
+        outDimsB(mydim1) = outDimsB(mydim2)
+        outDimsB(mydim2) = tmpSwap
         call mqc_twoeris_allocate(output,'full-coulomb','general',&
                      alpha,beta,alphaBeta,betaAlpha,&
                      abab,abba,baab,baba,&
                      aaab,aaba,abaa,baaa,&
-                     bbba,bbab,babb,abbb,finalAllocVec)
+                     bbba,bbab,babb,abbb,finalAllocVec,&
+                     nA1=outDimsA(1),nA2=outDimsA(2),nA3=outDimsA(3),nA4=outDimsA(4),&
+                     nB1=outDimsB(1),nB2=outDimsB(2),nB3=outDimsB(3),nB4=outDimsB(4))
       case default
         call mqc_error_a('2ERI type either not recognized or not yet implemented in &
           & mqc_eri_interaction',6,'eris%type()',eris%type()) 
@@ -21957,7 +22816,536 @@
       endIf
 
       end function mqc_twoERIs_At
+!
+!
+!     PROCEDURE MQC_twoERIs_Put
+!
+!>    \brief <b> MQC_twoERIs_Put is a function that replaces the value of an element 
+!>    of a MQC 2ERIs variable</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>       
+!>    MQC_twoERIs_Put is a function that replaces the value of (I,J,K,L)th element of 
+!>    a MQC 2ERIs variable as an MQC scalar. If I, J, K or L is negative, the (N-I+1)th 
+!>    index is selected. Optional argument SpinBlock specifies the spin block of MQC
+!>    2ERIs if the contain MO integrals. If wavefunction is not restricted, the spin 
+!>    block must be specified. The following options are available:
+!>
+!>    1.  SpinBlock = 'aaaa' or 'alpha' or 'alpha-alpha' uses the alpha spin block.
+!>    2.  SpinBlock = 'bbbb' or 'beta' or 'beta-beta' uses the beta spin block.
+!>    3.  SpinBlock = 'aabb' or 'alphaBeta' uses the alpha-beta spin block.
+!>    4.  SpinBlock = 'bbaa' or 'betaAlpha' uses the beta-alpha spin block.
+!>    5.  SpinBlock = 'abab' uses the abab spin block.
+!>    6.  SpinBlock = 'abba' uses the abba spin block.
+!>    7.  SpinBlock = 'baab' uses the baab spin block.
+!>    8.  SpinBlock = 'baba' uses the baba spin block.
+!>    9.  SpinBlock = 'aaab' uses the aaab spin block.
+!>    10. SpinBlock = 'aaba' uses the aaba spin block.
+!>    11. SpinBlock = 'abaa' uses the abaa spin block.
+!>    12. SpinBlock = 'baaa' uses the baaa spin block.
+!>    13. SpinBlock = 'bbba' uses the bbba spin block.
+!>    14. SpinBlock = 'bbab' uses the bbab spin block.
+!>    15. SpinBlock = 'babb' uses the babb spin block.
+!>    16. SpinBlock = 'abbb' uses the abbb spin block.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] TwoERIs
+!>    \verbatim
+!>        TwoERIs is Class(MQC_TwoERIs)
+!>        The MQC 2ERIs to replace the value of the (I,J,K,L)th 
+!>        element.
+!>    \endverbatim
+!>    
+!>    \param[in] Element
+!>    \verbatim
+!>        Element is Type(mqc_scalar)
+!>        The value to put in the twoERIs.
+!>    \endverbatim
+!>    
+!>    \param[in] I  
+!>    \verbatim
+!>        I is Integer(kind=int64)
+!>        The first dimension of the element in MQC 2ERIs
+!>          If I>0 row count is from first index
+!>          If I<0 row count is from last index.
+!>    \endverbatim
+!>    
+!>    \param[in] J  
+!>    \verbatim
+!>        J is Integer(kind=int64)
+!>        The second dimension of the element in MQC 2ERIs
+!>          If J>0 row count is from first index
+!>          If J<0 row count is from last index.
+!>    \endverbatim
+!>    
+!>    \param[in] K  
+!>    \verbatim
+!>        K is Integer(kind=int64)
+!>        The third dimension of the element in MQC 2ERIs
+!>          If K>0 row count is from first index
+!>          If K<0 row count is from last index.
+!>    \endverbatim
+!>    
+!>    \param[in] L  
+!>    \verbatim
+!>        L is Integer(kind=int64)
+!>        The fourth dimension of the element in MQC 2ERIs
+!>          If L>0 row count is from first index
+!>          If L<0 row count is from last index.
+!>    \endverbatim
+!>    
+!>    \param[in] SpinBlockIn
+!>    \verbatim
+!>        SpinBlockIn is character(len=*),optional
+!>        = 'aaaa' or 'alpha':     alpha spin block
+!>        = 'bbbb' or 'beta':      beta spin block
+!>        = 'aabb' or 'alphaBeta': alpha-beta spin block
+!>        = 'bbaa' or 'betaAlpha': beta-alpha spin block.
+!>        = 'abab':                abab spin block.
+!>        = 'abba':                abba spin block.
+!>        = 'baab':                baab spin block.
+!>        = 'baba':                baba spin block.
+!>        = 'aaab':                aaab spin block.
+!>        = 'aaba':                aaba spin block.
+!>        = 'abaa':                abaa spin block.
+!>        = 'baaa':                baaa spin block.
+!>        = 'bbba':                bbba spin block.
+!>        = 'bbab':                bbab spin block.
+!>        = 'babb':                babb spin block.
+!>        = 'abbb':                abbb spin block.
+!>    \endverbatim
+!>    
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine MQC_twoERIs_Put(twoERIs,element,i,j,k,l,spinBlockIn) 
+!
+      implicit none
+      class(mqc_twoERIs)::twoERIs
+      class(*),intent(in)::i,j,k,l
+      type(mqc_scalar),intent(in)::element
+      integer(kind=int64)::myI,myJ,myK,myL
+      character(len=*),optional,intent(in)::spinBlockIn
+      type(MQC_R4Tensor)::aaaa,aaab,aaba,abaa,baaa,aabb,abab,baab,abba,baba,bbaa,&
+                          abbb,babb,bbab,bbba,bbbb
+      character(len=64)::spinBlock,interaction
+      logical,dimension(16)::allocVec
+      real(kind=real64)::zero=0.0d0
+      integer::indx
 
+      select type (i)  
+      type is (integer)
+        myI = i
+      type is (integer(kind=int32))
+        myI = i
+      type is (real(kind=real64))
+        myI = i
+      type is (mqc_scalar)
+        myI = i
+      class default 
+        call mqc_error('index type not defined in MQC_twoERIs_Put')
+      end select
+      select type (j)  
+      type is (integer)
+        myJ = j
+      type is (mqc_scalar)
+        myJ = j
+      class default 
+        call mqc_error('index type not defined in MQC_twoERIs_Put')
+      end select
+      select type (k)  
+      type is (integer)
+        myK = k
+      type is (mqc_scalar)
+        myK = k
+      class default 
+        call mqc_error('index type not defined in MQC_twoERIs_Put')
+      end select
+      select type (l)  
+      type is (integer)
+        myL = l
+      type is (mqc_scalar)
+        myL = l
+      class default 
+        call mqc_error('index type not defined in MQC_twoERIs_Put')
+      end select
+
+      if(myI.gt.twoERIs%blockSize('alpha',1)+twoERIs%blockSize('beta',1)) &
+        call mqc_error('Requested I dimension out of bounds in MQC_twoERIs_Put')
+      if(myJ.gt.twoERIs%blockSize('alpha',2)+twoERIs%blockSize('beta',2)) &
+        call mqc_error('Requested J dimension out of bounds in MQC_twoERIs_Put')
+      if(myK.gt.twoERIs%blockSize('alpha',3)+twoERIs%blockSize('beta',3)) &
+        call mqc_error('Requested K dimension out of bounds in MQC_twoERIs_Put')
+      if(myL.gt.twoERIs%blockSize('alpha',4)+twoERIs%blockSize('beta',4)) &
+        call mqc_error('Requested L dimension out of bounds in MQC_twoERIs_Put')
+
+      if(twoERIs%intType().ne.'coulomb') &
+        call mqc_error_a( 'mqc_twoERIs_Put has been implemented for coulomb interaction-type twoERIs only',6,&
+        'twoERIs%intType',twoERIs%intType())
+
+      if(present(spinBlockIn)) then
+        call string_change_case(spinBlockIn,'L',spinBlock)
+      else
+        spinBlock = 'aaaa'
+      end if
+!     SPACE
+      if(twoERIs%integralType.eq.'space') then
+        if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
+          if(twoERIs%hasSpinBlock('aaaa')) then
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%alpha%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                                   size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          end if
+        elseif (spinBlock.eq.'beta'.or.spinBlock.eq.'bbbb'.or.&
+                spinBlock.eq.'alphabeta'.or.spinBlock.eq.'betaalpha'.or.&
+                spinBlock.eq.'aabb'.or.spinBlock.eq.'bbaa') then
+          aaaa = twoERIs%alpha
+          bbbb = twoERIs%alpha
+          aabb = twoERIs%alpha
+          bbaa = twoERIs%alpha
+          if (spinBlock.eq.'beta'.or.spinBlock.eq.'bbbb') call bbbb%put(element,myI,myJ,myK,myL)
+          if (spinBlock.eq.'alphabeta'.or.spinBlock.eq.'aabb') call aabb%put(element,myI,myJ,myK,myL)
+          if (spinBlock.eq.'betaalpha'.or.spinBlock.eq.'bbaa') call bbaa%put(element,myI,myJ,myK,myL)
+          call mqc_twoeris_allocate(twoERIs,'full-coulomb','spin',aaaa,bbbb,aabb,bbaa,&
+               nA1=size(twoERIs,'alpha',1),nA2=size(twoERIs,'alpha',2),&
+               nA3=size(twoERIs,'alpha',3),nA4=size(twoERIs,'alpha',4),&
+               nB1=size(twoERIs,'beta',1),nB2=size(twoERIs,'beta',2),&
+               nB3=size(twoERIs,'beta',3),nB4=size(twoERIs,'beta',4))
+        else 
+          do indx=1,4
+            allocVec(indx)=.true.
+          end do
+          do indx=5,16
+            allocVec(indx)=.false.
+          end do
+          if (spinBlock.eq.'aaab') then 
+            call aaab%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call aaab%put(element,myI,myJ,myK,myL)
+            allocVec(9)=.true.
+          else if (spinBlock.eq.'aaba') then 
+            call aaba%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call aaba%put(element,myI,myJ,myK,myL)
+            allocVec(10)=.true.
+          else if (spinBlock.eq.'abaa') then 
+            call abaa%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call abaa%put(element,myI,myJ,myK,myL)
+            allocVec(11)=.true.
+          else if (spinBlock.eq.'baaa') then 
+            call baaa%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call baaa%put(element,myI,myJ,myK,myL)
+            allocVec(12)=.true.
+          else if (spinBlock.eq.'abab') then 
+            call abab%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call abab%put(element,myI,myJ,myK,myL)
+            allocVec(5)=.true.
+          else if (spinBlock.eq.'abba') then 
+            call abba%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call abba%put(element,myI,myJ,myK,myL)
+            allocVec(6)=.true.
+          else if (spinBlock.eq.'baab') then 
+            call baab%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call baab%put(element,myI,myJ,myK,myL)
+            allocVec(7)=.true.
+          else if (spinBlock.eq.'baba') then 
+            call baba%init(size(twoERIs,'bata',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call baba%put(element,myI,myJ,myK,myL)
+            allocVec(8)=.true.
+          else if (spinBlock.eq.'abbb') then 
+            call abbb%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call abbb%put(element,myI,myJ,myK,myL)
+            allocVec(16)=.true.
+          else if (spinBlock.eq.'babb') then 
+            call babb%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call babb%put(element,myI,myJ,myK,myL)
+            allocVec(15)=.true.
+          else if (spinBlock.eq.'bbab') then 
+            call bbab%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call bbab%put(element,myI,myJ,myK,myL)
+            allocVec(14)=.true.
+          else if (spinBlock.eq.'bbba') then 
+            call bbba%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call bbba%put(element,myI,myJ,myK,myL)
+            allocVec(13)=.true.
+          end if
+          call mqc_twoeris_allocate(twoERIs,'full-coulomb','general',&
+                      twoERIs%alpha,twoERIs%alpha,twoERIs%alpha,twoERIs%alpha,&
+                               abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,&
+                               bbab,babb,abbb,allocationVector=allocVec,&
+              nA1=size(twoERIs,'alpha',1),nA2=size(twoERIs,'alpha',2),&
+              nA3=size(twoERIs,'alpha',3),nA4=size(twoERIs,'alpha',4),&
+              nB1=size(twoERIs,'beta',1),nB2=size(twoERIs,'beta',2),&
+              nB3=size(twoERIs,'beta',3),nB4=size(twoERIs,'beta',4))
+
+        endIf
+!     SPIN
+      elseIf(twoERIs%integralType.eq.'spin') then
+        if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
+          if(twoERIs%hasSpinBlock('aaaa')) then
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%alpha%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                                   size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'beta'.or.spinBlock.eq.'bbbb') then
+          if(twoERIs%hasSpinBlock('bbbb')) then
+            call twoERIs%beta%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%beta%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                                   size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call twoERIs%beta%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'alphabeta'.or.spinBlock.eq.'aabb') then
+          if(twoERIs%hasSpinBlock('aabb')) then
+            call twoERIs%alphaBeta%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%alphaBeta%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                                   size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call twoERIs%alphabeta%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'betaalpha'.or.spinBlock.eq.'bbaa') then
+          if(twoERIs%hasSpinBlock('aabb')) then
+            call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%betaAlpha%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                                   size(twoERIs,'alphaa',3),size(twoERIs,'alpha',4))
+            call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
+          end if
+        else
+          do indx=1,4
+            allocVec(indx)=.true.
+          end do
+          do indx=5,16
+            allocVec(indx)=.false.
+          end do
+          if (spinBlock.eq.'aaab') then 
+            call aaab%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call aaab%put(element,myI,myJ,myK,myL)
+            allocVec(9)=.true.
+          else if (spinBlock.eq.'aaba') then 
+            call aaba%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call aaba%put(element,myI,myJ,myK,myL)
+            allocVec(10)=.true.
+          else if (spinBlock.eq.'abaa') then 
+            call abaa%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call abaa%put(element,myI,myJ,myK,myL)
+            allocVec(11)=.true.
+          else if (spinBlock.eq.'baaa') then 
+            call baaa%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call baaa%put(element,myI,myJ,myK,myL)
+            allocVec(12)=.true.
+          else if (spinBlock.eq.'abab') then 
+            call abab%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call abab%put(element,myI,myJ,myK,myL)
+            allocVec(5)=.true.
+          else if (spinBlock.eq.'abba') then 
+            call abba%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call abba%put(element,myI,myJ,myK,myL)
+            allocVec(6)=.true.
+          else if (spinBlock.eq.'baab') then 
+            call baab%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call baab%put(element,myI,myJ,myK,myL)
+            allocVec(7)=.true.
+          else if (spinBlock.eq.'baba') then 
+            call baba%init(size(twoERIs,'bata',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call baba%put(element,myI,myJ,myK,myL)
+            allocVec(8)=.true.
+          else if (spinBlock.eq.'abbb') then 
+            call abbb%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call abbb%put(element,myI,myJ,myK,myL)
+            allocVec(16)=.true.
+          else if (spinBlock.eq.'babb') then 
+            call babb%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call babb%put(element,myI,myJ,myK,myL)
+            allocVec(15)=.true.
+          else if (spinBlock.eq.'bbab') then 
+            call bbab%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call bbab%put(element,myI,myJ,myK,myL)
+            allocVec(14)=.true.
+          else if (spinBlock.eq.'bbba') then 
+            call bbba%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call bbba%put(element,myI,myJ,myK,myL)
+            allocVec(13)=.true.
+          end if
+          call mqc_twoeris_allocate(twoERIs,'full-coulomb','general',&
+                      twoERIs%alpha,twoERIs%beta,twoERIs%alphaBeta,twoERIs%betaAlpha,&
+                               abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,&
+                               bbab,babb,abbb,allocationVector=allocVec,&
+              nA1=size(twoERIs,'alpha',1),nA2=size(twoERIs,'alpha',2),&
+              nA3=size(twoERIs,'alpha',3),nA4=size(twoERIs,'alpha',4),&
+              nB1=size(twoERIs,'beta',1),nB2=size(twoERIs,'beta',2),&
+              nB3=size(twoERIs,'beta',3),nB4=size(twoERIs,'beta',4))
+        endIf
+!     GENERAL
+      elseIf(twoERIs%integralType.eq.'general') then
+        if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
+          if(twoERIs%hasSpinBlock('aaaa')) then
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%alpha%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                                   size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call twoERIs%alpha%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'beta'.or.spinBlock.eq.'bbbb') then
+          if(twoERIs%hasSpinBlock('bbbb')) then
+            call twoERIs%beta%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%beta%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                                   size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call twoERIs%beta%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'alphabeta'.or.spinBlock.eq.'aabb') then
+          if(twoERIs%hasSpinBlock('aabb')) then
+            call twoERIs%alphaBeta%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%alphaBeta%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                                   size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call twoERIs%alphabeta%put(element,myI,myJ,myK,myL)
+          end if
+        elseif(spinblock.eq.'betaalpha'.or.spinBlock.eq.'bbaa') then
+          if(twoERIs%hasSpinBlock('aabb')) then
+            call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
+          else
+            call twoERIs%betaAlpha%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                                   size(twoERIs,'alphaa',3),size(twoERIs,'alpha',4))
+            call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'aaab') then 
+          if(twoERIs%hasSpinBlock('aaab')) then
+            call aaab%put(element,myI,myJ,myK,myL)
+          else
+            call aaab%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call aaab%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'aaba') then 
+          if(twoERIs%hasSpinBlock('aaba')) then
+            call aaba%put(element,myI,myJ,myK,myL)
+          else
+            call aaba%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call aaba%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'abaa') then 
+          if(twoERIs%hasSpinBlock('abaa')) then
+            call abaa%put(element,myI,myJ,myK,myL)
+          else
+            call abaa%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call abaa%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'baaa') then 
+          if(twoERIs%hasSpinBlock('baaa')) then
+            call baaa%put(element,myI,myJ,myK,myL)
+          else
+            call baaa%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
+            call baaa%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'abab') then 
+          if(twoERIs%hasSpinBlock('abab')) then
+            call abab%put(element,myI,myJ,myK,myL)
+          else
+            call abab%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call abab%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'abba') then 
+          if(twoERIs%hasSpinBlock('abba')) then
+            call abba%put(element,myI,myJ,myK,myL)
+          else
+            call abba%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call abba%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'baab') then 
+          if(twoERIs%hasSpinBlock('baab')) then
+            call baab%put(element,myI,myJ,myK,myL)
+          else
+            call baab%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call baab%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'baba') then 
+          if(twoERIs%hasSpinBlock('baba')) then
+            call baba%put(element,myI,myJ,myK,myL)
+          else
+            call baba%init(size(twoERIs,'bata',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call baba%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'abbb') then 
+          if(twoERIs%hasSpinBlock('abbb')) then
+            call abbb%put(element,myI,myJ,myK,myL)
+          else
+            call abbb%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call abbb%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'babb') then 
+          if(twoERIs%hasSpinBlock('babb')) then
+            call babb%put(element,myI,myJ,myK,myL)
+          else
+            call babb%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'beta',4))
+            call babb%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'bbab') then 
+          if(twoERIs%hasSpinBlock('bbab')) then
+            call bbab%put(element,myI,myJ,myK,myL)
+          else
+            call bbab%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
+            call bbab%put(element,myI,myJ,myK,myL)
+          end if
+        else if (spinBlock.eq.'bbba') then 
+          if(twoERIs%hasSpinBlock('bbba')) then
+            call bbba%put(element,myI,myJ,myK,myL)
+          else
+            call bbba%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+                           size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
+            call bbba%put(element,myI,myJ,myK,myL)
+          end if
+        end if
+      else
+        call mqc_error_A('Integral type not valid in MQC_TwoERIs_Put',6,'integralType',twoERIs%integralType)
+      endIf
+   end subroutine MQC_twoERIs_Put
 !
 !
 !     PROCEDURE MQC_Integral_Put
@@ -22803,6 +24191,72 @@
       endIf
 !
       end function mqc_scf_integral_diagonal_elements
+!
+!
+!     PROCEDURE MQC_SCF_Integral_Check_Zeros
+!
+!>    \brief <b> MQC_SCF_Integral_Check_Zeros check if all 
+!>    entries in a MQC scf integral have norm smaller than a threshold.</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>    MQC_SCF_Integral_Check_Zeros check if all 
+!>    entries in a MQC scf integral have norm smaller than a threshold.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Integral
+!>    \verbatim
+!>        Integral is Class(MQC_scf_integral)
+!>        The MQC scf integral to be tested against zeros.
+!>    \endverbatim
+!>
+!>    \param[in] threshold
+!>    \verbatim
+!>        threshold is real, optional (default=1.0E-8)
+!>        Defines the zero values threshold
+!>    \endverbatim
+!>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function MQC_SCF_Integral_Check_Zeros(Integral,threshold) result(isZero)
+!
+      Implicit None
+      Class(mqc_scf_integral),Intent(In)::Integral
+      Real(kind=real64),optional::threshold
+      !!!!!!
+      logical::isZero
+      !!!!!!
+      Real(kind=real64)::my_thresh
+      integer::I,J,zeroI
+!
+      if (present(threshold)) then
+        my_thresh = abs(threshold)
+      else
+        my_thresh = 1.0E-8 
+      end if
+      isZero = .true.
+      if (Integral%hasAlpha()) &
+        isZero = mqc_matrix_check_zeros(integral%getblock('alpha'),my_thresh)
+      if(integral%type().eq.'space'.or..not.isZero) return
+      if (Integral%hasBeta()) &
+        isZero =  mqc_matrix_check_zeros(integral%getblock('beta'),my_thresh)
+      if(integral%type().eq.'spin'.or..not.isZero) return 
+      if (Integral%hasAlphaBeta()) &
+        isZero = mqc_matrix_check_zeros(integral%getblock('alphabeta'),my_thresh)
+      if(.not.isZero) return 
+      if (Integral%hasBetaAlpha()) &
+        isZero = mqc_matrix_check_zeros(integral%getblock('betaalpha'),my_thresh)
+!
+      end function MQC_SCF_Integral_Check_Zeros
 !
 !
 !     PROCEDURE MQC_Eigenvalues_Minval
@@ -28523,6 +29977,2634 @@
       EndIf
 !
       End Subroutine TwoERI_Trans
+!
+!
+!     PROCEDURE TwoERI_Trans_Full
+!
+!>    \brief <b> TwoERI_Trans_Full transforms two-electron integrals to the
+!>    MO basis using four fully independent MO coefficient matrices, one per
+!>    AO leg. </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Generalizes TwoERI_Trans's O(N**5) matmul transform from two
+!>    coefficient matrices (reused pairwise: MO_Coeff drives legs P,R;
+!>    MO_Coeff_2 drives legs Q,S) to four fully independent ones, one per
+!>    leg: MO_Coeff_1->P, MO_Coeff_2->Q, MO_Coeff_3->R, MO_Coeff_4->S.
+!>
+!>    TwoERI_Trans's existing two-stage transform already separates the
+!>    axis-pair (1,2) from the axis-pair (3,4) into independent matmul
+!>    stages, each stage applying one coefficient (Dagger'd) to the row
+!>    axis and another (plain) to the column axis of a 2D slice. This
+!>    routine keeps that exact structure and simply swaps in the
+!>    leg-correct coefficient per axis within each stage -- no further
+!>    decomposition into single-axis passes is needed.
+!>
+!>    Unlike TwoERI_Trans, storageType is always 'full' (the 'symm'
+!>    shortcut requires bra==ket coefficient equality on the same axis
+!>    pair, which cannot be assumed with four independent coefficients),
+!>    and the dead O(N**8) path is not implemented.
+!>
+!>    Implementation status: intType='space' (1 block), intType='spin'
+!>    (4 blocks), and intType='general' (16 blocks, GHF) are all
+!>    implemented.
+!>
+!>    ERIs%intType() (coulomb/exchange/inverted/doublebar/ms): when the
+!>    output is intType='space' (i.e. all four coefficients are
+!>    'space'-type), any interactionType is accepted and carried through to
+!>    MO_ERIs unchanged -- a 'space'-type block is stored identically
+!>    regardless of interactionType, so the per-axis rotation is agnostic
+!>    to it. When the output is 'spin' or 'general', input must still be
+!>    'coulomb' (same restriction TwoERI_Trans itself enforces), since
+!>    those block constructions' term structure was only derived/verified
+!>    under that convention.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] IOut
+!>    \verbatim
+!>        IOut is Integer(kind=int64)
+!>        Output unit for diagnostic printing (used when IPrint>=4).
+!>    \endverbatim
+!>
+!>    \param[in] IPrint
+!>    \verbatim
+!>        IPrint is Integer(kind=int64)
+!>        Print level.
+!>    \endverbatim
+!>
+!>    \param[in] MO_Coeff_1
+!>    \verbatim
+!>        MO_Coeff_1 is type(mqc_scf_integral)
+!>        MO coefficients driving AO leg P (axis 1).
+!>    \endverbatim
+!>
+!>    \param[in] MO_Coeff_2
+!>    \verbatim
+!>        MO_Coeff_2 is type(mqc_scf_integral)
+!>        MO coefficients driving AO leg Q (axis 2).
+!>    \endverbatim
+!>
+!>    \param[in] MO_Coeff_3
+!>    \verbatim
+!>        MO_Coeff_3 is type(mqc_scf_integral)
+!>        MO coefficients driving AO leg R (axis 3).
+!>    \endverbatim
+!>
+!>    \param[in] MO_Coeff_4
+!>    \verbatim
+!>        MO_Coeff_4 is type(mqc_scf_integral)
+!>        MO coefficients driving AO leg S (axis 4).
+!>    \endverbatim
+!>
+!>    \param[in,out] ERIs
+!>    \verbatim
+!>        ERIs is type(mqc_twoERIs)
+!>        The 'regular' (AO) or 'space' (spin-free MO) two-electron
+!>        integrals to transform.
+!>    \endverbatim
+!>
+!>    \param[in,out] MO_ERIs
+!>    \verbatim
+!>        MO_ERIs is type(mqc_twoERIs)
+!>        Receives the transformed molecular-orbital-basis integrals.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine TwoERI_Trans_Full(IOut,IPrint,MO_Coeff_1,MO_Coeff_2,&
+           MO_Coeff_3,MO_Coeff_4,ERIs,MO_ERIs)
+!
+      Implicit None
+      Integer(kind=int64)::IOut,IPrint,NBasis,P,Q,R,S
+      Integer(kind=int64)::nC1a,nC1b,nC2a,nC2b,nC3a,nC3b,nC4a,nC4b
+      Type(MQC_Matrix)::X
+      Type(MQC_Matrix)::daggerC3Alpha,daggerC3Beta,C4Alpha,C4Beta,&
+           daggerC1Alpha,daggerC1Beta,C2Alpha,C2Beta
+      Type(MQC_R4Tensor)::tmpR4TensorAlpha,tmpR4TensorBeta,tmpR4TensorAlphaBeta,&
+           tmpR4TensorBetaAlpha,tmpR4TensorLoc,tmpR4Tensor,aoAlpha,moAlpha
+      Type(MQC_R4Tensor)::tmpR4TensorABAB,tmpR4TensorBABA,tmpR4TensorABBA,tmpR4TensorBAAB,&
+           tmpR4TensorAAAB,tmpR4TensorAABA,tmpR4TensorABAA,tmpR4TensorBAAA,tmpR4TensorBBBA,&
+           tmpR4TensorBBAB,tmpR4TensorBABB,tmpR4TensorABBB
+      Type(MQC_TwoERIs),Intent(InOut)::ERIs
+      Type(MQC_TwoERIs),Intent(InOut)::MO_ERIs
+      Type(MQC_SCF_Integral),Intent(In)::MO_Coeff_1,MO_Coeff_2,MO_Coeff_3,MO_Coeff_4
+      Character(len=15)::intType
+      Character(len=20)::myStorIntType
+!
+      if(ERIs%type().ne.'regular'.and.ERIs%type().ne.'space') call mqc_error_a(&
+        'TwoERI_Trans_Full only works for regular (AO) or space (spin-free '//&
+        'MO) input integrals',6,'ERIs%type()',ERIs%type())
+!
+      If(MO_Coeff_1%type().eq.'general'.or.MO_Coeff_2%type().eq.'general'.or.&
+         MO_Coeff_3%type().eq.'general'.or.MO_Coeff_4%type().eq.'general') then
+        intType = 'general'
+      ElseIf(MO_Coeff_1%type().eq.'spin'.or.MO_Coeff_2%type().eq.'spin'.or.&
+             MO_Coeff_3%type().eq.'spin'.or.MO_Coeff_4%type().eq.'spin') then
+        intType = 'spin'
+      Else
+        intType = 'space'
+      EndIf
+!
+!     'space'-type output (all four coefficients 'space'-type) is a pure
+!     independent-per-axis rotation of the single stored block -- this is
+!     mathematically agnostic to what ERIs%intType() physically means
+!     (coulomb/exchange/inverted/doublebar/ms all store identically, per
+!     the integralType='space' row of the storage table, mqc_est.F03:
+!     297-309), so any interactionType is accepted and propagated through
+!     to MO_ERIs unchanged. 'spin'/'general' outputs, by contrast, use
+!     block-construction logic (which terms are nonzero, how axes pair up)
+!     that was only derived/verified under the 'coulomb' convention (same
+!     restriction TwoERI_Trans itself enforces), so those keep requiring
+!     'coulomb' input for now.
+!
+      if(intType.ne.'space'.and.ERIs%intType().ne.'coulomb') call mqc_error_a(&
+        'TwoERI_Trans_Full: spin/general-type coefficients require '//&
+        'coulomb-type input integrals (non-coulomb interactionType is only '//&
+        'supported for space-type [all-space-coefficient] output)',6,&
+        'ERIs%intType()',ERIs%intType(),'intType',intType)
+!
+      NBasis = MO_Coeff_1%blockSize('alpha',1)
+      aoAlpha = ERIs%getBlock('alpha')
+!
+!     Per-leg output (column) dimensions -- stage 1 transforms axes 3,4 to
+!     (nC3*,nC4*), stage 2 transforms axes 1,2 to (nC1*,nC2*); these are
+!     generally smaller than NBasis (e.g. a NatOrb subspace), so every
+!     intermediate tensor below must be sized/looped by these, not NBasis.
+      nC1a = MO_Coeff_1%blockSize('alpha',2)
+      nC1b = MO_Coeff_1%blockSize('beta',2)
+      nC2a = MO_Coeff_2%blockSize('alpha',2)
+      nC2b = MO_Coeff_2%blockSize('beta',2)
+      nC3a = MO_Coeff_3%blockSize('alpha',2)
+      nC3b = MO_Coeff_3%blockSize('beta',2)
+      nC4a = MO_Coeff_4%blockSize('alpha',2)
+      nC4b = MO_Coeff_4%blockSize('beta',2)
+!
+!     Alpha block (all intType values): stage 1 transforms axis 3,4 (R,S)
+!     using MO_Coeff_3 (row/Dagger'd) and MO_Coeff_4 (col), leaving axis 1,2
+!     as raw AO indices; stage 2 transforms axis 1,2 (P,Q) using MO_Coeff_1
+!     (row/Dagger'd) and MO_Coeff_2 (col), axis 3,4 already final from
+!     stage 1.
+!
+      daggerC3Alpha = Dagger(MO_Coeff_3%getBlock('alpha'))
+      C4Alpha = MO_Coeff_4%getBlock('alpha')
+      daggerC1Alpha = Dagger(MO_Coeff_1%getBlock('alpha'))
+      C2Alpha = MO_Coeff_2%getBlock('alpha')
+!
+      call tmpR4Tensor%init(NBasis,NBasis,nC3a,nC4a)
+      !$OMP PARALLEL DEFAULT(NONE), &
+      !$OMP SHARED(aoAlpha,tmpR4Tensor,daggerC3Alpha,C4Alpha,NBasis,nC3a,nC4a), &
+      !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+      call tmpR4TensorLoc%init(NBasis,NBasis,nC3a,nC4a)
+      !$OMP DO COLLAPSE(2)
+      Do P = 1, NBasis
+        Do Q = 1, NBasis
+          X = aoAlpha%mat([P],[Q],[0],[0])
+          X = daggerC3Alpha.dot.X.dot.C4Alpha
+          Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+        EndDo
+      EndDo
+      !$OMP END DO
+      !$OMP CRITICAL
+      tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+      !$OMP END CRITICAL
+      !$OMP END PARALLEL
+!
+      call tmpR4TensorAlpha%init(nC1a,nC2a,nC3a,nC4a)
+      !$OMP PARALLEL DEFAULT(NONE), &
+      !$OMP SHARED(tmpR4Tensor,tmpR4TensorAlpha,daggerC1Alpha,C2Alpha,nC1a,nC2a,nC3a,nC4a), &
+      !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+      call tmpR4TensorLoc%init(nC1a,nC2a,nC3a,nC4a)
+      !$OMP DO COLLAPSE(2)
+      Do R = 1, nC3a
+        Do S = 1, nC4a
+          X = tmpR4Tensor%mat([0],[0],[R],[S])
+          X = daggerC1Alpha.dot.X.dot.C2Alpha
+          Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+        EndDo
+      EndDo
+      !$OMP END DO
+      !$OMP CRITICAL
+      tmpR4TensorAlpha = tmpR4TensorAlpha + tmpR4TensorLoc
+      !$OMP END CRITICAL
+      !$OMP END PARALLEL
+!
+      If(intType.eq.'spin'.or.intType.eq.'general') then
+!
+        daggerC3Beta = Dagger(MO_Coeff_3%getBlock('beta'))
+        C4Beta = MO_Coeff_4%getBlock('beta')
+        daggerC1Beta = Dagger(MO_Coeff_1%getBlock('beta'))
+        C2Beta = MO_Coeff_2%getBlock('beta')
+!
+!       Beta block: both axis-pairs use the 'beta' selector throughout.
+!
+        call tmpR4Tensor%init(NBasis,NBasis,nC3b,nC4b)
+        !$OMP PARALLEL DEFAULT(NONE), &
+        !$OMP SHARED(aoAlpha,tmpR4Tensor,daggerC3Beta,C4Beta,NBasis,nC3b,nC4b), &
+        !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+        call tmpR4TensorLoc%init(NBasis,NBasis,nC3b,nC4b)
+        !$OMP DO COLLAPSE(2)
+        Do P = 1, NBasis
+          Do Q = 1, NBasis
+            X = aoAlpha%mat([P],[Q],[0],[0])
+            X = daggerC3Beta.dot.X.dot.C4Beta
+            Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+          EndDo
+        EndDo
+        !$OMP END DO
+        !$OMP CRITICAL
+        tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+        !$OMP END CRITICAL
+        !$OMP END PARALLEL
+!
+        call tmpR4TensorBeta%init(nC1b,nC2b,nC3b,nC4b)
+        !$OMP PARALLEL DEFAULT(NONE), &
+        !$OMP SHARED(tmpR4Tensor,tmpR4TensorBeta,daggerC1Beta,C2Beta,nC1b,nC2b,nC3b,nC4b), &
+        !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+        call tmpR4TensorLoc%init(nC1b,nC2b,nC3b,nC4b)
+        !$OMP DO COLLAPSE(2)
+        Do R = 1, nC3b
+          Do S = 1, nC4b
+            X = tmpR4Tensor%mat([0],[0],[R],[S])
+            X = daggerC1Beta.dot.X.dot.C2Beta
+            Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+          EndDo
+        EndDo
+        !$OMP END DO
+        !$OMP CRITICAL
+        tmpR4TensorBeta = tmpR4TensorBeta + tmpR4TensorLoc
+        !$OMP END CRITICAL
+        !$OMP END PARALLEL
+!
+!       AlphaBeta block: axis-pair (1,2) uses 'alpha', axis-pair (3,4) uses
+!       'beta'.
+!
+        call tmpR4Tensor%init(NBasis,NBasis,nC3b,nC4b)
+        !$OMP PARALLEL DEFAULT(NONE), &
+        !$OMP SHARED(aoAlpha,tmpR4Tensor,daggerC3Beta,C4Beta,NBasis,nC3b,nC4b), &
+        !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+        call tmpR4TensorLoc%init(NBasis,NBasis,nC3b,nC4b)
+        !$OMP DO COLLAPSE(2)
+        Do P = 1, NBasis
+          Do Q = 1, NBasis
+            X = aoAlpha%mat([P],[Q],[0],[0])
+            X = daggerC3Beta.dot.X.dot.C4Beta
+            Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+          EndDo
+        EndDo
+        !$OMP END DO
+        !$OMP CRITICAL
+        tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+        !$OMP END CRITICAL
+        !$OMP END PARALLEL
+!
+        call tmpR4TensorAlphaBeta%init(nC1a,nC2a,nC3b,nC4b)
+        !$OMP PARALLEL DEFAULT(NONE), &
+        !$OMP SHARED(tmpR4Tensor,tmpR4TensorAlphaBeta,daggerC1Alpha,C2Alpha,nC1a,nC2a,nC3b,nC4b), &
+        !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+        call tmpR4TensorLoc%init(nC1a,nC2a,nC3b,nC4b)
+        !$OMP DO COLLAPSE(2)
+        Do R = 1, nC3b
+          Do S = 1, nC4b
+            X = tmpR4Tensor%mat([0],[0],[R],[S])
+            X = daggerC1Alpha.dot.X.dot.C2Alpha
+            Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+          EndDo
+        EndDo
+        !$OMP END DO
+        !$OMP CRITICAL
+        tmpR4TensorAlphaBeta = tmpR4TensorAlphaBeta + tmpR4TensorLoc
+        !$OMP END CRITICAL
+        !$OMP END PARALLEL
+!
+!       BetaAlpha block (always computed -- storage is always 'full' here):
+!       axis-pair (1,2) uses 'beta', axis-pair (3,4) uses 'alpha'.
+!
+        call tmpR4Tensor%init(NBasis,NBasis,nC3a,nC4a)
+        !$OMP PARALLEL DEFAULT(NONE), &
+        !$OMP SHARED(aoAlpha,tmpR4Tensor,daggerC3Alpha,C4Alpha,NBasis,nC3a,nC4a), &
+        !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+        call tmpR4TensorLoc%init(NBasis,NBasis,nC3a,nC4a)
+        !$OMP DO COLLAPSE(2)
+        Do P = 1, NBasis
+          Do Q = 1, NBasis
+            X = aoAlpha%mat([P],[Q],[0],[0])
+            X = daggerC3Alpha.dot.X.dot.C4Alpha
+            Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+          EndDo
+        EndDo
+        !$OMP END DO
+        !$OMP CRITICAL
+        tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+        !$OMP END CRITICAL
+        !$OMP END PARALLEL
+!
+        call tmpR4TensorBetaAlpha%init(nC1b,nC2b,nC3a,nC4a)
+        !$OMP PARALLEL DEFAULT(NONE), &
+        !$OMP SHARED(tmpR4Tensor,tmpR4TensorBetaAlpha,daggerC1Beta,C2Beta,nC1b,nC2b,nC3a,nC4a), &
+        !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+        call tmpR4TensorLoc%init(nC1b,nC2b,nC3a,nC4a)
+        !$OMP DO COLLAPSE(2)
+        Do R = 1, nC3a
+          Do S = 1, nC4a
+            X = tmpR4Tensor%mat([0],[0],[R],[S])
+            X = daggerC1Beta.dot.X.dot.C2Beta
+            Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+          EndDo
+        EndDo
+        !$OMP END DO
+        !$OMP CRITICAL
+        tmpR4TensorBetaAlpha = tmpR4TensorBetaAlpha + tmpR4TensorLoc
+        !$OMP END CRITICAL
+        !$OMP END PARALLEL
+!
+      EndIf
+!
+      If(intType.eq.'general') then
+!
+!       The 12 blocks that only exist for intType='general' have no prior
+!       term computed yet (unlike Alpha/Beta/AlphaBeta/BetaAlpha, which
+!       already hold their first term from the space/spin sections above),
+!       so they must be zero-initialized here before their first '+='
+!       accumulation below -- mirrors TwoERI_Trans's own upfront
+!       initialization of all accumulator tensors before block construction
+!       begins.
+!
+        call tmpR4TensorABAB%init(nBasis,nBasis,nBasis,nBasis)
+        call tmpR4TensorBABA%init(nBasis,nBasis,nBasis,nBasis)
+        call tmpR4TensorABBA%init(nBasis,nBasis,nBasis,nBasis)
+        call tmpR4TensorBAAB%init(nBasis,nBasis,nBasis,nBasis)
+        call tmpR4TensorAAAB%init(nBasis,nBasis,nBasis,nBasis)
+        call tmpR4TensorAABA%init(nBasis,nBasis,nBasis,nBasis)
+        call tmpR4TensorABAA%init(nBasis,nBasis,nBasis,nBasis)
+        call tmpR4TensorBAAA%init(nBasis,nBasis,nBasis,nBasis)
+        call tmpR4TensorBBBA%init(nBasis,nBasis,nBasis,nBasis)
+        call tmpR4TensorBBAB%init(nBasis,nBasis,nBasis,nBasis)
+        call tmpR4TensorBABB%init(nBasis,nBasis,nBasis,nBasis)
+        call tmpR4TensorABBB%init(nBasis,nBasis,nBasis,nBasis)
+!
+!         AAAA
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('alphaBeta')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorAlpha,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('alpha')).dot.X.dot.MO_Coeff_2%getBlock('alpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorAlpha = tmpR4TensorAlpha + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('alpha')).dot.X.dot.MO_Coeff_4%getBlock('alpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorAlpha,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('alphaBeta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorAlpha = tmpR4TensorAlpha + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('alphaBeta')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorAlpha,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('alphaBeta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorAlpha = tmpR4TensorAlpha + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+!
+!         BBBB
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorBeta,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorBeta = tmpR4TensorBeta + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorBeta,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('beta')).dot.X.dot.MO_Coeff_2%getBlock('beta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorBeta = tmpR4TensorBeta + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('betaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('betaAlpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorBeta,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('betaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('betaAlpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorBeta = tmpR4TensorBeta + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+!         AABB
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('betaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('betaAlpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorAlphaBeta,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('alpha')).dot.X.dot.MO_Coeff_2%getBlock('alpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorAlphaBeta = tmpR4TensorAlphaBeta + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('Beta ')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorAlphaBeta,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('alphaBeta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorAlphaBeta = tmpR4TensorAlphaBeta + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('betaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('betaAlpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorAlphaBeta,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('alphaBeta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorAlphaBeta = tmpR4TensorAlphaBeta + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+!         BBAA
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('alphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBetaAlpha,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('beta')).dot.X.dot.MO_Coeff_2%getBlock('beta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBetaAlpha = tmpR4TensorBetaAlpha + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('alpha')).dot.X.dot.MO_Coeff_4%getBlock('alpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBetaAlpha,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('betaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('betaAlpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBetaAlpha = tmpR4TensorBetaAlpha + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('alphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBetaAlpha,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('betaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('betaAlpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBetaAlpha = tmpR4TensorBetaAlpha + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+!         ABAB
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABAB = tmpR4TensorABAB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABAB = tmpR4TensorABAB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABAB = tmpR4TensorABAB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABAB = tmpR4TensorABAB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+!         BABA
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBABA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBABA = tmpR4TensorBABA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBABA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBABA = tmpR4TensorBABA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBABA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBABA = tmpR4TensorBABA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBABA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBABA = tmpR4TensorBABA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+!         ABBA
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABBA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABBA = tmpR4TensorABBA + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABBA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABBA = tmpR4TensorABBA + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABBA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABBA = tmpR4TensorABBA + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABBA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABBA = tmpR4TensorABBA + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+!         BAAB
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBAAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBAAB = tmpR4TensorBAAB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBAAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBAAB = tmpR4TensorBAAB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBAAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBAAB = tmpR4TensorBAAB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBAAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBAAB = tmpR4TensorBAAB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+!         AAAB
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorAAAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorAAAB = tmpR4TensorAAAB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorAAAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorAAAB = tmpR4TensorAAAB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorAAAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('AlphaBeta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorAAAB = tmpR4TensorAAAB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorAAAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('alphaBeta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorAAAB = tmpR4TensorAAAB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+!         AABA
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorAABA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorAABA = tmpR4TensorAABA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorAABA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorAABA = tmpR4TensorAABA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorAABA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorAABA = tmpR4TensorAABA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorAABA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('alphaBeta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorAABA = tmpR4TensorAABA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+!         ABAA
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorABAA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorABAA = tmpR4TensorABAA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorABAA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorABAA = tmpR4TensorABAA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorABAA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorABAA = tmpR4TensorABAA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorABAA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorABAA = tmpR4TensorABAA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+!         BAAA
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBAAA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBAAA = tmpR4TensorBAAA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBAAA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBAAA = tmpR4TensorBAAA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBAAA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBAAA = tmpR4TensorBAAA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBAAA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBAAA = tmpR4TensorBAAA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+!         BBBA
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBBBA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBBBA = tmpR4TensorBBBA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBBBA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBBBA = tmpR4TensorBBBA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBBBA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBBBA = tmpR4TensorBBBA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBBBA,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBBBA = tmpR4TensorBBBA + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+!         BBAB
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBBAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBBAB = tmpR4TensorBBAB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBBAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBBAB = tmpR4TensorBBAB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Alpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBBAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBBAB = tmpR4TensorBBAB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBBAB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBBAB = tmpR4TensorBBAB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+!         BABB
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBABB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBABB = tmpR4TensorBABB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBABB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_2%getBlock('Alpha')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBABB = tmpR4TensorBABB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBABB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBABB = tmpR4TensorBABB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+            !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do P = 1, NBasis
+              Do Q = 1, NBasis
+                X = aoAlpha%mat([P],[Q],[0],[0])
+                X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+                Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+            !$OMP PARALLEL DEFAULT(NONE), &
+            !$OMP SHARED(tmpR4Tensor,tmpR4TensorBABB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+            !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+            call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+            !$OMP DO COLLAPSE(2)
+            Do R = 1, NBasis
+              Do S = 1, NBasis
+                X = tmpR4Tensor%mat([0],[0],[R],[S])
+                X = Dagger(MO_Coeff_1%getBlock('Beta')).dot.X.dot.MO_Coeff_2%getBlock('AlphaBeta')
+                Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+              EndDo
+            EndDo
+            !$OMP END DO
+            !$OMP CRITICAL
+            tmpR4TensorBABB = tmpR4TensorBABB + tmpR4TensorLoc
+            !$OMP END CRITICAL
+            !$OMP END PARALLEL
+
+!         ABBB
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABBB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABBB = tmpR4TensorABBB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABBB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('Alpha')).dot.X.dot.MO_Coeff_2%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABBB = tmpR4TensorABBB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('BetaAlpha')).dot.X.dot.MO_Coeff_4%getBlock('BetaAlpha')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABBB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('AlphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABBB = tmpR4TensorABBB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          call tmpR4Tensor%init(nBasis,nBasis,nBasis,nBasis)
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(aoAlpha,tmpR4Tensor,MO_Coeff_3,MO_Coeff_4,NBasis), &
+          !$OMP PRIVATE(X,P,Q,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do P = 1, NBasis
+            Do Q = 1, NBasis
+              X = aoAlpha%mat([P],[Q],[0],[0])
+              X = Dagger(MO_Coeff_3%getBlock('Beta')).dot.X.dot.MO_Coeff_4%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[P],[Q],[0],[0])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4Tensor = tmpR4Tensor + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+          !$OMP PARALLEL DEFAULT(NONE), &
+          !$OMP SHARED(tmpR4Tensor,tmpR4TensorABBB,MO_Coeff_1,MO_Coeff_2,NBasis), &
+          !$OMP PRIVATE(X,R,S,tmpR4TensorLoc)
+          call tmpR4TensorLoc%init(NBasis,NBasis,NBasis,NBasis)
+          !$OMP DO COLLAPSE(2)
+          Do R = 1, NBasis
+            Do S = 1, NBasis
+              X = tmpR4Tensor%mat([0],[0],[R],[S])
+              X = Dagger(MO_Coeff_1%getBlock('alphaBeta')).dot.X.dot.MO_Coeff_2%getBlock('Beta')
+              Call tmpR4TensorLoc%mput(X,[0],[0],[R],[S])
+            EndDo
+          EndDo
+          !$OMP END DO
+          !$OMP CRITICAL
+          tmpR4TensorABBB = tmpR4TensorABBB + tmpR4TensorLoc
+          !$OMP END CRITICAL
+          !$OMP END PARALLEL
+
+!
+      EndIf
+!
+      myStorIntType = 'full-'//trim(ERIs%intType())
+      If(intType.eq.'space') then
+        call mqc_twoeris_allocate(MO_ERIs,myStorIntType,'space',tmpR4TensorAlpha)
+      ElseIf(intType.eq.'spin') then
+        call mqc_twoeris_allocate(MO_ERIs,myStorIntType,'spin',tmpR4TensorAlpha,&
+             tmpR4TensorBeta,tmpR4TensorAlphaBeta,tmpR4TensorBetaAlpha)
+      ElseIf(intType.eq.'general') then
+        call mqc_twoeris_allocate(MO_ERIs,myStorIntType,'general',tmpR4TensorAlpha,&
+             tmpR4TensorBeta,tmpR4TensorAlphaBeta,tmpR4TensorBetaAlpha,tmpR4TensorABAB,&
+             tmpR4TensorABBA,tmpR4TensorBAAB,tmpR4TensorBABA,tmpR4TensorAAAB,tmpR4TensorAABA,&
+             tmpR4TensorABAA,tmpR4TensorBAAA,tmpR4TensorBBBA,tmpR4TensorBBAB,tmpR4TensorBABB,&
+             tmpR4TensorABBB)
+      EndIf
+!
+      End Subroutine TwoERI_Trans_Full
 !
 !
 !     PROCEDURE MQC_TwoERIs_Conjugate_Transpose

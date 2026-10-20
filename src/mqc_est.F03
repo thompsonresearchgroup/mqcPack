@@ -21514,54 +21514,85 @@
 !>        Klimczak, M.; Cecot, W. Math. Probl. Eng. 2019, 2019(3),
 !>        5060397.
 !>    \endverbatim
+!>
+!>    \param spaceDim
+!>    \verbatim
+!>        spaceDim is Integer,Optional
+!>        The number of linear-independent vectors.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
+!>    \author M. M. F. Moraes
 !>    \date 2025
+!>    \date 2026
 !
-      function mqc_scf_integral_pinv(integral,tol) result(inverse)
+      function mqc_scf_integral_pinv(integral,tol,spaceDim) result(inverse)
 !
       implicit none
       class(mqc_scf_integral),intent(in)::integral
       class(*),optional,intent(in)::tol
+      Integer(kind=int64),optional::spaceDim
       type(mqc_scf_integral)::inverse
+      Integer(kind=int64)::mySpaceDim1,mySpaceDim2
 
       type(mqc_matrix)::tmpMat1,tmpMat2,tmpMat3,tmpMat4
-      integer(kind=int64)::nDimAlpha=0
+      integer(kind=int64)::nDimAlpha,nDimBeta
 !
+      nDimAlpha=0
+      nDimBeta=0
       if(integral%type().eq.'space') then
         tmpMat1 = integral%getblock('alpha')
+        nDimAlpha = integral%blockSize('alpha') 
         if(present(tol)) then
-          tmpMat1 = tmpMat1%pinv(tol)
+          tmpMat1 = tmpMat1%pinv(tol,SpaceDim=mySpaceDim1)
         else
-          tmpMat1 = tmpMat1%pinv()
+          tmpMat1 = tmpMat1%pinv(SpaceDim=mySpaceDim1)
         endIf
-        call mqc_integral_allocate(inverse,'integral psuedo inverse','space',tmpMat1)
+        if(present(spaceDim)) spaceDim = mySpaceDim1
+        if (mySpaceDim1.eq.0) then
+          call inverse%init(NDimAlpha,NDimAlpha,nAlpha2=NDimAlpha,nBeta2=NDimAlpha)
+        else 
+          call mqc_integral_allocate(inverse,'integral psuedo inverse','space',tmpMat1)
+        end if
       elseIf(integral%type().eq.'spin') then
         tmpMat1 = integral%getblock('alpha')
         tmpMat2 = integral%getblock('beta')
+        nDimAlpha = integral%blockSize('alpha') 
+        nDimBeta = integral%blockSize('beta') 
         if(present(tol)) then
-          tmpMat1 = tmpMat1%pinv(tol)
-          tmpMat2 = tmpMat2%pinv(tol)
+          tmpMat1 = tmpMat1%pinv(tol,SpaceDim=mySpaceDim1)
+          tmpMat2 = tmpMat2%pinv(tol,SpaceDim=mySpaceDim2)
         else
-          tmpMat1 = tmpMat1%pinv()
-          tmpMat2 = tmpMat2%pinv()
+          tmpMat1 = tmpMat1%pinv(SpaceDim=mySpaceDim1)
+          tmpMat2 = tmpMat2%pinv(SpaceDim=mySpaceDim2)
         endIf
-        call mqc_integral_allocate(inverse,'integral psuedo inverse','spin',tmpMat1,tmpMat2)
+        if(present(spaceDim)) spaceDim = mySpaceDim1 + mySpaceDim2
+        if ((mySpaceDim1 + mySpaceDim2).eq.0) then
+          call inverse%init(NDimAlpha,NDimBeta,nAlpha2=NDimAlpha,nBeta2=NDimBeta)
+        else
+          call mqc_integral_allocate(inverse,'integral psuedo inverse','spin',tmpMat1,tmpMat2)
+        end if
       elseIf(integral%type().eq.'general') then
         nDimAlpha = integral%blockSize('alpha') 
+        nDimBeta = integral%blockSize('beta') 
         tmpMat1 = integral%getblock('full')
         if(present(tol)) then
-          tmpMat1 = tmpMat1%pinv(tol)
+          tmpMat1 = tmpMat1%pinv(tol,SpaceDim=mySpaceDim1)
         else
-          tmpMat1 = tmpMat1%pinv()
+          tmpMat1 = tmpMat1%pinv(SpaceDim=mySpaceDim1)
         endIf
-        tmpMat2 = tmpMat1%mat([NDimAlpha+1,-1],[NDimAlpha+1,-1])
-        tmpMat3 = tmpMat1%mat([NDimAlpha+1,-1],[1,NDimAlpha])
-        tmpMat4 = tmpMat1%mat([1,NDimAlpha],[NDimAlpha+1,-1])
-        tmpMat1 = tmpMat1%mat([1,NDimAlpha],[1,NDimAlpha])
-        call mqc_integral_allocate(inverse,'integral psuedo inverse','general',tmpMat1,tmpMat2,tmpMat3,tmpMat4)
+        if(present(spaceDim)) spaceDim = mySpaceDim1
+        if (mySpaceDim1.eq.0) then
+          call inverse%init(NDimAlpha,NDimBeta,nAlpha2=NDimAlpha,nBeta2=NDimBeta)
+        else
+          tmpMat2 = tmpMat1%mat([NDimAlpha+1,-1],[NDimAlpha+1,-1])
+          tmpMat3 = tmpMat1%mat([NDimAlpha+1,-1],[1,NDimAlpha])
+          tmpMat4 = tmpMat1%mat([1,NDimAlpha],[NDimAlpha+1,-1])
+          tmpMat1 = tmpMat1%mat([1,NDimAlpha],[1,NDimAlpha])
+          call mqc_integral_allocate(inverse,'integral psuedo inverse','general',tmpMat1,tmpMat2,tmpMat3,tmpMat4)
+        end if
       endIf
 !
       end function mqc_scf_integral_pinv

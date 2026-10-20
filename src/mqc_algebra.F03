@@ -28606,13 +28606,21 @@
 !>        Klimczak, M.; Cecot, W. Math. Probl. Eng. 2019, 2019(3), 
 !>        5060397. 
 !>    \endverbatim
+!>  
+!>    \param spaceDim
+!>    \verbatim
+!>        spaceDim is Integer,Optional
+!>        The number of linear-independent vectors.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
+!>    \author M. M. F. Moraes
 !>    \date 2020
+!>    \date 2026
 !
-      Function MQC_Matrix_MPInv(A,tol) Result(PInv)
+      Function MQC_Matrix_MPInv(A,tol,spaceDim) Result(PInv)
 !
       Implicit None
       Class(MQC_Matrix)::A
@@ -28622,7 +28630,8 @@
       Type(MQC_Matrix)::PInv
       Type(MQC_Scalar)::Thresh,Zero
       class(*),optional::tol
-      Integer(kind=int64)::I
+      Integer(kind=int64),optional::spaceDim
+      Integer(kind=int64)::I,mySpaceDim
 !
       call A%SVD(EVals,EUVecs,EVVecs)
       if(present(tol)) then
@@ -28640,18 +28649,27 @@
         end select
       else
         thresh = evals%maxval()*epsilon(1.0e0)*max(size(A,1),size(A,2))
+        if (thresh.lt.1.0e-10) thresh = 1.0e-10
       endif
       Zero = 0.0e0
+      mySpaceDim = Size(EVals)
 
-      Do I = 1, Size(EVals)
+      outer: Do I = 1, Size(EVals)
         If(EVals%at(I).gt.Thresh) then
           call EVals%put(1.0/EVals%at(I),I)
         else
-          call EVals%put(zero,I)
+          mySpaceDim = I - 1
+          exit outer
         endIf
-      EndDo
-      call EVals%diag(SMat)
-      PInv = matmul(matmul(dagger(EVVecs),SMat),dagger(EUVecs))
+      EndDo outer
+      if(present(spaceDim)) spaceDim = mySpaceDim
+      if (mySpaceDim.eq.0) then
+        call PInv%init(A%NRow,A%NCol,zero)
+      else
+        call MQC_Matrix_DiagMatrix_Put_Vector(EVals%vat(1,mySpaceDim),SMat)
+        PInv = matmul(matmul(dagger(EVVecs%mat([1,mySpaceDim],[0])),SMat),&
+                             dagger(EUVecs%mat([0],[1,mySpaceDim])))
+      end if
 !      
       Return
       End Function MQC_Matrix_MPInv

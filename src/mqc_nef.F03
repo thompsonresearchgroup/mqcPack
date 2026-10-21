@@ -100,6 +100,8 @@
         Procedure, public::blockIndex => mqc_nef_matrix_index
         Procedure, public::at => mqc_nef_matrix_at
         Procedure, Public::imp => mqc_nef_matrix_import_integral
+        Procedure, Public::iput => mqc_nef_matrix_integral_put
+        Procedure, Public::iat => mqc_nef_matrix_integral_at
         Procedure, Public::export => mqc_nef_matrix_export_integral
         Procedure, Public::slice => mqc_nef_matrix_dimention_slice
         Procedure, Public::collapse => mqc_nef_matrix_dimention_collapse
@@ -111,7 +113,7 @@
         Procedure, Public::crossouter2R4 => mqc_NEFMatrix_NEFMatrix_crossouter_product
         Procedure, public::getBlockMat => mqc_nef_matrix_output_block_matrix
         Procedure, public::getMap => mqc_nef_matrix_get_map
-        Procedure, Public::pinvMat => mqc_nef_matrix_block_diagonal_pinv
+        Procedure, Public::pinv => mqc_nef_matrix_block_diagonal_pinv
         Procedure, Public::getRotation => mqc_nef_matrix_get_generator_rotation
         Procedure, Public::getBlockRotation => mqc_nef_matrix_get_block_rotation
       End Type
@@ -178,9 +180,12 @@
         Procedure, Public::expand => mqc_nef_set_expand
         Procedure, Public::outerCollapse => mqc_nef_set_outer_collapse
         Procedure, Public::outerExpand => mqc_nef_set_outer_expand
+        Procedure, Public::mergeSpace => mqc_nef_set_outer_merge_space
+        Procedure, Public::separateSpace => mqc_nef_set_outer_unmerge_space
         Procedure, Public::fullCollapse => mqc_nef_set_full_collapse
         Procedure, Public::fullExpand => mqc_nef_set_full_expand
         Procedure, Public::getMap => mqc_nef_set_get_map
+        Procedure, Public::pinvR4 => mqc_nef_set_block_diagonal_pinv
       End Type
 !
 !----------------------------------------------------------------
@@ -189,6 +194,14 @@
 !                                                               |
 !----------------------------------------------------------------
 !
+!
+!>    \brief <b> Prints an object</b>
+      interface mqc_print
+        module procedure mqc_print_nef_vector
+        module procedure mqc_print_nef_matrix
+        module procedure mqc_print_nef_r4
+        module procedure mqc_print_nef_set
+      end interface
 !
 !>    \brief <b> Multiplies two objects</b>
       Interface MatMul
@@ -215,6 +228,8 @@
 !>    \brief <b> Returns the conjugate</b>
       Interface Conjg
         Module Procedure MQC_NEFMatrix_Conjugate
+        Module Procedure MQC_NEF_Vector_Conjugate
+        Module Procedure MQC_NEFSet_Conjugate
       End Interface
 !
 !>    \brief <b> Returns the transpose</b>
@@ -1003,6 +1018,149 @@
       end subroutine mqc_nef_matrix_import_integral
 !
 !
+!     PROCEDURE MQC_NEF_Matrix_Integral_Put
+!
+!>    \brief <b> MQC_NEF_Matrix_Integral_Put adds an MQC SCF Integral into
+!>    one of the Main_Matrix entries of an initialized NEF Matrix object</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_NEF_Matrix_Integral_Put adds (accumulates) an MQC SCF Integral
+!>    into the (row,col) space-pair block of an already-initialized NEF
+!>    Matrix object. The integral's alpha/beta row and column dimensions
+!>    must match the target block's dimensions exactly.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] NEFMat
+!>    \verbatim
+!>        NEFMat is Class(MQC_NEF_Matrix)
+!>        The MQC NEF Matrix to update.
+!>    \endverbatim
+!>
+!>    \param[in] integral
+!>    \verbatim
+!>        integral is type(mqc_scf_integral)
+!>        The value to add into the target block.
+!>    \endverbatim
+!>
+!>    \param[in] row
+!>    \verbatim
+!>        row is integer
+!>        The row space index of the target block.
+!>    \endverbatim
+!>
+!>    \param[in] col
+!>    \verbatim
+!>        col is integer
+!>        The column space index of the target block.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_nef_matrix_integral_put(NEFMat,integral,row,col)
+!
+      implicit none
+      class(mqc_nef_matrix),intent(inOut)::NEFMat
+      type(mqc_scf_integral),intent(in)::integral
+      integer,intent(in)::row,col
+      integer(kind=int64)::nef_bidx
+!
+      nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+!
+      if(integral%blockSize('alpha',1).ne.NEFMat%Size_vector_alpha_row(row).or.&
+         integral%blockSize('beta',1).ne.NEFMat%Size_vector_beta_row(row).or.&
+         integral%blockSize('alpha',2).ne.NEFMat%Size_vector_alpha_col(col).or.&
+         integral%blockSize('beta',2).ne.NEFMat%Size_vector_beta_col(col)) &
+        call mqc_error_i('mqc_nef_matrix_integral_put: integral dimensions do not '//&
+          'match the target block dimensions at (row,col)',6,&
+          'row',int(row,kind=int64),'col',int(col,kind=int64),&
+          'integral_alphaRow',integral%blockSize('alpha',1),&
+          'block_alphaRow',NEFMat%Size_vector_alpha_row(row),&
+          'integral_betaRow',integral%blockSize('beta',1),&
+          'block_betaRow',NEFMat%Size_vector_beta_row(row))
+!
+      NEFMat%Main_Matrix(nef_bidx) = integral
+      NEFMat%Zero_Flag(nef_bidx) = .false.
+!
+      end subroutine mqc_nef_matrix_integral_put
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Integral_At
+!
+!>    \brief <b> MQC_NEF_Matrix_Integral_At returns one of the Main_Matrix
+!>    entries of an initialized NEF Matrix object as an MQC SCF Integral</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_NEF_Matrix_Integral_At returns the (row,col) space-pair block of
+!>    an already-initialized NEF Matrix object as an MQC SCF Integral. This
+!>    is the read-side counterpart to MQC_NEF_Matrix_Integral_Put. When the
+!>    block is flagged zero, a properly-dimensioned zero-valued integral is
+!>    built from Map_Matrix_Row/Map_Matrix_Col instead of returning the
+!>    (never initialized) Main_Matrix entry.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] NEFMat
+!>    \verbatim
+!>        NEFMat is Class(MQC_NEF_Matrix)
+!>        The MQC NEF Matrix to read from.
+!>    \endverbatim
+!>
+!>    \param[in] row
+!>    \verbatim
+!>        row is integer
+!>        The row space index of the target block.
+!>    \endverbatim
+!>
+!>    \param[in] col
+!>    \verbatim
+!>        col is integer
+!>        The column space index of the target block.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_matrix_integral_at(NEFMat,row,col) result(integralOut)
+!
+      implicit none
+      class(mqc_nef_matrix),intent(in)::NEFMat
+      integer,intent(in)::row,col
+      type(mqc_scf_integral)::integralOut
+      integer(kind=int64)::nef_bidx
+!
+      nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+      if(.not.allocated(NEFMat%Zero_Flag)) call mqc_error(&
+           'mqc_nef_matrix_integral_at: NEF_Matrix is open (never initialized)',6)
+      if(NEFMat%Zero_Flag(nef_bidx)) then
+        call integralOut%init(&
+               Size(NEFMat%Map_Matrix_Row(row),'alpha'),&
+               Size(NEFMat%Map_Matrix_Row(row),'beta'),&
+               nAlpha2=Size(NEFMat%Map_Matrix_Col(col),'alpha'),&
+               nBeta2=Size(NEFMat%Map_Matrix_Col(col),'beta'))
+      else
+        integralOut = NEFMat%Main_Matrix(nef_bidx)
+      end if
+!
+      end function mqc_nef_matrix_integral_at
+!
 !
 !     PROCEDURE MQC_NEF_Matrix_Export_Integral
 !
@@ -1036,7 +1194,7 @@
       function mqc_nef_matrix_export_integral(NEFMat) result(integral)
 !
         implicit none
-        class(mqc_nef_matrix),intent(inOut)::NEFMat
+        class(mqc_nef_matrix),intent(in)::NEFMat
         type(mqc_scf_integral)::integral
         type(mqc_scf_integral)::tmp_integral
         type(mqc_vector)::tmp_alpha,tmp_beta
@@ -1841,6 +1999,42 @@
       end do
 !
       end function mqc_NEFMatrix_conjugate
+!
+!     PROCEDURE MQC_NEF_Vector_Conjugate
+!
+!>    \brief <b> MQC_NEF_Vector_Conjugate is used to compute the conjugate
+!>    of a MQC NEF Vector type variable.
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] NEFVec
+!>    \verbatim
+!>        NEFVec is type(mqc_nef_vector)
+!>        The MQC NEF Vector type variable to conjugate.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_vector_conjugate(NEFVec) result(NEFVecOut)
+!
+      implicit none
+      type(mqc_nef_vector),intent(in)::NEFVec
+      type(mqc_nef_vector)::NEFVecOut
+      integer::id
+!
+      call NEFVecOut%init(NEFVec%Map_Matrix)
+      do id = 1, NEFVec%NumSpace
+        if (.not.NEFVec%Zero_Flag(id)) then
+          NEFVecOut%Main_Vector(id) = conjg(NEFVec%Main_Vector(id))
+          NEFVecOut%Zero_Flag(id) = .false.
+        end if
+      end do
+!
+      end function mqc_nef_vector_conjugate
 !
 !     PROCEDURE MQC_NEFMatrix_Conjugate_Transpose
 !
@@ -5512,6 +5706,8 @@
       real(kind=real64)::zero=0.0d0
 !
       element = zero
+      if(.not.allocated(nefM%Zero_Flag)) call mqc_error(&
+           'mqc_nef_matrix_at: NEF_Matrix is open (never initialized)',6)
       select type (i)
       type is (integer)
         myI = i
@@ -5636,6 +5832,8 @@
       real(kind=real64)::zero=0.0d0
 !
       element = zero
+      if(.not.allocated(nefR4%Zero_Flag)) call mqc_error(&
+           'mqc_nef_r4_at: NEF_R4 is open (never initialized)',6)
 !
       dI = set1(1)
       dJ = set2(1)
@@ -7235,23 +7433,31 @@
 !>        Singular-value threshold passed to each diagonal block's pseudo-inverse
 !>        (default 1.0d-8)
 !>    \endverbatim
+!>
+!>    \param spaceDim
+!>    \verbatim
+!>        spaceDim is Integer,Optional
+!>        The number of linear-independent vectors.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      function mqc_nef_r4_block_diagonal_pinv(NEFr4,spinType,Order,thresh) result(NEFMatOut)
+      function mqc_nef_r4_block_diagonal_pinv(NEFr4,spinType,Order,thresh,spaceDim) result(NEFMatOut)
 !
       implicit none
       class(mqc_nef_r4),intent(in)::NEFr4
       character(len=*),intent(in),optional::spinType
       integer(kind=int64),dimension(4),intent(in),optional::Order
       real(kind=real64),intent(in),optional::thresh
+      Integer(kind=int64),optional::spaceDim
       type(mqc_nef_matrix)::NEFMatOut
       type(mqc_nef_matrix)::CollapsedMat
       real(kind=real64)::myThresh
       integer(kind=int64)::N,id
+      Integer(kind=int64)::mySpaceDim
 !
       if(present(thresh)) then
         myThresh = thresh
@@ -7261,18 +7467,116 @@
 !
       CollapsedMat = NEFr4%collapse(spinType=spinType,Order=Order)
 !
-      call NEFMatOut%init(CollapsedMat%Map_Matrix_Row,&
-           initial_map_matrix_col=CollapsedMat%Map_Matrix_Col)
-!
-      do N = 1, CollapsedMat%NumSpace_row
-        id = CollapsedMat%blockIndex([1,N],[2,N])
-        if (.not.CollapsedMat%Zero_Flag(id)) then
-          NEFMatOut%Main_Matrix(id) = CollapsedMat%Main_Matrix(id)%pinv(myThresh)
-          NEFMatOut%Zero_Flag(id) = .false.
-        end if
-      end do
+      NEFMatOut = CollapsedMat%pinv(myThresh,mySpaceDim)
+      if(present(spaceDim)) spaceDim = mySpaceDim
 !
       end function mqc_nef_r4_block_diagonal_pinv
+!
+!
+!     PROCEDURE MQC_NEF_Set_Block_Diagonal_PInv
+!
+!>    \brief <b> MQC_NEF_Set_Block_Diagonal_PInv is used to return the block-diagonal
+!>    pseudo-inverse of a NEF Set-R4 object, expressed as a collapsed NEF Matrix. </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] NEFR4
+!>    \verbatim
+!>        NEFSet is type(mqc_nef_set)
+!>        NEF Set containing R4 Object whose block-diagonal pseudo-inverse is to be returned.
+!>    \endverbatim
+!>
+!>    \param[in] spinType
+!>    \verbatim
+!>        spinType is Character(Len=*),Optional
+!>        spinType modiffies the excitations considered, applied identically to
+!>        bra and ket (the collapsed row and column maps always match)
+!>          Options:
+!>            'singlet' => return same spin
+!>            'triplet  => return opposite spin
+!>            'all'     => return both types (default)
+!>    \endverbatim
+!>
+!>    \param[in] Order
+!>    \verbatim
+!>        Order is integer(kind=int64),dimension(4),intent(in),optional
+!>        Order contains the indexes to be collapsed following:
+!>        Order = [i,j,k,l] => i->j = p and  k->l = q
+!>        (default [1,2,3,4])
+!>    \endverbatim
+!>
+!>    \param[in] thresh
+!>    \verbatim
+!>        thresh is real(kind=real64),optional
+!>        Singular-value threshold passed to each diagonal block's pseudo-inverse
+!>        (default 1.0d-8)
+!>    \endverbatim
+!>
+!>    \param spaceDim
+!>    \verbatim
+!>        spaceDim is Integer,Optional
+!>        The number of linear-independent vectors.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_set_block_diagonal_pinv(NEFSet,spinType,Order,thresh,spaceDim) result(NEFMatOut)
+!
+      implicit none
+      class(mqc_nef_set),intent(in)::NEFSet
+      character(len=*),intent(in),optional::spinType
+      integer(kind=int64),dimension(4),intent(in),optional::Order
+      real(kind=real64),intent(in),optional::thresh
+      Integer(kind=int64),optional::spaceDim
+      type(mqc_nef_matrix)::TmpMat
+      type(mqc_nef_set)::CollapsedMat,NEFMatOut
+      real(kind=real64)::myThresh
+      Integer(kind=int64)::mySpaceDim
+!
+      if(present(thresh)) then
+        myThresh = thresh
+      else
+        myThresh = 1.0d-8
+      end if
+!
+      if(.not.NEFset%isR4()) &
+        call mqc_error_A('mqc_nef_set_block_diagonal_pinv: NEFSet is not R4-type ',6,&
+                       'NEFSet%type()',NEFSet%type())
+!
+      CollapsedMat = NEFSet%collapse(spinType=spinType,Order=Order)
+!
+      if(CollapsedMat%NumSpace(1).ne.CollapsedMat%NumSpace(2)) &
+        call mqc_error_i('mqc_nef_set_block_diagonal_pinv: collapsed set is not square',6,&
+          'NumSpace(1)',CollapsedMat%NumSpace(1),'NumSpace(2)',CollapsedMat%NumSpace(2))
+!
+      CollapsedMat = CollapsedMat%mergeSpace()
+      call NEFMatOut%init(1,1)
+      call TmpMat%init(CollapsedMat%Map_Matrix_1,&
+                       initial_map_matrix_col=CollapsedMat%Map_Matrix_2)
+!
+      mySpaceDim=0
+      if (.not.CollapsedMat%Zero_Flag(1,1)) &
+        TmpMat = CollapsedMat%Set_Matrix(1,1)%pinv(myThresh,mySpaceDim)
+      if (mySpaceDim.ne.0) then
+        call NEFMatOut%putMatrix(TmpMat,1,1)
+      else
+        call mqc_nef_set_allocate(NEFMatOut,'matrix',Map_Matrix_1=CollapsedMat%Map_Matrix_1,&
+                                                     Map_Matrix_2=CollapsedMat%Map_Matrix_2)
+      end if
+      if (present(spaceDim)) spaceDim = mySpaceDim
+! 
+      end function mqc_nef_set_block_diagonal_pinv
 !
 !
 !     PROCEDURE MQC_NEF_Matrix_Collapse_Index
@@ -8012,6 +8316,8 @@
       logical::full
       integer(kind=int64)::fsize,i,j
 !
+      if(.not.allocated(nefV%Zero_Flag)) call mqc_error(&
+           'mqc_nef_vector_output_block_vector: NEF_Vector is open (never initialized)',6)
       if(present(blockOrder)) then
         call string_change_case(blockOrder,'l',myBlockOrder)
       else
@@ -8568,20 +8874,28 @@
 !>        Singular-value threshold passed to each diagonal block's
 !>        pseudo-inverse (default 1.0d-8)
 !>    \endverbatim
+!>
+!>    \param spaceDim
+!>    \verbatim
+!>        spaceDim is Integer,Optional
+!>        The number of linear-independent vectors.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      function mqc_nef_matrix_block_diagonal_pinv(NEFMat,thresh) result(NEFMatOut)
+      function mqc_nef_matrix_block_diagonal_pinv(NEFMat,thresh,spaceDim) result(NEFMatOut)
 !
       implicit none
       class(mqc_nef_matrix),intent(in)::NEFMat
       real(kind=real64),intent(in),optional::thresh
+      Integer(kind=int64),optional::spaceDim
       type(mqc_nef_matrix)::NEFMatOut
       real(kind=real64)::myThresh
       integer(kind=int64)::N,id
+      Integer(kind=int64)::mySpaceDim,tmpspacedim
 !
       if(present(thresh)) then
         myThresh = thresh
@@ -8592,13 +8906,20 @@
       call NEFMatOut%init(NEFMat%Map_Matrix_Row,&
            initial_map_matrix_col=NEFMat%Map_Matrix_Col)
 !
+      mySpaceDim = 0
       do N = 1, NEFMat%NumSpace_row
         id = NEFMat%blockIndex([1,N],[2,N])
         if (.not.NEFMat%Zero_Flag(id)) then
-          NEFMatOut%Main_Matrix(id) = NEFMat%Main_Matrix(id)%pinv(myThresh)
-          NEFMatOut%Zero_Flag(id) = .false.
+          NEFMatOut%Main_Matrix(id) = NEFMat%Main_Matrix(id)%pinv(myThresh,spaceDim=tmpSpaceDim)
+          if(tmpSpaceDim.eq.0) then
+            NEFMatOut%Zero_Flag(id) = .true.
+          else
+            NEFMatOut%Zero_Flag(id) = .false.
+            mySpaceDim = mySpaceDim + tmpSpaceDim
+          end if
         end if
       end do
+      if (present(spaceDim)) spaceDim = mySpaceDim
 !
       end function mqc_nef_matrix_block_diagonal_pinv
 !
@@ -10690,6 +11011,18 @@
       character(len=64)::myType
       integer::i
 !
+      if(allocated(NEFSet%Set_Vector)) deallocate(NEFSet%Set_Vector)
+      if(allocated(NEFSet%Set_Matrix)) deallocate(NEFSet%Set_Matrix)
+      if(allocated(NEFSet%Set_R4)) deallocate(NEFSet%Set_R4)
+      if(allocated(NEFSet%Size_vector_alpha_1)) deallocate(NEFSet%Size_vector_alpha_1)
+      if(allocated(NEFSet%Size_vector_alpha_2)) deallocate(NEFSet%Size_vector_alpha_2)
+      if(allocated(NEFSet%Size_vector_alpha_3)) deallocate(NEFSet%Size_vector_alpha_3)
+      if(allocated(NEFSet%Size_vector_alpha_4)) deallocate(NEFSet%Size_vector_alpha_4)
+      if(allocated(NEFSet%Size_vector_beta_1)) deallocate(NEFSet%Size_vector_beta_1)
+      if(allocated(NEFSet%Size_vector_beta_2)) deallocate(NEFSet%Size_vector_beta_2)
+      if(allocated(NEFSet%Size_vector_beta_3)) deallocate(NEFSet%Size_vector_beta_3)
+      if(allocated(NEFSet%Size_vector_beta_4)) deallocate(NEFSet%Size_vector_beta_4)
+!
       call string_change_case(NEFType,'l',myType)
 !
       select case(trim(myType))
@@ -10772,6 +11105,7 @@
       case default
         call mqc_error_A('mqc_nef_set_allocate: unknown kind',6,'NEFType',trim(NEFType))
       end select
+      if(allocated(NEFSet%Zero_Flag)) deallocate(NEFSet%Zero_Flag)
       allocate(NEFSet%Zero_Flag(NEFSet%NumI,NEFSet%NumJ))
       NEFSet%Zero_Flag = .true.
       NEFSet%Array_Type = trim(NEFType)
@@ -11100,7 +11434,11 @@
       if(.not.NEFSet%isVector()) call mqc_error_A(&
            'mqc_nef_set_at_vector: NEF_Set does not hold vector elements (or is still open)',&
            6,'Array_Type',NEFSet%Array_Type)
-      element = NEFSet%Set_Vector(I,J)
+      if(NEFSet%isZero(I,J)) then
+        call element%init(NEFSet%Map_Matrix_1)
+      else
+        element = NEFSet%Set_Vector(I,J)
+      end if
 !
       end function mqc_nef_set_at_vector
 !
@@ -11158,7 +11496,11 @@
       if(.not.NEFSet%isMatrix()) call mqc_error_A(&
            'mqc_nef_set_at_matrix: NEF_Set does not hold matrix elements (or is still open)',&
            6,'Array_Type',NEFSet%Array_Type)
-      element = NEFSet%Set_Matrix(I,J)
+      if(NEFSet%isZero(I,J)) then
+        call element%init(NEFSet%Map_Matrix_1,initial_map_matrix_col=NEFSet%Map_Matrix_2)
+      else
+        element = NEFSet%Set_Matrix(I,J)
+      end if
 !
       end function mqc_nef_set_at_matrix
 !
@@ -11216,7 +11558,30 @@
       if(.not.NEFSet%isR4()) call mqc_error_A(&
            'mqc_nef_set_at_r4: NEF_Set does not hold r4 elements (or is still open)',&
            6,'Array_Type',NEFSet%Array_Type)
-      element = NEFSet%Set_R4(I,J)
+      if(NEFSet%isZero(I,J)) then
+        element%NumSpace_1 = NEFSet%NumSpace(1)
+        element%NumSpace_2 = NEFSet%NumSpace(2)
+        element%NumSpace_3 = NEFSet%NumSpace(3)
+        element%NumSpace_4 = NEFSet%NumSpace(4)
+        element%Map_Matrix_1 = NEFSet%Map_Matrix_1
+        element%Map_Matrix_2 = NEFSet%Map_Matrix_2
+        element%Map_Matrix_3 = NEFSet%Map_Matrix_3
+        element%Map_Matrix_4 = NEFSet%Map_Matrix_4
+        element%Size_vector_alpha_1 = NEFSet%Size_vector_alpha_1
+        element%Size_vector_beta_1  = NEFSet%Size_vector_beta_1
+        element%Size_vector_alpha_2 = NEFSet%Size_vector_alpha_2
+        element%Size_vector_beta_2  = NEFSet%Size_vector_beta_2
+        element%Size_vector_alpha_3 = NEFSet%Size_vector_alpha_3
+        element%Size_vector_beta_3  = NEFSet%Size_vector_beta_3
+        element%Size_vector_alpha_4 = NEFSet%Size_vector_alpha_4
+        element%Size_vector_beta_4  = NEFSet%Size_vector_beta_4
+        allocate(element%Main_R4(NEFSet%NumSpace(1)*NEFSet%NumSpace(2)*&
+                                  NEFSet%NumSpace(3)*NEFSet%NumSpace(4)))
+        allocate(element%Zero_Flag(size(element%Main_R4)))
+        element%Zero_Flag = .true.
+      else
+        element = NEFSet%Set_R4(I,J)
+      end if
 !
       end function mqc_nef_set_at_r4
 !
@@ -12492,6 +12857,7 @@
       integer(kind=int64)::a,b,c,d,contractedA,contractedB
       logical::myTransposeA,myTransposeB,swapOut,first
       integer::I,J,K
+      type(mqc_scf_eigenvalues),dimension(:),allocatable::outMap1,outMap2
 !
       if(NEFSetA%NumJ.ne.NEFSetB%NumI) call mqc_error_i(&
            'mqc_nefset_nefset_partial_contraction: NEFSetA%NumJ must equal NEFSetB%NumI',&
@@ -12521,6 +12887,26 @@
             if(.not.first) call NEFSetOut%put(tmpMatrix,I,K)
           end do
         end do
+        if(NEFSetOut%isOpen()) then
+          if(present(index1)) then
+            c=index1(3) ; d=index1(4)
+          else
+            c=3 ; d=4
+          end if
+          select case(c)
+          case(1); outMap1 = NEFSetA%Map_Matrix_1
+          case(2); outMap1 = NEFSetA%Map_Matrix_2
+          case(3); outMap1 = NEFSetA%Map_Matrix_3
+          case(4); outMap1 = NEFSetA%Map_Matrix_4
+          end select
+          select case(d)
+          case(1); outMap2 = NEFSetA%Map_Matrix_1
+          case(2); outMap2 = NEFSetA%Map_Matrix_2
+          case(3); outMap2 = NEFSetA%Map_Matrix_3
+          case(4); outMap2 = NEFSetA%Map_Matrix_4
+          end select
+          call mqc_nef_set_allocate(NEFSetOut,'matrix',Map_Matrix_1=outMap1,Map_Matrix_2=outMap2)
+        end if
       case('matrix_matrix')
         if(present(index1)) then
           a=index1(1) ; b=index1(2) ; c=index1(3) ; d=index1(4)
@@ -12584,6 +12970,23 @@
             end if
           end do
         end do
+        if(NEFSetOut%isOpen()) then
+          if(myTransposeA) then
+            outMap1 = NEFSetA%Map_Matrix_2
+          else
+            outMap1 = NEFSetA%Map_Matrix_1
+          end if
+          if(myTransposeB) then
+            outMap2 = NEFSetB%Map_Matrix_1
+          else
+            outMap2 = NEFSetB%Map_Matrix_2
+          end if
+          if(swapOut) then
+            call mqc_nef_set_allocate(NEFSetOut,'matrix',Map_Matrix_1=outMap2,Map_Matrix_2=outMap1)
+          else
+            call mqc_nef_set_allocate(NEFSetOut,'matrix',Map_Matrix_1=outMap1,Map_Matrix_2=outMap2)
+          end if
+        end if
       case('matrix_vector')
         if(present(index1)) then
           a=index1(1) ; b=index1(2) ; c=index1(3)
@@ -12630,6 +13033,13 @@
             if(.not.first) call NEFSetOut%put(tmpVector,I,K)
           end do
         end do
+        if(NEFSetOut%isOpen()) then
+          if(myTransposeA) then
+            call mqc_nef_set_allocate(NEFSetOut,'vector',Map_Matrix_1=NEFSetA%Map_Matrix_2)
+          else
+            call mqc_nef_set_allocate(NEFSetOut,'vector',Map_Matrix_1=NEFSetA%Map_Matrix_1)
+          end if
+        end if
       case('vector_matrix')
         if(present(index1)) then
           a=index1(1) ; b=index1(2) ; c=index1(3)
@@ -12676,6 +13086,13 @@
             if(.not.first) call NEFSetOut%put(tmpVector,I,K)
           end do
         end do
+        if(NEFSetOut%isOpen()) then
+          if(myTransposeB) then
+            call mqc_nef_set_allocate(NEFSetOut,'vector',Map_Matrix_1=NEFSetB%Map_Matrix_2)
+          else
+            call mqc_nef_set_allocate(NEFSetOut,'vector',Map_Matrix_1=NEFSetB%Map_Matrix_1)
+          end if
+        end if
       case('r4_matrix')
         do I = 1, NEFSetA%NumI
           do K = 1, NEFSetB%NumJ
@@ -12693,6 +13110,26 @@
             if(.not.first) call NEFSetOut%put(tmpMatrix,I,K)
           end do
         end do
+        if(NEFSetOut%isOpen()) then
+          if(present(index1)) then
+            c=index1(3) ; d=index1(4)
+          else
+            c=3 ; d=4
+          end if
+          select case(c)
+          case(1); outMap1 = NEFSetA%Map_Matrix_1
+          case(2); outMap1 = NEFSetA%Map_Matrix_2
+          case(3); outMap1 = NEFSetA%Map_Matrix_3
+          case(4); outMap1 = NEFSetA%Map_Matrix_4
+          end select
+          select case(d)
+          case(1); outMap2 = NEFSetA%Map_Matrix_1
+          case(2); outMap2 = NEFSetA%Map_Matrix_2
+          case(3); outMap2 = NEFSetA%Map_Matrix_3
+          case(4); outMap2 = NEFSetA%Map_Matrix_4
+          end select
+          call mqc_nef_set_allocate(NEFSetOut,'matrix',Map_Matrix_1=outMap1,Map_Matrix_2=outMap2)
+        end if
       case default
         call mqc_error_A('mqc_nefset_nefset_partial_contraction: unsupported NEF_Set '//&
              'kind combination',6,'NEFSetA%Type',NEFSetA%Type(),'NEFSetB%Type',NEFSetB%Type())
@@ -12904,8 +13341,12 @@
       integer(kind=int64),dimension(4),intent(in),optional::Order
       logical,intent(in),optional::swapOrder
       type(mqc_nef_set)::NEFSetOut
+      logical::mySwap
+      integer(kind=int64),dimension(4)::myOrder
       integer::I,J
       integer(kind=int64)::ia,ja,ka,la,s1,s2,s3,s4,expectedRow,expectedCol
+      character(len=64)::mySpinType,mySpinTypeKet
+      type(mqc_scf_eigenvalues),dimension(:),allocatable::outMap1,outMap2,outMap3,outMap4
 !
       select case(trim(NEFSet%Type()))
       case('vector')
@@ -12919,27 +13360,50 @@
              'NEFSet%NumSpace(1)',NEFSet%NumSpace(1),&
              'size(map_matrix_1)*size(map_matrix_2)',&
              size(map_matrix_1)*size(map_matrix_2))
+!
+        if(present(Order))  call mqc_error(&
+             'mqc_nef_set_expand: vector-type should not recieve a Order input',6)
+        if(present(spinTypeKet))  call mqc_error(&
+             'mqc_nef_set_expand: vector-type should not recieve a spinTypeKet input',6)
+!
+        if(present(swapOrder)) then
+          mySwap = swapOrder
+        else
+          mySwap = .false.
+        end if
+!
+        if(present(spinType)) then
+          mySpinType = spinType
+        else
+          mySpinType = 'all'
+        end if
+!          
         call NEFSetOut%init(NEFSet%NumI,NEFSet%NumJ)
         do I = 1, NEFSet%NumI
           do J = 1, NEFSet%NumJ
             if(NEFSet%isZero(I,J)) cycle
             call NEFSetOut%put(NEFSet%Set_Vector(I,J)%expand(&
-                 map_matrix_1,map_matrix_2,spinType=spinType,swapOrder=swapOrder),I,J)
+                 map_matrix_1,map_matrix_2,spinType=mySpinType,swapOrder=mySwap),I,J)
           end do
         end do
+        if(NEFSetOut%isOpen()) &
+          call mqc_nef_set_allocate(NEFSetOut,'matrix',&
+               Map_Matrix_1=map_matrix_1,Map_Matrix_2=map_matrix_2)
       case('matrix')
         if(.not.(present(map_matrix_1).and.present(map_matrix_2).and.&
                  present(map_matrix_3).and.present(map_matrix_4))) call mqc_error(&
              'mqc_nef_set_expand: matrix-type NEF_Set requires map_matrix_1, '//&
              'map_matrix_2, map_matrix_3 and map_matrix_4',6)
-!       Mirror mqc_nef_matrix_dimention_expand's own Order-role
-!       resolution: physical output axis k is filled by whichever input
-!       map's role (ia/ja/ka/la) equals k. Axes 1,2 become the output
-!       R4's row; axes 3,4 become its col.
+!
+        if(present(swapOrder))  call mqc_error(&
+             'mqc_nef_set_expand: matrix-type should not recieve a swapOrder input',6)
+!
         if(present(Order)) then
           ia=Order(1) ; ja=Order(2) ; ka=Order(3) ; la=Order(4)
+          myOrder = Order
         else
           ia=1 ; ja=2 ; ka=3 ; la=4
+          myOrder = [1,2,3,4]
         end if
         if(ia.eq.1) then
           s1 = size(map_matrix_1)
@@ -12977,6 +13441,19 @@
         else
           s4 = size(map_matrix_4)
         end if
+!
+        if(present(spinTypeKet)) then
+          mySpinTypeKet = spinTypeKet
+        else
+          mySpinTypeKet = 'all'
+        end if
+!          
+        if(present(spinType)) then
+          mySpinType = spinType
+        else
+          mySpinType = 'all'
+        end if
+!          
         expectedRow = s1*s2
         expectedCol = s3*s4
         if(NEFSet%NumSpace(1).ne.expectedRow.or.NEFSet%NumSpace(2).ne.expectedCol) &
@@ -12993,9 +13470,49 @@
             if(NEFSet%isZero(I,J)) cycle
             call NEFSetOut%put(NEFSet%Set_Matrix(I,J)%expand(&
                  map_matrix_1,map_matrix_2,map_matrix_3,map_matrix_4,&
-                 spinType=spinType,spinTypeKet=spinTypeKet,Order=Order),I,J)
+                 spinType=mySpinType,spinTypeKet=mySpinTypeKet,Order=myOrder),I,J)
           end do
         end do
+        if(NEFSetOut%isOpen()) then
+          if(ia.eq.1) then
+            outMap1 = map_matrix_1
+          else if(ja.eq.1) then
+            outMap1 = map_matrix_2
+          else if(ka.eq.1) then
+            outMap1 = map_matrix_3
+          else
+            outMap1 = map_matrix_4
+          end if
+          if(ia.eq.2) then
+            outMap2 = map_matrix_1
+          else if(ja.eq.2) then
+            outMap2 = map_matrix_2
+          else if(ka.eq.2) then
+            outMap2 = map_matrix_3
+          else
+            outMap2 = map_matrix_4
+          end if
+          if(ia.eq.3) then
+            outMap3 = map_matrix_1
+          else if(ja.eq.3) then
+            outMap3 = map_matrix_2
+          else if(ka.eq.3) then
+            outMap3 = map_matrix_3
+          else
+            outMap3 = map_matrix_4
+          end if
+          if(ia.eq.4) then
+            outMap4 = map_matrix_1
+          else if(ja.eq.4) then
+            outMap4 = map_matrix_2
+          else if(ka.eq.4) then
+            outMap4 = map_matrix_3
+          else
+            outMap4 = map_matrix_4
+          end if
+          call mqc_nef_set_allocate(NEFSetOut,'r4',Map_Matrix_1=outMap1,&
+               Map_Matrix_2=outMap2,Map_Matrix_3=outMap3,Map_Matrix_4=outMap4)
+        end if
       case default
         call mqc_error_A('mqc_nef_set_expand: NEF_Set type does not support '//&
              'expand (must be vector or matrix)',6,'Array_Type',NEFSet%Type())
@@ -13082,6 +13599,10 @@
 !
       select case(trim(NEFSet%Type()))
       case('matrix')
+        if(present(spinTypeKet)) call mqc_error(&
+             'mqc_nef_set_collapse: matrix-type should not recieve a spinTypeKet input',6)
+        if(present(Order)) call mqc_error(&
+             'mqc_nef_set_collapse: matrix-type should not recieve a Order input',6)
         call NEFSetOut%init(NEFSet%NumI,NEFSet%NumJ)
         do I = 1, NEFSet%NumI
           do J = 1, NEFSet%NumJ
@@ -13154,6 +13675,8 @@
           deallocate(outMap1)
         end if
       case('r4')
+        if(present(swapOrder)) call mqc_error(&
+             'mqc_nef_set_collapse: r4-type should not recieve a swapOrder input',6)
         call NEFSetOut%init(NEFSet%NumI,NEFSet%NumJ)
         do I = 1, NEFSet%NumI
           do J = 1, NEFSet%NumJ
@@ -13495,6 +14018,7 @@
           call NEFVecOut%init(New_Map_1)
           do I = 1, myNumI
             do J = 1, myNumJ
+              if(NEFSet%isZero(I,J)) cycle
               cellVector = NEFSet%atVector(int(I),int(J))
               outerIdx = (I-1)*myNumJ+J
               do b = 1, origNumSpace
@@ -13522,6 +14046,7 @@
           call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
           do I = 1, myNumI
             do J = 1, myNumJ
+              if(NEFSet%isZero(I,J)) cycle
               cellVector = NEFSet%atVector(int(I),int(J))
               do b = 1, origNumSpace
                 if(cellVector%Zero_Flag(b)) cycle
@@ -13599,6 +14124,7 @@
         call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
         do I = 1, myNumI
           do J = 1, myNumJ
+            if(NEFSet%isZero(I,J)) cycle
             cellMatrix = NEFSet%atMatrix(int(I),int(J))
             G = (I-1)*myNumJ+J
             do r = 1, origNumSpace_row
@@ -13712,6 +14238,7 @@
 !
         do I = 1, myNumI
           do J = 1, myNumJ
+            if(NEFSet%isZero(I,J)) cycle
             cellR4 = NEFSet%atR4(int(I),int(J))
             G = (I-1)*myNumJ+J
             do b1 = 1, origNumSpace1
@@ -13769,6 +14296,539 @@
       end select
 !
       end function mqc_nef_set_outer_collapse
+!
+!
+!
+!     PROCEDURE MQC_NEF_Set_Outer_Merge_Space
+!
+!
+!>    \brief <b> MQC_NEF_Set_Outer_Merge_Space
+!>     </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>
+!>    NEFSet must not be 'open'.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] NEFSet
+!>    \verbatim
+!>        NEFSet is Class(MQC_NEF_Set)
+!>        The (I,J) grid whose indices are folded into the element's own
+!>        axis structure. Must not be 'open'.
+!>    \endverbatim
+!>
+!>    \param[in] jointIJ
+!>    \verbatim
+!>        jointIJ is Logical,Optional
+!>        Whether I and J fold jointly into one combined index (true) or
+!>        independently into two separate axes (false). Default: true
+!>        when NEFSet holds Vector elements, false when it holds Matrix
+!>        or R4 elements.
+!>    \endverbatim
+!>
+!>    \param[in] jointAxis
+!>    \verbatim
+!>        jointAxis is Integer,Optional
+!>        Only used when jointIJ is true and NEFSet holds Matrix (1=row,
+!>        2=col) or R4 (1-4) elements. Which single axis the combined
+!>        (I,J) index folds into. Default 1.
+!>    \endverbatim
+!>
+!>    \param[in] IAxisR4
+!>    \verbatim
+!>        IAxisR4 is Integer,Optional
+!>        Only used when jointIJ is false and NEFSet%Type()=='r4'. The
+!>        physical R4 axis (1-4) that the grid's I index folds into.
+!>        Default 1. Must differ from JAxisR4.
+!>    \endverbatim
+!>
+!>    \param[in] JAxisR4
+!>    \verbatim
+!>        JAxisR4 is Integer,Optional
+!>        Only used when jointIJ is false and NEFSet%Type()=='r4'. The
+!>        physical R4 axis (1-4) that the grid's J index folds into.
+!>        Default 4. Must differ from IAxisR4.
+!>    \endverbatim
+!
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_set_outer_merge_space(NEFSet,jointIJ,jointAxis,IAxisR4,JAxisR4) result(NEFSetOut)
+!
+      implicit none
+      class(mqc_nef_set),intent(in)::NEFSet
+      logical,intent(in),optional::jointIJ
+      integer,intent(in),optional::jointAxis
+      integer,intent(in),optional::IAxisR4,JAxisR4
+      type(mqc_nef_set)::NEFSetOut
+      logical::myJointIJ,started
+      integer::myJointAxis,myIAxisR4,myJAxisR4,axisNum
+      integer(kind=int64)::I,J,myNumI,myNumJ,G
+      integer(kind=int64)::b,origNumSpace,outerIdx,outerIdxb,newIdx,ka
+      integer(kind=int64)::r,c,origNumSpace_row,origNumSpace_col
+      integer(kind=int64)::newRowId,newColId,origId,newId,newRowIdb,newColIdb
+      integer(kind=int64)::b1,b2,b3,b4,nb1,nb2,nb3,nb4
+      integer(kind=int64)::origNumSpace1,origNumSpace2,origNumSpace3,origNumSpace4
+      integer(kind=int64)::axisNumSpace(4),foldGridSize(4),kk
+      type(mqc_nef_vector)::cellVector,NEFVecOut
+      type(mqc_nef_matrix)::cellMatrix,NEFMatOut
+      type(mqc_nef_r4)::cellR4,NEFR4Out
+      type(mqc_scf_eigenvalues),dimension(:),allocatable::New_Map_1,New_Map_2,New_Map_3,New_Map_4
+      type(mqc_scalar)::tmpScalar
+!
+      if(present(jointIJ)) then
+        myJointIJ = jointIJ
+      else
+        myJointIJ = (trim(NEFSet%Type()).eq.'vector')
+      end if
+      if(present(jointAxis)) then
+        myJointAxis = jointAxis
+      else
+        myJointAxis = 1
+      end if
+      if(present(IAxisR4)) then
+        myIAxisR4 = IAxisR4
+      else
+        myIAxisR4 = 1
+      end if
+      if(present(JAxisR4)) then
+        myJAxisR4 = JAxisR4
+      else
+        myJAxisR4 = 4
+      end if
+!
+      myNumI = NEFSet%NumI
+      myNumJ = NEFSet%NumJ
+!
+      select case(trim(NEFSet%Type()))
+      case('vector')
+        origNumSpace = NEFSet%NumSpace(1)
+        if(myJointIJ) then
+          allocate(New_Map_1(origNumSpace))
+          do b = 1, origNumSpace
+            call New_Map_1(b)%init(&
+                 NEFSet%Size_vector_alpha_1(b)*myNumI*myNumJ,0,&
+                 lengthBeta=NEFSet%Size_vector_beta_1(b)*myNumI*myNumJ)
+          end do
+          started=.false.
+          call NEFVecOut%init(New_Map_1)
+          do b = 1, origNumSpace
+            do I = 1, myNumI
+              do J = 1, myNumJ
+                if(NEFSet%isZero(I,J)) cycle
+                cellVector = NEFSet%atVector(I,J)
+                if (cellVector%Zero_Flag(b)) cycle
+                started=.true.
+                if (NEFVecOut%Zero_Flag(b))&
+                   call NEFVecOut%Main_Vector(b)%init(NEFVecOut%Size_vector_alpha(b),&
+                                      0.0,lengthBeta=NEFVecOut%Size_vector_beta(b))
+                NEFVecOut%Zero_Flag(b) = .false.
+                !!! THIS BLOCK should be a vput in mqc_est !!!
+                outerIdx = ((I-1)*myNumJ+J-1)*NEFSet%Size_vector_alpha_1(b)
+                do b1 = 1, NEFSet%Size_vector_alpha_1(b)
+                  call NEFVecOut%Main_Vector(b)%put(&
+                       cellVector%Main_Vector(b)%at(b1,'alpha'),b1+outerIdx,'alpha')
+                end do
+                outerIdxb = ((I-1)*myNumJ+J-1)*NEFSet%Size_vector_beta_1(b)
+                do b1 = 1, NEFSet%Size_vector_beta_1(b)
+                  call NEFVecOut%Main_Vector(b)%put(&
+                       cellVector%Main_Vector(b)%at(b1,'beta'),b1+outerIdxb,'beta')
+                end do
+                !!! !!!
+              end do
+            end do
+          end do
+          call NEFSetOut%init(1,1)
+          if (started) then 
+            call NEFSetOut%put(NEFVecOut,1,1)
+          else
+            call mqc_nef_set_allocate(NEFSetOut,'vector',Map_Matrix_1=New_Map_1)
+          end if
+        else
+          allocate(New_Map_1(origNumSpace))
+          allocate(New_Map_2(1))
+          do b = 1, origNumSpace
+            call New_Map_1(b)%init(&
+                            NEFSet%Size_vector_alpha_1(b)*myNumI,0,&
+                 lengthBeta=NEFSet%Size_vector_beta_1(b)*myNumI)
+          end do
+          call New_Map_2(1)%init(myNumJ,0)
+          call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
+          started=.false.
+          do b = 1, origNumSpace
+            do I = 1, myNumI
+              outerIdx = (I-1)*NEFSet%Size_vector_alpha_1(b)
+              outerIdxb = (I-1)*NEFSet%Size_vector_beta_1(b)
+              do J = 1, myNumJ
+                if(NEFSet%isZero(I,J)) cycle
+                cellVector = NEFSet%atVector(I,J)
+                if(cellVector%Zero_Flag(b)) cycle
+                started=.true.
+                if (NEFMatOut%Zero_Flag(b))&
+                   call NEFMatOut%Main_Matrix(b)%init(NEFMatOut%Size_vector_alpha_row(b),&
+                                                      NEFMatOut%Size_vector_beta_row(b),&
+                                                      0.0,'',myNumJ,0)
+                NEFMatOut%Zero_Flag(b) = .false.
+                !!! THIS BLOCK should be a mput in mqc_est !!!
+                do b1 = 1, NEFSet%Size_vector_alpha_1(b)
+                  call NEFMatOut%Main_Matrix(b)%put(&
+                       cellVector%Main_Vector(b)%at(b1,'alpha'),b1+outerIdx,J,'alpha')
+                end do
+                do b1 = 1, NEFSet%Size_vector_beta_1(b)
+                  call NEFMatOut%Main_Matrix(b)%put(&
+                       cellVector%Main_Vector(b)%at(b1,'beta'),b1+outerIdxb,J,'alphaBeta')
+                end do
+                !!! !!!
+              end do
+            end do
+          end do
+          call NEFSetOut%init(1,1)
+          if (started) then 
+            call NEFSetOut%put(NEFMatOut,1,1)
+          else
+            call mqc_nef_set_allocate(NEFSetOut,'matrix',Map_Matrix_1=New_Map_1,Map_Matrix_2=New_Map_2)
+          end if
+        end if
+!
+      case('matrix')
+        origNumSpace_row = NEFSet%NumSpace(1)
+        origNumSpace_col = NEFSet%NumSpace(2)
+        allocate(New_Map_1(origNumSpace_row))
+        allocate(New_Map_2(origNumSpace_col))
+        if(.not.myJointIJ) then
+          do r = 1, origNumSpace_row
+            call New_Map_1(r)%init(&
+                            NEFSet%Size_vector_alpha_1(r)*myNumI,0,&
+                 lengthBeta=NEFSet%Size_vector_beta_1(r)*myNumI)
+          end do
+          do c = 1, origNumSpace_col
+            call New_Map_2(c)%init(&
+                            NEFSet%Size_vector_alpha_2(c)*myNumJ,0,&
+                 lengthBeta=NEFSet%Size_vector_beta_2(c)*myNumJ)
+          end do
+        else
+          if(myJointAxis.ne.1.and.myJointAxis.ne.2) call mqc_error_i(&
+               'mqc_nef_set_outer_collapse: jointAxis out-of-bounds for matrix',6,&
+               'jointAxis',myJointAxis)
+          if(myJointAxis.eq.1) then
+            do r = 1, origNumSpace_row
+              call New_Map_1(r)%init(&
+                              NEFSet%Size_vector_alpha_1(r)*myNumI*myNumJ,0,&
+                   lengthBeta=NEFSet%Size_vector_beta_1(r)*myNumI*myNumJ)
+            end do
+            do c = 1, origNumSpace_col
+              call New_Map_2(c)%init(&
+                   NEFSet%Size_vector_alpha_2(c),0,lengthBeta=NEFSet%Size_vector_beta_2(c))
+            end do
+          else
+            do r = 1, origNumSpace_row
+              call New_Map_1(r)%init(&
+                   NEFSet%Size_vector_alpha_1(r),0,lengthBeta=NEFSet%Size_vector_beta_1(r))
+            end do
+            do c = 1, origNumSpace_col
+              call New_Map_2(c)%init(&
+                              NEFSet%Size_vector_alpha_2(c)*myNumI*myNumJ,0,&
+                   lengthBeta=NEFSet%Size_vector_beta_2(c)*myNumI*myNumJ)
+            end do
+          end if
+        end if
+        call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
+        started=.false.
+        do r = 1, origNumSpace_row
+          do c = 1, origNumSpace_col
+            origId = NEFMatOut%blockIndex([1,r],[2,c])
+            do I = 1, myNumI
+              do J = 1, myNumJ
+                if(NEFSet%isZero(I,J)) cycle
+                cellMatrix = NEFSet%atMatrix(I,J)
+                if(cellMatrix%Zero_Flag(origId)) cycle
+                started=.true.
+                if (NEFMatOut%Zero_Flag(origId))&
+                   call NEFMatOut%Main_Matrix(origId)%init(NEFMatOut%Size_vector_alpha_row(r),&
+                                                           NEFMatOut%Size_vector_beta_row(r),&
+                                                    0.0,'',NEFMatOut%Size_vector_alpha_col(c),&
+                                                           NEFMatOut%Size_vector_beta_col(c))
+                NEFMatOut%Zero_Flag(origId) = .false.
+                G = (I-1)*myNumJ+J
+                if(.not.myJointIJ) then
+                  newRowId = (I-1)*NEFSet%Size_vector_alpha_1(r)
+                  newRowIdb = (I-1)*NEFSet%Size_vector_beta_1(r)
+                  newColId = (J-1)*NEFSet%Size_vector_alpha_2(c)
+                  newColIdb = (J-1)*NEFSet%Size_vector_beta_2(c)
+                else if(myJointAxis.eq.1) then
+                  newRowId = (G-1)*NEFSet%Size_vector_alpha_1(r)
+                  newRowIdb = (G-1)*NEFSet%Size_vector_beta_1(r)
+                  newColId = 0
+                  newColIdb = 0
+                else
+                  newRowId = 0
+                  newRowIdb = 0
+                  newColId = (G-1)*NEFSet%Size_vector_alpha_2(c)
+                  newColIdb = (G-1)*NEFSet%Size_vector_beta_2(c)
+                end if
+                do b1 = 1, NEFSet%Size_vector_alpha_1(r)
+                  do b2 = 1, NEFSet%Size_vector_alpha_2(c)
+                    call NEFMatOut%Main_Matrix(origId)%put(&
+                        cellMatrix%Main_Matrix(origId)%at(b1,b2,'alpha'),&
+                           newRowId+b1,newColId+b2,'alpha')
+                  end do
+                end do
+                do b1 = 1, NEFSet%Size_vector_beta_1(r)
+                  do b2 = 1, NEFSet%Size_vector_beta_2(c)
+                    call NEFMatOut%Main_Matrix(origId)%put(&
+                        cellMatrix%Main_Matrix(origId)%at(b1,b2,'beta'),&
+                           newRowIdb+b1,newColIdb+b2,'beta')
+                  end do
+                end do
+                if(cellMatrix%Main_Matrix(origId)%Type().eq.'general') then
+                  do b1 = 1, NEFSet%Size_vector_alpha_1(r)
+                    do b2 = 1, NEFSet%Size_vector_beta_2(c)
+                      call NEFMatOut%Main_Matrix(origId)%put(&
+                          cellMatrix%Main_Matrix(origId)%at(b1,b2,'betaalpha'),&
+                             newRowId+b1,newColIdb+b2,'betaalpha')
+                    end do
+                  end do
+                  do b1 = 1, NEFSet%Size_vector_beta_1(r)
+                    do b2 = 1, NEFSet%Size_vector_alpha_2(c)
+                      call NEFMatOut%Main_Matrix(origId)%put(&
+                          cellMatrix%Main_Matrix(origId)%at(b1,b2,'alphabeta'),&
+                             newRowIdb+b1,newColId+b2,'alphabeta')
+                    end do
+                  end do
+                end if
+              end do
+            end do
+          end do
+        end do
+        call NEFSetOut%init(1,1)
+        if (started) then 
+          call NEFSetOut%put(NEFMatOut,1,1)
+        else
+          call mqc_nef_set_allocate(NEFSetOut,'matrix',Map_Matrix_1=New_Map_1,Map_Matrix_2=New_Map_2)
+        end if
+!
+      case('r4')
+        call mqc_error('mqc_nef_set_outer_merge_space: r4 case not yet implemented',6)
+!
+      case default
+        call mqc_error_A('mqc_nef_set_outer_collapse: NEF_Set is open (holds no elements)',&
+             6,'Array_Type',NEFSet%Type())
+      end select
+!
+      end function mqc_nef_set_outer_merge_space
+!
+!
+!     PROCEDURE MQC_NEF_Set_Outer_Unmerge_Space
+!
+!>    \brief <b> MQC_NEF_Set_Outer_Unmerge_Space undoes MQC_NEF_Set_Outer_Merge_Space</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_NEF_Set_Outer_Unmerge_Space takes the single merged NEF_Vector/
+!>    NEF_Matrix produced by MQC_NEF_Set_Outer_Merge_Space and splits it
+!>    back into the original (NumI x NumJ) grid of per-cell objects, using
+!>    a template NEF_Set (the original, pre-merge NEF_Set) to recover the
+!>    grid size and the per-block alpha/beta lengths needed to slice the
+!>    merged object apart. jointIJ/jointAxis must match whatever was passed
+!>    to the forward merge call.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] mergedSet
+!>    \verbatim
+!>        mergedSet is Class(MQC_NEF_Set)
+!>        The 1x1 NEF_Set produced by MQC_NEF_Set_Outer_Merge_Space.
+!>    \endverbatim
+!>
+!>    \param[in] template
+!>    \verbatim
+!>        template is Class(MQC_NEF_Set)
+!>        The original, pre-merge NEF_Set (NumI, NumJ, NumSpace and the
+!>        per-block Size_vector_* arrays are read from this object).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_set_outer_unmerge_space(mergedSet,template,jointIJ,jointAxis) result(NEFSetOut)
+!
+      implicit none
+      class(mqc_nef_set),intent(in)::mergedSet,template
+      logical,intent(in),optional::jointIJ
+      integer,intent(in),optional::jointAxis
+      type(mqc_nef_set)::NEFSetOut
+      logical::myJointIJ
+      integer::myJointAxis
+      integer(kind=int64)::I,J,myNumI,myNumJ,G
+      integer(kind=int64)::b,origNumSpace,outerIdxAlpha,outerIdxBeta,b1,b2
+      integer(kind=int64)::r,c,origNumSpace_row,origNumSpace_col
+      integer(kind=int64)::newRowId,newRowIdb,newColId,newColIdb,origId
+      type(mqc_nef_vector)::cellVector,mergedVec
+      type(mqc_nef_matrix)::cellMatrix,mergedMat
+      type(mqc_scalar)::tmpScalar
+!
+      if(present(jointIJ)) then
+        myJointIJ = jointIJ
+      else
+        myJointIJ = (trim(template%Type()).eq.'vector')
+      end if
+      if(present(jointAxis)) then
+        myJointAxis = jointAxis
+      else
+        myJointAxis = 1
+      end if
+!
+      myNumI = template%NumI
+      myNumJ = template%NumJ
+!
+      select case(trim(template%Type()))
+      case('vector')
+        origNumSpace = template%NumSpace(1)
+        call NEFSetOut%init(int(myNumI),int(myNumJ))
+        if(myJointIJ) then
+          mergedVec = mergedSet%atVector(1,1)
+          do I = 1, myNumI
+            do J = 1, myNumJ
+              G = (I-1)*myNumJ+J
+              call cellVector%init(template%Map_Matrix_1)
+              do b = 1, origNumSpace
+                if(mergedVec%Zero_Flag(b)) cycle
+                outerIdxAlpha = (G-1)*template%Size_vector_alpha_1(b)
+                outerIdxBeta  = (G-1)*template%Size_vector_beta_1(b)
+                if(cellVector%Zero_Flag(b)) &
+                   call cellVector%Main_Vector(b)%init(template%Size_vector_alpha_1(b),&
+                        0.0,lengthBeta=template%Size_vector_beta_1(b))
+                cellVector%Zero_Flag(b) = .false.
+                do b1 = 1, template%Size_vector_alpha_1(b)
+                  tmpScalar = mergedVec%Main_Vector(b)%at(b1+outerIdxAlpha,'alpha')
+                  call cellVector%Main_Vector(b)%put(tmpScalar,b1,'alpha')
+                end do
+                do b1 = 1, template%Size_vector_beta_1(b)
+                  tmpScalar = mergedVec%Main_Vector(b)%at(b1+outerIdxBeta,'beta')
+                  call cellVector%Main_Vector(b)%put(tmpScalar,b1,'beta')
+                end do
+              end do
+              call NEFSetOut%put(cellVector,int(I),int(J))
+            end do
+          end do
+        else
+          mergedMat = mergedSet%atMatrix(1,1)
+          do I = 1, myNumI
+            do J = 1, myNumJ
+              call cellVector%init(template%Map_Matrix_1)
+              do b = 1, origNumSpace
+                if(mergedMat%Zero_Flag(b)) cycle
+                outerIdxAlpha = (I-1)*template%Size_vector_alpha_1(b)
+                outerIdxBeta = (I-1)*template%Size_vector_beta_1(b)
+                if(cellVector%Zero_Flag(b)) &
+                   call cellVector%Main_Vector(b)%init(template%Size_vector_alpha_1(b),&
+                        0.0,lengthBeta=template%Size_vector_beta_1(b))
+                cellVector%Zero_Flag(b) = .false.
+                do b1 = 1, template%Size_vector_alpha_1(b)
+                  tmpScalar = mergedMat%Main_Matrix(b)%at(b1+outerIdxAlpha,J,'alpha')
+                  call cellVector%Main_Vector(b)%put(tmpScalar,b1,'alpha')
+                end do
+                do b1 = 1, template%Size_vector_beta_1(b)
+                  tmpScalar = mergedMat%Main_Matrix(b)%at(b1+outerIdxBeta,J,'alphaBeta')
+                  call cellVector%Main_Vector(b)%put(tmpScalar,b1,'beta')
+                end do
+              end do
+              call NEFSetOut%put(cellVector,int(I),int(J))
+            end do
+          end do
+        end if
+!
+      case('matrix')
+        origNumSpace_row = template%NumSpace(1)
+        origNumSpace_col = template%NumSpace(2)
+        mergedMat = mergedSet%atMatrix(1,1)
+        call NEFSetOut%init(int(myNumI),int(myNumJ))
+        do I = 1, myNumI
+          do J = 1, myNumJ
+            G = (I-1)*myNumJ+J
+            call cellMatrix%init(template%Map_Matrix_1,initial_map_matrix_col=template%Map_Matrix_2)
+            do r = 1, origNumSpace_row
+              do c = 1, origNumSpace_col
+                origId = mergedMat%blockIndex([1,r],[2,c])
+                if(mergedMat%Zero_Flag(origId)) cycle
+                if(.not.myJointIJ) then
+                  newRowId  = (I-1)*template%Size_vector_alpha_1(r)
+                  newRowIdb = (I-1)*template%Size_vector_beta_1(r)
+                  newColId  = (J-1)*template%Size_vector_alpha_2(c)
+                  newColIdb = (J-1)*template%Size_vector_beta_2(c)
+                else if(myJointAxis.eq.1) then
+                  newRowId  = (G-1)*template%Size_vector_alpha_1(r)
+                  newRowIdb = (G-1)*template%Size_vector_beta_1(r)
+                  newColId  = 0
+                  newColIdb = 0
+                else
+                  newRowId  = 0
+                  newRowIdb = 0
+                  newColId  = (G-1)*template%Size_vector_alpha_2(c)
+                  newColIdb = (G-1)*template%Size_vector_beta_2(c)
+                end if
+                if(cellMatrix%Zero_Flag(origId)) &
+                   call cellMatrix%Main_Matrix(origId)%init(template%Size_vector_alpha_1(r),&
+                        template%Size_vector_beta_1(r),0.0,'',template%Size_vector_alpha_2(c),&
+                        template%Size_vector_beta_2(c))
+                cellMatrix%Zero_Flag(origId) = .false.
+                do b1 = 1, template%Size_vector_alpha_1(r)
+                  do b2 = 1, template%Size_vector_alpha_2(c)
+                    tmpScalar = mergedMat%Main_Matrix(origId)%at(newRowId+b1,newColId+b2,'alpha')
+                    call cellMatrix%Main_Matrix(origId)%put(tmpScalar,b1,b2,'alpha')
+                  end do
+                end do
+                do b1 = 1, template%Size_vector_beta_1(r)
+                  do b2 = 1, template%Size_vector_beta_2(c)
+                    tmpScalar = mergedMat%Main_Matrix(origId)%at(newRowIdb+b1,newColIdb+b2,'beta')
+                    call cellMatrix%Main_Matrix(origId)%put(tmpScalar,b1,b2,'beta')
+                  end do
+                end do
+                if(cellMatrix%Main_Matrix(origId)%Type().eq.'general') then
+                  do b1 = 1, template%Size_vector_alpha_1(r)
+                    do b2 = 1, template%Size_vector_beta_2(c)
+                      tmpScalar = mergedMat%Main_Matrix(origId)%at(newRowId+b1,newColIdb+b2,'betaalpha')
+                      call cellMatrix%Main_Matrix(origId)%put(tmpScalar,b1,b2,'betaalpha')
+                    end do
+                  end do
+                  do b1 = 1, template%Size_vector_beta_1(r)
+                    do b2 = 1, template%Size_vector_alpha_2(c)
+                      tmpScalar = mergedMat%Main_Matrix(origId)%at(newRowIdb+b1,newColId+b2,'alphabeta')
+                      call cellMatrix%Main_Matrix(origId)%put(tmpScalar,b1,b2,'alphabeta')
+                    end do
+                  end do
+                end if
+              end do
+            end do
+            call NEFSetOut%put(cellMatrix,int(I),int(J))
+          end do
+        end do
+!
+      case('r4')
+        call mqc_error('mqc_nef_set_outer_unmerge_space: r4 case not yet implemented',6)
+      case default
+        call mqc_error_A('mqc_nef_set_outer_unmerge_space: template NEF_Set is open (holds no elements)',&
+             6,'Array_Type',template%Type())
+      end select
+!
+      end function mqc_nef_set_outer_unmerge_space
 !
 !
 !     PROCEDURE MQC_NEF_Set_Outer_Expand
@@ -14270,7 +15330,8 @@
       integer(kind=int64)::r,c,origNumSpace_row,origNumSpace_col
       integer(kind=int64)::newRowId,newColId,origId,newId
       type(mqc_nef_vector)::cellVector,NEFVecOut
-      type(mqc_nef_matrix)::cellMatrix,NEFMatOut
+      type(mqc_nef_matrix)::cellMatrix,NEFMatOut,tmpMatIn
+      type(mqc_nef_r4)::tmpR4In
       type(mqc_scf_eigenvalues),dimension(:),allocatable::New_Map_1,New_Map_2
       type(mqc_scalar)::tmpScalar
 !
@@ -14279,14 +15340,29 @@
 !
       select case(trim(NEFSet%Type()))
       case('vector')
+        if(present(spinType)) call mqc_error(&
+             'mqc_nef_set_full_collapse: vector-type should not recieve a spinType input',6)
+        if(present(swapOrder)) call mqc_error(&
+             'mqc_nef_set_full_collapse: vector-type should not recieve a swapOrder input',6)
+        if(present(spinTypeKet)) call mqc_error(&
+             'mqc_nef_set_full_collapse: vector-type should not recieve a spinTypeKet input',6)
+        if(present(Order)) call mqc_error(&
+             'mqc_nef_set_full_collapse: vector-type should not recieve a Order input',6)
+        if(present(jointAxis)) call mqc_error(&
+             'mqc_nef_set_full_collapse: vector-type should not recieve a jointAxis input',6)
         NEFSetOut = NEFSet%outerCollapse(jointIJ=jointIJ)
       case('matrix')
+        if(present(spinTypeKet)) call mqc_error(&
+             'mqc_nef_set_full_collapse: matrix-type should not recieve a spinTypeKet input',6)
+        if(present(Order)) call mqc_error(&
+             'mqc_nef_set_full_collapse: matrix-type should not recieve a Order input',6)
         if(present(jointIJ)) then
           myJointIJ = jointIJ
         else
           myJointIJ = .true.
         end if
-        cellVector = NEFSet%Set_Matrix(1,1)%collapse(spinType=spinType,swapOrder=swapOrder)
+        tmpMatIn = NEFSet%atMatrix(1,1)
+        cellVector = tmpMatIn%collapse(spinType=spinType,swapOrder=swapOrder)
         origNumSpace = cellVector%NumSpace
         if(myJointIJ) then
           allocate(New_Map_1(myNumI*myNumJ*origNumSpace))
@@ -14299,7 +15375,8 @@
           call NEFVecOut%init(New_Map_1)
           do I = 1, myNumI
             do J = 1, myNumJ
-              cellVector = NEFSet%Set_Matrix(I,J)%collapse(spinType=spinType,swapOrder=swapOrder)
+              tmpMatIn = NEFSet%atMatrix(I,J)
+              cellVector = tmpMatIn%collapse(spinType=spinType,swapOrder=swapOrder)
               outerIdx = (I-1)*myNumJ+J
               do b = 1, origNumSpace
                 if(cellVector%Zero_Flag(b)) cycle
@@ -14326,7 +15403,8 @@
           call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
           do I = 1, myNumI
             do J = 1, myNumJ
-              cellVector = NEFSet%Set_Matrix(I,J)%collapse(spinType=spinType,swapOrder=swapOrder)
+              tmpMatIn = NEFSet%atMatrix(I,J)
+              cellVector = tmpMatIn%collapse(spinType=spinType,swapOrder=swapOrder)
               do b = 1, origNumSpace
                 if(cellVector%Zero_Flag(b)) cycle
                 newRowId = (I-1)*origNumSpace+b
@@ -14350,6 +15428,8 @@
           call NEFSetOut%put(NEFMatOut,1,1)
         end if
       case('r4')
+        if(present(swapOrder)) call mqc_error(&
+             'mqc_nef_set_full_collapse: r4-type should not recieve a swapOrder input',6)
         if(present(jointIJ)) then
           myJointIJ = jointIJ
         else
@@ -14360,14 +15440,16 @@
         else
           myJointAxis = 1
         end if
-        cellMatrix = NEFSet%Set_R4(1,1)%collapse(&
+        tmpR4In = NEFSet%atR4(1,1)
+        cellMatrix = tmpR4In%collapse(&
              spinType=spinType,spinTypeKet=spinTypeKet,Order=Order)
         origNumSpace_row = cellMatrix%NumSpace_row
         origNumSpace_col = cellMatrix%NumSpace_col
         if(.not.myJointIJ) then
           allocate(New_Map_1(myNumI*origNumSpace_row))
           do I = 1, myNumI
-            cellMatrix = NEFSet%Set_R4(I,1)%collapse(&
+            tmpR4In = NEFSet%atR4(I,1)
+            cellMatrix = tmpR4In%collapse(&
                  spinType=spinType,spinTypeKet=spinTypeKet,Order=Order)
             do r = 1, origNumSpace_row
               call New_Map_1((I-1)*origNumSpace_row+r)%init(&
@@ -14376,7 +15458,8 @@
           end do
           allocate(New_Map_2(myNumJ*origNumSpace_col))
           do J = 1, myNumJ
-            cellMatrix = NEFSet%Set_R4(1,J)%collapse(&
+            tmpR4In = NEFSet%atR4(1,J)
+            cellMatrix = tmpR4In%collapse(&
                  spinType=spinType,spinTypeKet=spinTypeKet,Order=Order)
             do c = 1, origNumSpace_col
               call New_Map_2((J-1)*origNumSpace_col+c)%init(&
@@ -14391,7 +15474,8 @@
             allocate(New_Map_1(myNumI*myNumJ*origNumSpace_row))
             do I = 1, myNumI
               do J = 1, myNumJ
-                cellMatrix = NEFSet%Set_R4(I,J)%collapse(&
+                tmpR4In = NEFSet%atR4(I,J)
+                cellMatrix = tmpR4In%collapse(&
                      spinType=spinType,spinTypeKet=spinTypeKet,Order=Order)
                 G = (I-1)*myNumJ+J
                 do r = 1, origNumSpace_row
@@ -14414,7 +15498,8 @@
             allocate(New_Map_2(myNumI*myNumJ*origNumSpace_col))
             do I = 1, myNumI
               do J = 1, myNumJ
-                cellMatrix = NEFSet%Set_R4(I,J)%collapse(&
+                tmpR4In = NEFSet%atR4(I,J)
+                cellMatrix = tmpR4In%collapse(&
                      spinType=spinType,spinTypeKet=spinTypeKet,Order=Order)
                 G = (I-1)*myNumJ+J
                 do c = 1, origNumSpace_col
@@ -14428,7 +15513,8 @@
         call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
         do I = 1, myNumI
           do J = 1, myNumJ
-            cellMatrix = NEFSet%Set_R4(I,J)%collapse(&
+            tmpR4In = NEFSet%atR4(I,J)
+            cellMatrix = tmpR4In%collapse(&
                  spinType=spinType,spinTypeKet=spinTypeKet,Order=Order)
             G = (I-1)*myNumJ+J
             do r = 1, origNumSpace_row
@@ -14555,7 +15641,7 @@
 !>    \date 2026
 !
       function mqc_nef_set_full_expand(NEFSet,templateSet,jointIJ,jointAxis,&
-           spinType,spinTypeKet,Order) result(NEFSetOut)
+           spinType,spinTypeKet,Order,swapOrder) result(NEFSetOut)
 !
       implicit none
       class(mqc_nef_set),intent(in)::NEFSet
@@ -14564,34 +15650,42 @@
       integer,intent(in),optional::jointAxis
       character(len=*),intent(in),optional::spinType,spinTypeKet
       integer(kind=int64),dimension(4),intent(in),optional::Order
+      logical,intent(in),optional::swapOrder
       type(mqc_nef_set)::NEFSetOut
       type(mqc_nef_set)::intermediateSet
+      type(mqc_nef_matrix)::tmpMat
+      type(mqc_nef_r4)::tmpR4
       Type(MQC_SCF_Eigenvalues),Dimension(:),Allocatable::tMap1,tMap2,tMap3,tMap4
+!
 !
       select case(trim(templateSet%Type()))
       case('matrix')
-        tMap1 = mqc_nef_matrix_get_map(templateSet%Set_Matrix(1,1),1)
-        tMap2 = mqc_nef_matrix_get_map(templateSet%Set_Matrix(1,1),2)
+        if(present(spinTypeKet)) call mqc_error(&
+             'mqc_nef_set_full_expand: matrix templateSet should not recieve a spinTypeKet input',6)
+        if(present(Order)) call mqc_error(&
+             'mqc_nef_set_full_expand: matrix templateSet should not recieve a Order input',6)
+        tmpMat = templateSet%atMatrix(1,1)
+        tMap1 = mqc_nef_matrix_get_map(tmpMat,1)
+        tMap2 = mqc_nef_matrix_get_map(tmpMat,2)
       case('r4')
-        tMap1 = mqc_nef_r4_map(templateSet%Set_R4(1,1),1)
-        tMap2 = mqc_nef_r4_map(templateSet%Set_R4(1,1),2)
-        tMap3 = mqc_nef_r4_map(templateSet%Set_R4(1,1),3)
-        tMap4 = mqc_nef_r4_map(templateSet%Set_R4(1,1),4)
+        if(present(swapOrder)) call mqc_error(&
+             'mqc_nef_set_full_expand: r4 templateSet should not recieve a swapOrder input',6)
+        tmpR4 = templateSet%atR4(1,1)
+        tMap1 = mqc_nef_r4_map(tmpR4,1)
+        tMap2 = mqc_nef_r4_map(tmpR4,2)
+        tMap3 = mqc_nef_r4_map(tmpR4,3)
+        tMap4 = mqc_nef_r4_map(tmpR4,4)
       case default
         call mqc_error_A('mqc_nef_set_full_expand: templateSet must hold '//&
              'matrix or r4 elements',6,'Array_Type',templateSet%Type())
       end select
 !
-!     outer_expand now derives all per-cell sizing from NEFSet's own
-!     NumSpace/Size_vector_* fields, so templateSet only needs to
-!     supply the outer grid shape (NumI/NumJ) here -- no pre-collapse
-!     step is needed to make its type match NEFSet's own type.
       intermediateSet = mqc_nef_set_outer_expand(NEFSet,&
                        templateSet,jointIJ=jointIJ,jointAxis=jointAxis)
       if(trim(templateSet%Type()).eq.'matrix') then
         NEFSetOut = mqc_nef_set_expand(intermediateSet,&
              map_matrix_1=tMap1,map_matrix_2=tMap2,&
-             spinType=spinType,spinTypeKet=spinTypeKet,Order=Order)
+             spinType=spinType,spinTypeKet=spinTypeKet,swapOrder=swapOrder)
       else
         NEFSetOut = mqc_nef_set_expand(intermediateSet,&
              map_matrix_1=tMap1,map_matrix_2=tMap2,&
@@ -14841,6 +15935,70 @@
       end select
 !
       end function mqc_nefset_transpose
+!
+!
+!     PROCEDURE MQC_NEFSet_Conjugate
+!
+!
+!>    \brief <b> MQC_NEFSet_Conjugate computes the conjugate of a
+!>    MQC_NEF_Set: the outer (I,J) grid is left unchanged and each cell
+!>    is replaced by its own Conjg. </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    For vector-kind sets: NEFSetOut(I,J) = Conjg(NEFSet(I,J)), using
+!>    MQC_NEF_Vector_Conjugate. For matrix-kind sets:
+!>    NEFSetOut(I,J) = Conjg(NEFSet(I,J)). R4-kind sets are not yet
+!>    supported (no plain Conjg primitive exists for MQC_NEF_R4).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] NEFSet
+!>    \verbatim
+!>        NEFSet is Type(MQC_NEF_Set)
+!>        The (I,J) grid to conjugate.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nefset_conjugate(NEFSet) result(NEFSetOut)
+!
+      implicit none
+      type(mqc_nef_set),intent(in)::NEFSet
+      type(mqc_nef_set)::NEFSetOut
+      integer::I,J
+!
+      call NEFSetOut%init(NEFSet%NumI,NEFSet%NumJ)
+!
+      select case(trim(NEFSet%Type()))
+      case('vector')
+        do I = 1, NEFSet%NumI
+          do J = 1, NEFSet%NumJ
+            if(NEFSet%isZero(I,J)) cycle
+            call NEFSetOut%put(conjg(NEFSet%atVector(I,J)),I,J)
+          end do
+        end do
+      case('matrix')
+        do I = 1, NEFSet%NumI
+          do J = 1, NEFSet%NumJ
+            if(NEFSet%isZero(I,J)) cycle
+            call NEFSetOut%put(conjg(NEFSet%atMatrix(I,J)),I,J)
+          end do
+        end do
+      case default
+        call mqc_error_A('mqc_nefset_conjugate: NEF_Set kind not supported '//&
+             '(only vector/matrix implemented)',6,'Array_Type',NEFSet%Type())
+      end select
+!
+      end function mqc_nefset_conjugate
 !
 !
 !     PROCEDURE MQC_NEFSet_Conjugate_Transpose

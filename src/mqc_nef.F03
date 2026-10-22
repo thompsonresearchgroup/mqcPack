@@ -9952,7 +9952,7 @@
       type(mqc_nef_r4)::NEFR4Out
       type(mqc_nef_matrix)::myCoeff_2,myCoeff_3,myCoeff_4
       type(mqc_nef_r4)::stageFull,finalFull
-      character(len=15)::intType
+      character(len=15)::storageType,interactionType
       logical::hasSpin,hasGeneral,anySpin,anyGeneral
       integer(kind=int64)::P,Q,R,S,idOut
       integer(kind=int64)::nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4
@@ -9979,6 +9979,7 @@
 !
       anySpin = .false.
       anyGeneral = .false.
+      call detectR4InteractionType(NEFR4A,interactionType)
       call detectR4SpinGeneral(NEFR4A,hasSpin,hasGeneral)
       anySpin = anySpin.or.hasSpin; anyGeneral = anyGeneral.or.hasGeneral
       call detectCoeffSpinGeneral(NEFCoeff_1,hasSpin,hasGeneral)
@@ -9991,11 +9992,11 @@
       anySpin = anySpin.or.hasSpin; anyGeneral = anyGeneral.or.hasGeneral
 !
       if(anyGeneral) then
-        intType = 'general'
+        storageType = 'general'
       else if(anySpin) then
-        intType = 'spin'
+        storageType = 'spin'
       else
-        intType = 'space'
+        storageType = 'space'
       end if
 !
       stageFull = buildStage(NEFR4A,3,4,myCoeff_3,myCoeff_4)
@@ -10036,15 +10037,48 @@
               nA4 = myCoeff_4%Size_vector_alpha_col(S);  nB4 = myCoeff_4%Size_vector_beta_col(S)
               call fetchFull(finalFull,P,Q,R,S,nA1+nB1,nA2+nB2,nA3+nB3,nA4+nB4,fullTensor)
               tAlpha = sliceCorner(fullTensor,'a','a','a','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
-              select case(intType)
+              select case(storageType)
               case('space')
-                call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-coulomb','space',tAlpha)
+                call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),&
+                     'full-'//trim(interactionType),'space',tAlpha)
               case('spin')
                 tBeta = sliceCorner(fullTensor,'b','b','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
-                tAlphaBeta = sliceCorner(fullTensor,'a','a','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
-                tBetaAlpha = sliceCorner(fullTensor,'b','b','a','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
-                call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-coulomb','spin',&
-                     tAlpha,tBeta,tAlphaBeta,tBetaAlpha)
+                select case(trim(interactionType))
+                case('coulomb')
+                  tAlphaBeta = sliceCorner(fullTensor,'a','a','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tBetaAlpha = sliceCorner(fullTensor,'b','b','a','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-coulomb','spin',&
+                       tAlpha,tBeta,tAlphaBeta,tBetaAlpha)
+                case('exchange')
+                  tABBA = sliceCorner(fullTensor,'a','b','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tBAAB = sliceCorner(fullTensor,'b','a','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-exchange','spin',&
+                       tAlpha,tBeta,abba=tABBA,baab=tBAAB)
+                case('inverted')
+                  tABAB = sliceCorner(fullTensor,'a','b','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tBABA = sliceCorner(fullTensor,'b','a','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-inverted','spin',&
+                       tAlpha,tBeta,abab=tABAB,baba=tBABA)
+                case('doublebar')
+                  tAlphaBeta = sliceCorner(fullTensor,'a','a','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tBetaAlpha = sliceCorner(fullTensor,'b','b','a','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tABBA = sliceCorner(fullTensor,'a','b','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tBAAB = sliceCorner(fullTensor,'b','a','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-doublebar','spin',&
+                       tAlpha,tBeta,tAlphaBeta,tBetaAlpha,abba=tABBA,baab=tBAAB)
+                case('ms')
+                  tAlphaBeta = sliceCorner(fullTensor,'a','a','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tBetaAlpha = sliceCorner(fullTensor,'b','b','a','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tABAB = sliceCorner(fullTensor,'a','b','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tABBA = sliceCorner(fullTensor,'a','b','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tBAAB = sliceCorner(fullTensor,'b','a','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tBABA = sliceCorner(fullTensor,'b','a','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-ms','spin',&
+                       tAlpha,tBeta,tAlphaBeta,tBetaAlpha,tABAB,tABBA,tBAAB,tBABA)
+                case default
+                  call mqc_error_a('mqc_nef_r4_full_transform: unsupported interaction type',6,&
+                       'interactionType',trim(interactionType))
+                end select
               case('general')
                 tBeta = sliceCorner(fullTensor,'b','b','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
                 tAlphaBeta = sliceCorner(fullTensor,'a','a','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
@@ -10061,7 +10095,8 @@
                 tBBAB = sliceCorner(fullTensor,'b','b','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
                 tBABB = sliceCorner(fullTensor,'b','a','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
                 tABBB = sliceCorner(fullTensor,'a','b','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
-                call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-coulomb','general',&
+                call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),&
+                     'full-'//trim(interactionType),'general',&
                      tAlpha,tBeta,tAlphaBeta,tBetaAlpha,tABAB,tABBA,tBAAB,tBABA,&
                      tAAAB,tAABA,tABAA,tBAAA,tBBBA,tBBAB,tBABB,tABBB)
               end select
@@ -10071,6 +10106,32 @@
       end do
 !
       Contains
+!
+        subroutine detectR4InteractionType(R4In,interactionTypeOut)
+        implicit none
+        type(mqc_nef_r4),intent(in)::R4In
+        character(len=*),intent(out)::interactionTypeOut
+        character(len=64)::blockInteractionType
+        integer(kind=int64)::i1,i2,i3,i4,bid
+        interactionTypeOut = ''
+        do i1=1,R4In%blockSize(1)
+          do i2=1,R4In%blockSize(2)
+            do i3=1,R4In%blockSize(3)
+              do i4=1,R4In%blockSize(4)
+                bid = R4In%blockIndex([1,i1],[2,i2],[3,i3],[4,i4])
+                if(R4In%Zero_Flag(bid)) cycle
+                blockInteractionType = trim(R4In%Main_R4(bid)%intType())
+                if(len_trim(interactionTypeOut).eq.0) then
+                  interactionTypeOut = trim(blockInteractionType)
+                else if(trim(interactionTypeOut).ne.trim(blockInteractionType)) then
+                  call mqc_error('mqc_nef_r4_full_transform: source blocks have mixed interaction types',6)
+                end if
+              end do
+            end do
+          end do
+        end do
+        if(len_trim(interactionTypeOut).eq.0) interactionTypeOut = 'coulomb'
+        end subroutine detectR4InteractionType
 !
         subroutine detectR4SpinGeneral(R4In,hasSpinOut,hasGeneralOut)
         implicit none

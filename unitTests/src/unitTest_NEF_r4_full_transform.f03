@@ -36,6 +36,8 @@
       type(mqc_nef_matrix)::matA,matB,NEFCoeff_1,NEFCoeff_2,NEFCoeff_3,NEFCoeff_4
       type(mqc_nef_matrix)::coeff1Conjg,coeff3Conjg
       type(mqc_nef_r4)::NEFR4A,transformResult,stage1,refResult,outerPQ,outerRS
+      type(mqc_nef_r4)::coulombR4,exchangeR4,doublebarR4
+      type(mqc_nef_r4)::doublebarTransform,doublebarReference
       type(mqc_scalar)::sc
       complex(kind=real64)::cGot,cExpected
       integer(kind=int64)::P,Q,R,S,spaceIdx
@@ -182,6 +184,63 @@
                   write(*,1000) trim(testLabel)
                 else
                   write(*,1010) trim(testLabel),real(cGot),aimag(cGot),real(cExpected),aimag(cExpected)
+                  nfail = nfail+1
+                end if
+              end do
+            end do
+          end do
+        end do
+      end do
+!
+!--------------------------------------------------------------------
+!     A space/doublebar source transformed with spin coefficients must
+!     remain spin/doublebar.  Compare the combined transform with the
+!     sum of the separately transformed Coulomb and exchange pieces for
+!     all six blocks permitted by full spin/doublebar storage.
+!--------------------------------------------------------------------
+!
+      coulombR4 = matA%outer2R4(matB)
+      exchangeR4 = matA%crossouter2R4(matB)
+      doublebarR4 = coulombR4 + exchangeR4
+      doublebarTransform = doublebarR4%transform(&
+        NEFCoeff_1,NEFCoeff_2,NEFCoeff_3,NEFCoeff_4)
+      doublebarReference = coulombR4%transform(&
+        NEFCoeff_1,NEFCoeff_2,NEFCoeff_3,NEFCoeff_4) + &
+        exchangeR4%transform(NEFCoeff_1,NEFCoeff_2,NEFCoeff_3,NEFCoeff_4)
+!
+      do P = 1, 2
+        do Q = 1, 2
+          do R = 1, 2
+            do S = 1, 2
+              do spinIdx = 1, 6
+                select case(spinIdx)
+                case(1)
+                  spinCombo = [1,1,1,1]; spinName = 'aaaa'
+                case(2)
+                  spinCombo = [-1,-1,-1,-1]; spinName = 'bbbb'
+                case(3)
+                  spinCombo = [1,1,-1,-1]; spinName = 'aabb'
+                case(4)
+                  spinCombo = [-1,-1,1,1]; spinName = 'bbaa'
+                case(5)
+                  spinCombo = [1,-1,-1,1]; spinName = 'abba'
+                case default
+                  spinCombo = [-1,1,1,-1]; spinName = 'baab'
+                end select
+                set1 = [1,P,1,spinCombo(1)]
+                set2 = [2,Q,1,spinCombo(2)]
+                set3 = [3,R,1,spinCombo(3)]
+                set4 = [4,S,1,spinCombo(4)]
+                sc = doublebarTransform%at(set1,set2,set3,set4); cGot = sc
+                sc = doublebarReference%at(set1,set2,set3,set4); cExpected = sc
+                write(testLabel,'(a,i0,a,i0,a,i0,a,i0,a,a)') &
+                  'spin/doublebar transform: space(',P,',',Q,',',R,',',S,') ',&
+                  trim(spinName)
+                if(abs(cGot-cExpected).le.tol) then
+                  write(*,1000) trim(testLabel)
+                else
+                  write(*,1010) trim(testLabel),real(cGot),aimag(cGot),&
+                    real(cExpected),aimag(cExpected)
                   nfail = nfail+1
                 end if
               end do

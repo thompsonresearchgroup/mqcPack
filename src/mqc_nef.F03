@@ -7191,10 +7191,10 @@
       case ('triplet')
         do dimi = 1, NEFr4%blockSize(ia)
          do dimj = 1, NEFr4%blockSize(ja)
-          idij = nefr4%blockIndex([1,1],[2,1],[3,dimi],[4,dimj])
+          idij = NEFr4%blockSize(ja)*(dimi-1) + dimj
           do dimk = 1, NEFr4%blockSize(ka)
            do diml = 1, NEFr4%blockSize(la)
-            idlk = nefr4%blockIndex([1,1],[2,1],[3,diml],[4,dimk])
+            idlk = NEFr4%blockSize(la)*(dimk-1) + diml
             finalid = nefMatOut%blockIndex([1,idij],[2,idlk])
             nef_bidx = nefr4%blockIndex([ia,dimi],[ja,dimj],[la,diml],[ka,dimk])
             if (NEFr4%Zero_Flag(nef_bidx)) cycle
@@ -7259,10 +7259,10 @@
       case ('all')
         do dimi = 1, NEFr4%blockSize(ia)
          do dimj = 1, NEFr4%blockSize(ja)
-          idij = nefr4%blockIndex([1,1],[2,1],[3,dimi],[4,dimj])
+          idij = NEFr4%blockSize(ja)*(dimi-1) + dimj
           do dimk = 1, NEFr4%blockSize(ka)
            do diml = 1, NEFr4%blockSize(la)
-            idlk = nefr4%blockIndex([1,1],[2,1],[3,diml],[4,dimk])
+            idlk = NEFr4%blockSize(la)*(dimk-1) + diml
             finalid = nefMatOut%blockIndex([1,idij],[2,idlk])
             nef_bidx = nefr4%blockIndex([ia,dimi],[ja,dimj],[la,diml],[ka,dimk])
             if (NEFr4%Zero_Flag(nef_bidx)) cycle
@@ -8214,30 +8214,18 @@
           end do
         end do
       case ('triplet')
-!       !!! NOT TESTED !!! id below uses a hardcoded literal-axis-3/4 stride
-!       (blockIndex([1,1],[2,1],[3,row],[4,col]) = (row-1)*NumSpace_4+col)
-!       instead of a role-aware one (blockSize(ja)*(row-1)+col, as 'singlet'
-!       uses in mqc_nef_r4_dimention_collapse's own main loop). Only
-!       verified correct when NumSpace_4==blockSize(ja); not verified for a
-!       non-default Order where that need not hold. Flagged while
-!       investigating the long-standing 'all'-excType discrepancy.
         do row = 1, NEFr4%blockSize(ia)
           do col = 1, NEFr4%blockSize(ja)
-            id = nefr4%blockIndex([1,1],[2,1],[3,row],[4,col])
+            id = NEFr4%blockSize(ja)*(row-1) + col
             call MapOut(id)%init(&
                nefR4%blockSize(ia,row,'alpha')*nefR4%blockSize(ja,col,'beta'),0,&
                nefR4%blockSize(ia,row,'beta')*nefR4%blockSize(ja,col,'alpha'))
           end do
         end do
       case ('all','full')
-!       !!! NOT TESTED !!! same hardcoded literal-axis-3/4 stride concern as
-!       the 'triplet' case above -- see that comment. This is the branch
-!       actually exercised by the known, deferred 'all'-excType
-!       discrepancy (OrbRot.f03 getBKSingExcOvMatrix(excType='all') with
-!       non-default Order=[2,1,3,4]); root cause not yet confirmed.
         do row = 1, NEFr4%blockSize(ia)
           do col = 1, NEFr4%blockSize(ja)
-            id = nefr4%blockIndex([1,1],[2,1],[3,row],[4,col])
+            id = NEFr4%blockSize(ja)*(row-1) + col
             call MapOut(id)%init(&
                nefR4%blockSize(ia,row,'alpha')*(nefR4%blockSize(ja,col,'beta')+&
                                                 nefR4%blockSize(ja,col,'alpha')),0,&

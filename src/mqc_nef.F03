@@ -9671,10 +9671,10 @@
               do id3 = 1, NEFR4%NumSpace_3
                 do id4 = 1, NEFR4%NumSpace_4
                   idOld = NEFR4%blockIndex([1,id1],[2,id2],[3,id3],[4,id4])
-                  idNew = NEFR4%blockIndex([2,id1],[1,id2],[3,id3],[4,id4])
+                  idNew = outR4%blockIndex([1,id2],[2,id1],[3,id3],[4,id4])
                   outR4%Zero_Flag(idNew) = NEFR4%Zero_Flag(idOld)
                   if (.not.NEFR4%Zero_Flag(idOld)) &
-                    outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)
+                    outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)%swap(dim1,dim2)
                 end do
               end do
             end do
@@ -9703,10 +9703,10 @@
               do id3 = 1, NEFR4%NumSpace_3
                 do id4 = 1, NEFR4%NumSpace_4
                   idOld = NEFR4%blockIndex([1,id1],[2,id2],[3,id3],[4,id4])
-                  idNew = NEFR4%blockIndex([3,id1],[2,id2],[1,id3],[4,id4])
+                  idNew = outR4%blockIndex([1,id3],[2,id2],[3,id1],[4,id4])
                   outR4%Zero_Flag(idNew) = NEFR4%Zero_Flag(idOld)
                   if (.not.NEFR4%Zero_Flag(idOld)) &
-                    outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)
+                    outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)%swap(dim1,dim2)
                 end do
               end do
             end do
@@ -9735,10 +9735,10 @@
               do id3 = 1, NEFR4%NumSpace_3
                 do id4 = 1, NEFR4%NumSpace_4
                   idOld = NEFR4%blockIndex([1,id1],[2,id2],[3,id3],[4,id4])
-                  idNew = NEFR4%blockIndex([4,id1],[2,id2],[3,id3],[1,id4])
+                  idNew = outR4%blockIndex([1,id4],[2,id2],[3,id3],[4,id1])
                   outR4%Zero_Flag(idNew) = NEFR4%Zero_Flag(idOld)
                   if (.not.NEFR4%Zero_Flag(idOld)) &
-                    outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)
+                    outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)%swap(dim1,dim2)
                 end do
               end do
             end do
@@ -9770,10 +9770,10 @@
               do id3 = 1, NEFR4%NumSpace_3
                 do id4 = 1, NEFR4%NumSpace_4
                   idOld = NEFR4%blockIndex([1,id1],[2,id2],[3,id3],[4,id4])
-                  idNew = NEFR4%blockIndex([1,id1],[3,id2],[2,id3],[4,id4])
+                  idNew = outR4%blockIndex([1,id1],[2,id3],[3,id2],[4,id4])
                   outR4%Zero_Flag(idNew) = NEFR4%Zero_Flag(idOld)
                   if (.not.NEFR4%Zero_Flag(idOld)) &
-                    outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)
+                    outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)%swap(dim1,dim2)
                 end do
               end do
             end do
@@ -9802,10 +9802,10 @@
               do id3 = 1, NEFR4%NumSpace_3
                 do id4 = 1, NEFR4%NumSpace_4
                   idOld = NEFR4%blockIndex([1,id1],[2,id2],[3,id3],[4,id4])
-                  idNew = NEFR4%blockIndex([1,id1],[4,id2],[3,id3],[2,id4])
+                  idNew = outR4%blockIndex([1,id1],[2,id4],[3,id3],[4,id2])
                   outR4%Zero_Flag(idNew) = NEFR4%Zero_Flag(idOld)
                   if (.not.NEFR4%Zero_Flag(idOld)) &
-                    outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)
+                    outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)%swap(dim1,dim2)
                 end do
               end do
             end do
@@ -9835,10 +9835,10 @@
             do id3 = 1, NEFR4%NumSpace_3
               do id4 = 1, NEFR4%NumSpace_4
                 idOld = NEFR4%blockIndex([1,id1],[2,id2],[3,id3],[4,id4])
-                idNew = NEFR4%blockIndex([1,id1],[2,id2],[4,id3],[3,id4])
+                idNew = outR4%blockIndex([1,id1],[2,id2],[3,id4],[4,id3])
                 outR4%Zero_Flag(idNew) = NEFR4%Zero_Flag(idOld)
                 if (.not.NEFR4%Zero_Flag(idOld)) &
-                  outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)
+                  outR4%Main_R4(idNew) = NEFR4%Main_R4(idOld)%swap(dim1,dim2)
               end do
             end do
           end do

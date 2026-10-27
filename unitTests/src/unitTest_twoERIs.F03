@@ -3274,8 +3274,9 @@
       endIf
 !
 !     Test 142: general ERI (with bbba=10) × spin, same=F ind=[3,1] (ia=3, ib=1)
-!     Bug-fix test: ba=R4(bbba,M_bb)=10*3=30 (old code: put into ab by mistake).
-!     Code: aa=8*2+12*3=52, bb=9*3+12*2=51, ab=R4(aaab,M_aa)=10*2=20, ba=30
+!     Output row = axis 2, col = axis 4. ab = beta-row x alpha-col (alphaBeta storage),
+!     ba = alpha-row x beta-col (betaAlpha storage), as in getBlock/integral_allocate.
+!     Code: aa=8*2+12*3=52, bb=9*3+12*2=51, ab=R4(bbba,M_bb)=10*3=30, ba=R4(aaab,M_aa)=10*2=20
 !
       intOut = Contraction(eriB,intSpin,[3_int64,1_int64])
       outBlk = intOut%getBlock('aa') ; sc = outBlk%at(1,1) ; got = sc%rval() ; expected = 52.0d0
@@ -3290,15 +3291,15 @@
       else
         write(*,1010) 'IC/gen+SF x spin/same=F [3,1]: bb',got,expected ; nfail=nfail+1
       endIf
-      outBlk = intOut%getBlock('ab') ; sc = outBlk%at(1,1) ; got = sc%rval() ; expected = 20.0d0
+      outBlk = intOut%getBlock('ab') ; sc = outBlk%at(1,1) ; got = sc%rval() ; expected = 30.0d0
       if(abs(got-expected).le.tol) then
-        write(*,1000) 'IC/gen+SF x spin/same=F [3,1]: ab (aaab*M_aa, not bbba)'
+        write(*,1000) 'IC/gen+SF x spin/same=F [3,1]: ab (bbba*M_bb)'
       else
         write(*,1010) 'IC/gen+SF x spin/same=F [3,1]: ab',got,expected ; nfail=nfail+1
       endIf
-      outBlk = intOut%getBlock('ba') ; sc = outBlk%at(1,1) ; got = sc%rval() ; expected = 30.0d0
+      outBlk = intOut%getBlock('ba') ; sc = outBlk%at(1,1) ; got = sc%rval() ; expected = 20.0d0
       if(abs(got-expected).le.tol) then
-        write(*,1000) 'IC/gen+SF x spin/same=F [3,1]: ba (bbba*M_bb)'
+        write(*,1000) 'IC/gen+SF x spin/same=F [3,1]: ba (aaab*M_aa, not bbba)'
       else
         write(*,1010) 'IC/gen+SF x spin/same=F [3,1]: ba',got,expected ; nfail=nfail+1
       endIf

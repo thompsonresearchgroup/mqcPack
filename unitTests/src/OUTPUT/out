@@ -275,8 +275,8 @@
  PASS  IC/gen x spin/same=T: bb
  PASS  IC/gen+SF x spin/same=F [3,1]: aa
  PASS  IC/gen+SF x spin/same=F [3,1]: bb
- PASS  IC/gen+SF x spin/same=F [3,1]: ab (aaab*M_aa, not bbba)
- PASS  IC/gen+SF x spin/same=F [3,1]: ba (bbba*M_bb)
+ PASS  IC/gen+SF x spin/same=F [3,1]: ab (bbba*M_bb)
+ PASS  IC/gen+SF x spin/same=F [3,1]: ba (aaab*M_aa, not bbba)
  PASS  IC/gen x general/same=T: aa
  PASS  IC/gen x general/same=T: bb
  PASS  IC/gen x general/same=T: ab

@@ -452,6 +452,11 @@
         Module Procedure MQC_VectorMatrixDotProduct
       End Interface
 !
+!>    \brief <b> Returns dagger(B) A B, using the (anti-)Hermitian structure of A</b>
+      Interface HermMatMul
+        Module Procedure MQC_Matrix_Hermitian_Sandwich
+      End Interface
+!
 !>    \brief <b> Returns the transpose</b>
       Interface Transpose
         Module Procedure MQC_Vector_Transpose
@@ -10009,35 +10014,49 @@
         call M%init(VA%length,VB%length,0)
         VC = mqc_cast_real(VA)
         VD = mqc_cast_real(VB)
-        call dger(VA%length,VB%length,1.0,VC%vecr,1,VD%vecr,1,M%matr,VA%length)
+        call dger(int(VA%length,kind=MQC_BlasInt),int(VB%length,kind=MQC_BlasInt),1.0,VC%vecr,&
+             int(1,kind=MQC_BlasInt),VD%vecr,int(1,kind=MQC_BlasInt),M%matr,int(VA%length,kind=MQC_BlasInt))
         M = mqc_cast_integer(M)
       elseif((mqc_have_int(VA).or.mqc_have_real(VA)).and.(mqc_have_int(VB).or.mqc_have_real(VB))) then
         call M%init(VA%length,VB%length)
         if (mqc_have_int(VA)) then
           VC = mqc_cast_real(VA)
-          call dger(VA%length,VB%length,1.0,VC%vecr,1,VB%vecr,1,M%matr,VA%length)
+          call dger(int(VA%length,kind=MQC_BlasInt),int(VB%length,kind=MQC_BlasInt),1.0,VC%vecr,&
+               int(1,kind=MQC_BlasInt),VB%vecr,int(1,kind=MQC_BlasInt),M%matr,int(VA%length,kind=MQC_BlasInt))
         elseif (mqc_have_int(VB)) then
           VC = mqc_cast_real(VB)
-          call dger(VA%length,VB%length,1.0,VA%vecr,1,VC%vecr,1,M%matr,VA%length)
+          call dger(int(VA%length,kind=MQC_BlasInt),int(VB%length,kind=MQC_BlasInt),1.0,VA%vecr,&
+               int(1,kind=MQC_BlasInt),VC%vecr,int(1,kind=MQC_BlasInt),M%matr,int(VA%length,kind=MQC_BlasInt))
         else
-          call dger(VA%length,VB%length,1.0,VA%vecr,1,VB%vecr,1,M%matr,VA%length)
+          call dger(int(VA%length,kind=MQC_BlasInt),int(VB%length,kind=MQC_BlasInt),1.0,VA%vecr,&
+               int(1,kind=MQC_BlasInt),VB%vecr,int(1,kind=MQC_BlasInt),M%matr,int(VA%length,kind=MQC_BlasInt))
         endif
       else
         call M%init(VA%length,VB%length,(0.0,0.0))
         if (mqc_have_int(VA)) then
           VC = mqc_cast_complex(VA)
-          call zgerc(VA%length,VB%length,1.0,VC%vecc,1,conjg(VB%vecc),1,M%matc,VA%length)
+          call zgerc(int(VA%length,kind=MQC_BlasInt),int(VB%length,kind=MQC_BlasInt),1.0,VC%vecc,&
+               int(1,kind=MQC_BlasInt),conjg(VB%vecc),int(1,kind=MQC_BlasInt),M%matc,&
+               int(VA%length,kind=MQC_BlasInt))
         elseif (mqc_have_int(VB)) then
           VC = mqc_cast_complex(VB)
-          call zgerc(VA%length,VB%length,1.0,VA%vecc,1,conjg(VC%vecc),1,M%matc,VA%length)
+          call zgerc(int(VA%length,kind=MQC_BlasInt),int(VB%length,kind=MQC_BlasInt),1.0,VA%vecc,&
+               int(1,kind=MQC_BlasInt),conjg(VC%vecc),int(1,kind=MQC_BlasInt),M%matc,&
+               int(VA%length,kind=MQC_BlasInt))
         elseif (mqc_have_real(VA)) then
           VC = mqc_cast_complex(VA)
-          call zgerc(VA%length,VB%length,1.0,VC%vecc,1,conjg(VB%vecc),1,M%matc,VA%length)
+          call zgerc(int(VA%length,kind=MQC_BlasInt),int(VB%length,kind=MQC_BlasInt),1.0,VC%vecc,&
+               int(1,kind=MQC_BlasInt),conjg(VB%vecc),int(1,kind=MQC_BlasInt),M%matc,&
+               int(VA%length,kind=MQC_BlasInt))
         elseif (mqc_have_real(VB)) then
           VC = mqc_cast_complex(VB)
-          call zgerc(VA%length,VB%length,1.0,VA%vecc,1,conjg(VC%vecc),1,M%matc,VA%length)
+          call zgerc(int(VA%length,kind=MQC_BlasInt),int(VB%length,kind=MQC_BlasInt),1.0,VA%vecc,&
+               int(1,kind=MQC_BlasInt),conjg(VC%vecc),int(1,kind=MQC_BlasInt),M%matc,&
+               int(VA%length,kind=MQC_BlasInt))
         else
-          call zgerc(VA%length,VB%length,1.0,VA%vecc,1,conjg(VB%vecc),1,M%matc,VA%length)
+          call zgerc(int(VA%length,kind=MQC_BlasInt),int(VB%length,kind=MQC_BlasInt),1.0,VA%vecc,&
+               int(1,kind=MQC_BlasInt),conjg(VB%vecc),int(1,kind=MQC_BlasInt),M%matc,&
+               int(VA%length,kind=MQC_BlasInt))
         endif
       endif
 
@@ -14125,6 +14144,7 @@
       recursive Subroutine MQC_Matrix_Diagonalize(A,EVals,EVecs)
 !
       Implicit None
+      integer(kind=MQC_BlasInt)::mqcBlasInfo
       Class(MQC_Matrix),Intent(In)::A
       Type(MQC_Matrix)::B
       Type(MQC_Matrix),Optional,Intent(InOut)::EVecs
@@ -14161,7 +14181,10 @@
                 A_Symm(i+(j-1)*(2*A%NRow-j)/2) = A%matR(i,j)
               EndDo
             EndDo
-            Call DSPEV('V','L',A%NRow,A_Symm,A_EVals,A_EVecs,A%NRow,Temp_Vector,IError)
+            call mqc_check_blas_integer_kind()
+            call DSPEV('V','L',int(A%NRow,kind=MQC_BlasInt),A_Symm,A_EVals,A_EVecs,&
+                 int(A%NRow,kind=MQC_BlasInt),Temp_Vector,mqcBlasInfo)
+            IError = mqcBlasInfo
             If(IError.ne.0) then
               call mqc_error_i('Diagonalization error: the lapack routine DSPEV failed', 6, &
                  'IError', IError )
@@ -14175,7 +14198,10 @@
         else if (A%storage .eq. 'StorSymm' .or. A%storage .eq. 'StorHerm') then
           Allocate(A_Symm((A%NRow*(A%NRow+1))/2),Temp_Vector(3*A%NRow),A_EVecs(A%NRow,A%NRow),A_EVals(A%NRow))
           A_Symm = A%matR(:,1)
-          call DSPEV('V','U',A%NRow,A_Symm,A_EVals,A_EVecs,A%NRow,Temp_Vector,IError)
+          call mqc_check_blas_integer_kind()
+          call DSPEV('V','U',int(A%NRow,kind=MQC_BlasInt),A_Symm,A_EVals,A_EVecs,int(A%NRow,kind=MQC_BlasInt),&
+               Temp_Vector,mqcBlasInfo)
+          IError = mqcBlasInfo
           If(IError.ne.0) then
             call mqc_error_I('Diagonalization error: the lapack routine DSPEV failed', 6, &
                  'IError', IError )
@@ -14208,7 +14234,10 @@
                 AC_Symm(k) = A%matC(j,i)
               endDo
             endDo
-            call ZHPEV('V','U',A%NRow,AC_Symm,A_EVals,AC_EVecs,A%NRow,TempC_Vector,Temp_Vector,IError)
+            call mqc_check_blas_integer_kind()
+            call ZHPEV('V','U',int(A%NRow,kind=MQC_BlasInt),AC_Symm,A_EVals,AC_EVecs,&
+                 int(A%NRow,kind=MQC_BlasInt),TempC_Vector,Temp_Vector,mqcBlasInfo)
+            IError = mqcBlasInfo
             if(IError.ne.0) then
               call mqc_error_i('Diagonalization error: the lapack routine ZHPEV failed', 6, &
                  'IError', IError )
@@ -14230,7 +14259,10 @@
               AC_Symm(i+(j-1)*(2*A%NRow-j)/2) = A%matC(symIndexHash(i,j),1) 
             endDo
           endDo
-          call ZHPEV('V','L',A%NRow,AC_Symm,A_EVals,AC_EVecs,A%NRow,TempC_Vector,Temp_Vector,IError)
+          call mqc_check_blas_integer_kind()
+          call ZHPEV('V','L',int(A%NRow,kind=MQC_BlasInt),AC_Symm,A_EVals,AC_EVecs,&
+               int(A%NRow,kind=MQC_BlasInt),TempC_Vector,Temp_Vector,mqcBlasInfo)
+          IError = mqcBlasInfo
           if(IError.ne.0) then
             call mqc_error_i('Diagonalization error: the lapack routine ZHPEV failed', 6, &
                  'IError', IError )
@@ -23883,15 +23915,17 @@
           Call MQC_Allocate_Matrix(MA%NRow,MB%NCol,MC,'Real','StorFull')
           Tmp1 = MB
           Call MQC_Matrix_Symm2Full(Tmp1)
-          Call DSymm('r','L',MA%NRow,MB%NCol,1.0,Tmp1%MatR,MB%NRow,MA%MatR,MA%NRow,0, &
-            MC%MatR,MC%NRow)
+          call DSymm('r','L',int(MA%NRow,kind=MQC_BlasInt),int(MB%NCol,kind=MQC_BlasInt),1.0,Tmp1%MatR,&
+               int(MB%NRow,kind=MQC_BlasInt),MA%MatR,int(MA%NRow,kind=MQC_BlasInt),0.0,MC%MatR,&
+               int(MC%NRow,kind=MQC_BlasInt))
           Call MQC_Deallocate_Matrix(Tmp1)
         ElseIf (MA%Storage.eq.'StorSymm' .and. MB%Storage.eq.'StorFull') then
           Call MQC_Allocate_Matrix(MA%NRow,MB%NCol,MC,'Real','StorFull')
           Tmp1 = MA
           Call MQC_Matrix_Symm2Full(Tmp1)
-          Call DSymm('l','L',MA%NRow,MB%NCol,1.0,Tmp1%MatR,MA%NRow,MB%MatR,MB%NRow,0, &
-            MC%MatR,MC%NRow)
+          call DSymm('l','L',int(MA%NRow,kind=MQC_BlasInt),int(MB%NCol,kind=MQC_BlasInt),1.0,Tmp1%MatR,&
+               int(MA%NRow,kind=MQC_BlasInt),MB%MatR,int(MB%NRow,kind=MQC_BlasInt),0.0,MC%MatR,&
+               int(MC%NRow,kind=MQC_BlasInt))
           Call MQC_Deallocate_Matrix(Tmp1)
         ElseIf (MA%Storage.eq.'StorDiag' .and. MB%Storage.eq.'StorFull') then
           Call MQC_Allocate_Matrix(MA%NRow,MB%NCol,MC,'Real','StorFull')
@@ -23981,15 +24015,17 @@
           MBreal = MQC_Cast_Real(MB)
           Call MQC_Allocate_Matrix(MA%NRow,MBreal%NCol,MC,'Real','StorFull')
           Call MQC_Matrix_Symm2Full(MBreal)
-          Call DSymm('r','L',MA%NRow,MBreal%NCol,1.0,MBreal%MatR,MBreal%NRow,MA%MatR, &
-            MA%NRow,0,MC%MatR,MC%NRow)
+          call DSymm('r','L',int(MA%NRow,kind=MQC_BlasInt),int(MBreal%NCol,kind=MQC_BlasInt),1.0,MBreal%MatR,&
+               int(MBreal%NRow,kind=MQC_BlasInt),MA%MatR,int(MA%NRow,kind=MQC_BlasInt),0.0,MC%MatR,&
+               int(MC%NRow,kind=MQC_BlasInt))
         ElseIf (MA%Storage.eq.'StorSymm' .and. MBreal%Storage.eq.'StorFull') then
           MBreal = MQC_Cast_Real(MB)
           Call MQC_Allocate_Matrix(MA%NRow,MBreal%NCol,MC,'Real','StorFull')
           Tmp1 = MA
           Call MQC_Matrix_Symm2Full(Tmp1)
-          Call DSymm('l','L',MA%NRow,MBreal%NCol,1.0,MA%MatR,MA%NRow,MBreal%MatR, &
-            MBreal%NRow,0,MC%MatR,MC%NRow)
+          call DSymm('l','L',int(MA%NRow,kind=MQC_BlasInt),int(MBreal%NCol,kind=MQC_BlasInt),1.0,MA%MatR,&
+               int(MA%NRow,kind=MQC_BlasInt),MBreal%MatR,int(MBreal%NRow,kind=MQC_BlasInt),0.0,MC%MatR,&
+               int(MC%NRow,kind=MQC_BlasInt))
           Call MQC_Deallocate_Matrix(Tmp1)
         ElseIf (MA%Storage.eq.'StorDiag' .and. MB%Storage.eq.'StorFull') then
           Call MQC_Allocate_Matrix(MA%NRow,MB%NCol,MC,'Real','StorFull')
@@ -24080,15 +24116,17 @@
           Call MQC_Allocate_Matrix(MAreal%nrow,MB%ncol,MC,'Real','StorFull')
           Tmp1 = MB
           Call MQC_Matrix_Symm2Full(Tmp1)
-          Call DSymm('r','L',MAreal%NRow,MB%NCol,1.0,Tmp1%MatR,MB%NRow,MAreal%MatR, &
-            MAreal%NRow,0,MC%MatR,MC%NRow)
+          call DSymm('r','L',int(MAreal%NRow,kind=MQC_BlasInt),int(MB%NCol,kind=MQC_BlasInt),1.0,Tmp1%MatR,&
+               int(MB%NRow,kind=MQC_BlasInt),MAreal%MatR,int(MAreal%NRow,kind=MQC_BlasInt),0.0,MC%MatR,&
+               int(MC%NRow,kind=MQC_BlasInt))
           Call MQC_Deallocate_Matrix(Tmp1)
         ElseIf (MA%Storage.eq.'StorSymm' .and. MB%Storage.eq.'StorFull') then
           MAreal = MQC_Cast_Real(MA)
           Call MQC_Allocate_Matrix(MAreal%nrow,MB%ncol,MC,'Real','StorFull')
           Call MQC_Matrix_Symm2Full(MAreal)
-          Call DSymm('l','L',MAreal%NRow,MB%NCol,1.0,MAreal%MatR,MAreal%NRow,MB%MatR, &
-            MB%NRow,0,MC%MatR,MC%NRow)
+          call DSymm('l','L',int(MAreal%NRow,kind=MQC_BlasInt),int(MB%NCol,kind=MQC_BlasInt),1.0,MAreal%MatR,&
+               int(MAreal%NRow,kind=MQC_BlasInt),MB%MatR,int(MB%NRow,kind=MQC_BlasInt),0.0,MC%MatR,&
+               int(MC%NRow,kind=MQC_BlasInt))
         ElseIf (MA%Storage.eq.'StorDiag' .and. MB%Storage.eq.'StorFull') then
           Call MQC_Allocate_Matrix(MA%NRow,MB%NCol,MC,'Real','StorFull')
           do i = 1, MB%NRow
@@ -24611,6 +24649,176 @@
 
       End Function MQC_MatrixMatrixDotProduct
 !
+!     PROCEDURE MQC_Matrix_Hermitian_Sandwich
+!
+!>    \brief <b> MQC_Matrix_Hermitian_Sandwich returns C = dagger(B) A B, using the
+!>    Hermitian or anti-Hermitian structure of A when it is known</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The structure of A is taken from its storage type:
+!>      StorHerm, real StorSymm, real/Hermitian StorDiag -> Hermitian
+!>      StorAhrm, real StorAsym                          -> anti-Hermitian
+!>      StorFull: Hermitian if MQC_Matrix_Test_Symmetric(A,'hermitian') holds
+!>      anything else                                    -> general
+!>    For a Hermitian (anti-Hermitian) A, T = A B is formed with ZHEMM (ZGEMM), or DGEMM if real,
+!>    and only the lower triangle of C = dagger(B) T is formed with ZGEMMT/DGEMMT. C is
+!>    returned packed: StorHerm/StorAhrm (complex) or StorSymm/StorAsym (real).
+!>    The general case is MatMul(Dagger(B),MatMul(A,B)) in StorFull.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] A
+!>    \verbatim
+!>        A is type(MQC_Matrix)
+!>        Square n x n matrix.
+!>    \endverbatim
+!>
+!>    \param[in] B
+!>    \verbatim
+!>        B is type(MQC_Matrix)
+!>        n x m matrix.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_Matrix_Hermitian_Sandwich(A,B) Result(C)
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::A,B
+      Type(MQC_Matrix)::C
+      Type(MQC_Matrix)::Af,Bf
+      Character(len=16)::structure
+      Integer(kind=int64)::I,J,M,N,II
+      Integer(kind=MQC_BlasInt)::N32,M32
+      Real(kind=real64)::oneR,zeroR
+      Complex(kind=real64)::oneC,zeroC
+      Real(kind=real64),Dimension(:,:),Allocatable::AR,BR,TR,CR
+      Complex(kind=real64),Dimension(:,:),Allocatable::AC,BC,TC,CC
+!
+      structure = 'general'
+      If(MQC_Matrix_Rows(A).eq.MQC_Matrix_Columns(A)) then
+        Select Case (A%Storage)
+        Case ('StorHerm')
+          structure = 'hermitian'
+        Case ('StorSymm')
+          If(.not.MQC_Matrix_HaveComplex(A)) structure = 'hermitian'
+        Case ('StorAhrm')
+          structure = 'antihermitian'
+        Case ('StorAsym')
+          If(.not.MQC_Matrix_HaveComplex(A)) structure = 'antihermitian'
+        Case ('StorDiag','StorFull')
+          If(MQC_Matrix_Test_Symmetric(A,'hermitian')) structure = 'hermitian'
+        End Select
+      EndIf
+!
+      If(structure.eq.'general') then
+        C = MatMul(Dagger(B),MatMul(A,B))
+        Return
+      EndIf
+!
+      Af = A
+      Bf = B
+      If(Af%Storage.eq.'StorDiag') then
+        Call MQC_Matrix_Diag2Full(Af)
+      ElseIf(Af%Storage.ne.'StorFull') then
+        Call MQC_Matrix_Symm2Full(Af)
+      EndIf
+      If(Bf%Storage.eq.'StorDiag') then
+        Call MQC_Matrix_Diag2Full(Bf)
+      ElseIf(Bf%Storage.ne.'StorFull') then
+        Call MQC_Matrix_Symm2Full(Bf)
+      EndIf
+      N = MQC_Matrix_Rows(Bf)
+      M = MQC_Matrix_Columns(Bf)
+      N32 = int(N,kind=MQC_BlasInt)
+      M32 = int(M,kind=MQC_BlasInt)
+!
+      If(MQC_Matrix_HaveComplex(Af).or.MQC_Matrix_HaveComplex(Bf)) then
+        oneC = (1.0,0.0)
+        zeroC = (0.0,0.0)
+        Allocate(AC(N,N),BC(N,M),TC(N,M),CC(M,M))
+        If(MQC_Matrix_HaveComplex(Af)) then
+          AC = Af%MatC
+        ElseIf(MQC_Matrix_HaveReal(Af)) then
+          AC = cmplx(Af%MatR,0.0,kind=real64)
+        Else
+          AC = cmplx(real(Af%MatI,kind=real64),0.0,kind=real64)
+        EndIf
+        If(MQC_Matrix_HaveComplex(Bf)) then
+          BC = Bf%MatC
+        ElseIf(MQC_Matrix_HaveReal(Bf)) then
+          BC = cmplx(Bf%MatR,0.0,kind=real64)
+        Else
+          BC = cmplx(real(Bf%MatI,kind=real64),0.0,kind=real64)
+        EndIf
+        If(structure.eq.'hermitian') then
+          call ZHEMM('L','L',N32,M32,oneC,AC,N32,BC,N32,zeroC,TC,N32)
+        Else
+          call ZGEMM('N','N',N32,M32,N32,oneC,AC,N32,BC,N32,zeroC,TC,N32)
+        EndIf
+        CC = zeroC
+        call ZGEMMT('L','C','N',M32,N32,oneC,BC,N32,TC,N32,zeroC,CC,M32)
+        If(structure.eq.'hermitian') then
+          Call MQC_Allocate_Matrix(M,M,C,'Complex','StorHerm')
+        Else
+          Call MQC_Allocate_Matrix(M,M,C,'Complex','StorAhrm')
+        EndIf
+        Do I = 1, M
+          II = (I*(I-1))/2
+          Do J = 1, I-1
+            C%MatC(II+J,1) = CC(I,J)
+          EndDo
+          If(structure.eq.'hermitian') then
+            C%MatC(II+I,1) = cmplx(real(CC(I,I)),0.0,kind=real64)
+          Else
+            C%MatC(II+I,1) = cmplx(0.0,aimag(CC(I,I)),kind=real64)
+          EndIf
+        EndDo
+      Else
+        oneR = 1.0
+        zeroR = 0.0
+        Allocate(AR(N,N),BR(N,M),TR(N,M),CR(M,M))
+        If(MQC_Matrix_HaveReal(Af)) then
+          AR = Af%MatR
+        Else
+          AR = real(Af%MatI,kind=real64)
+        EndIf
+        If(MQC_Matrix_HaveReal(Bf)) then
+          BR = Bf%MatR
+        Else
+          BR = real(Bf%MatI,kind=real64)
+        EndIf
+        call DGEMM('N','N',N32,M32,N32,oneR,AR,N32,BR,N32,zeroR,TR,N32)
+        CR = zeroR
+        call DGEMMT('L','T','N',M32,N32,oneR,BR,N32,TR,N32,zeroR,CR,M32)
+        If(structure.eq.'hermitian') then
+          Call MQC_Allocate_Matrix(M,M,C,'Real','StorSymm')
+        Else
+          Call MQC_Allocate_Matrix(M,M,C,'Real','StorAsym')
+        EndIf
+        Do I = 1, M
+          II = (I*(I-1))/2
+          Do J = 1, I-1
+            C%MatR(II+J,1) = CR(I,J)
+          EndDo
+          If(structure.eq.'hermitian') then
+            C%MatR(II+I,1) = CR(I,I)
+          Else
+            C%MatR(II+I,1) = zeroR
+          EndIf
+        EndDo
+      EndIf
+!
+      End Function MQC_Matrix_Hermitian_Sandwich
+!
 !
 !     PROCEDURE MQC_MatrixVectorDotProduct
 !
@@ -24670,12 +24878,15 @@
       If (MQC_Matrix_HaveReal(MA) .and. MQC_Vector_HaveReal(VB)) then
         Call MQC_Allocate_Vector(MA%NRow,VC,'Real')
         If (MA%Storage.eq.'StorFull') then
-          Call DGemV('N',MA%NRow,MA%NCol,1.0,MA%MatR,MA%NRow,VB%VecR,1,0.0,VC%VecR,1)
+          call DGemV('N',int(MA%NRow,kind=MQC_BlasInt),int(MA%NCol,kind=MQC_BlasInt),1.0,MA%MatR,&
+               int(MA%NRow,kind=MQC_BlasInt),VB%VecR,int(1,kind=MQC_BlasInt),0.0,VC%VecR,&
+               int(1,kind=MQC_BlasInt))
         ElseIf (MA%Storage.eq.'StorSymm'.or.MA%Storage.eq.'StorAsym' .or. &
             MA%Storage.eq.'StorHerm' .or. MA%Storage.eq.'StorAhrm') then
           Tmp1 = MA
           Call MQC_Matrix_Symm2Full(Tmp1)
-          Call DSymV('L',MA%NRow,1.0,Tmp1%MatR,MA%NRow,VB%VecR,1,0.0,VC%VecR,1)
+          call DSymV('L',int(MA%NRow,kind=MQC_BlasInt),1.0,Tmp1%MatR,int(MA%NRow,kind=MQC_BlasInt),VB%VecR,&
+               int(1,kind=MQC_BlasInt),0.0,VC%VecR,int(1,kind=MQC_BlasInt))
           Call MQC_Deallocate_Matrix(Tmp1)
         elseif (MA%Storage.eq.'StorDiag') then
           VC%vecR = MA%matR(:,1) * VB%vecR
@@ -24683,12 +24894,15 @@
       ElseIf (MQC_Matrix_HaveReal(MA) .and. MQC_Vector_HaveInteger(VB)) then
         Call MQC_Allocate_Vector(MA%NRow,VC,'Real')
         If (MA%Storage.eq.'StorFull') then
-          Call DGemV('N',MA%NRow,MA%NCol,1.0,MA%MatR,MA%NRow,VBreal%VecR,1,0.0,VC%VecR,1)
+          call DGemV('N',int(MA%NRow,kind=MQC_BlasInt),int(MA%NCol,kind=MQC_BlasInt),1.0,MA%MatR,&
+               int(MA%NRow,kind=MQC_BlasInt),VBreal%VecR,int(1,kind=MQC_BlasInt),0.0,VC%VecR,&
+               int(1,kind=MQC_BlasInt))
         ElseIf (MA%Storage.eq.'StorSymm'.or.MA%Storage.eq.'StorAsym' .or. &
             MA%Storage.eq.'StorHerm' .or. MA%Storage.eq.'StorAhrm') then
           Tmp1 = MA
           Call MQC_Matrix_Symm2Full(Tmp1)
-          Call DSymV('L',MA%NRow,1.0,Tmp1%MatR,MA%NRow,VBreal%VecR,1,0.0,VC%VecR,1)
+          call DSymV('L',int(MA%NRow,kind=MQC_BlasInt),1.0,Tmp1%MatR,int(MA%NRow,kind=MQC_BlasInt),&
+               VBreal%VecR,int(1,kind=MQC_BlasInt),0.0,VC%VecR,int(1,kind=MQC_BlasInt))
           Call MQC_Deallocate_Matrix(Tmp1)
         elseif (MA%Storage.eq.'StorDiag') then
           VC%vecR = MA%matR(:,1) * VB%vecI
@@ -24696,11 +24910,14 @@
       ElseIf (MQC_Matrix_HaveInteger(MA) .and. MQC_Vector_HaveReal(VB)) then
         Call MQC_Allocate_Vector(MA%NRow,VC,'Real')
         If (MA%Storage.eq.'StorFull') then
-          Call DGemV('N',MA%NRow,MA%NCol,1.0,MAreal%MatR,MA%NRow,VB%VecR,1,0.0,VC%VecR,1)
+          call DGemV('N',int(MA%NRow,kind=MQC_BlasInt),int(MA%NCol,kind=MQC_BlasInt),1.0,MAreal%MatR,&
+               int(MA%NRow,kind=MQC_BlasInt),VB%VecR,int(1,kind=MQC_BlasInt),0.0,VC%VecR,&
+               int(1,kind=MQC_BlasInt))
         ElseIf (MA%Storage.eq.'StorSymm'.or.MA%Storage.eq.'StorAsym' .or. &
             MA%Storage.eq.'StorHerm' .or. MA%Storage.eq.'StorAhrm') then
           Call MQC_Matrix_Symm2Full(MAreal)
-          Call DSymV('L',MA%NRow,1.0,MAreal%MatR,MA%NRow,VB%VecR,1,0.0,VC%VecR,1)
+          call DSymV('L',int(MA%NRow,kind=MQC_BlasInt),1.0,MAreal%MatR,int(MA%NRow,kind=MQC_BlasInt),VB%VecR,&
+               int(1,kind=MQC_BlasInt),0.0,VC%VecR,int(1,kind=MQC_BlasInt))
           Call MQC_Matrix_Full2Symm(MAreal)
         elseif (MA%Storage.eq.'StorDiag') then
           VC%vecR = MA%matI(:,1) * VB%vecR
@@ -24851,12 +25068,15 @@
         Call MQC_Allocate_Vector(MB%NCol,VC,'Real')
         VC = MQC_Vector_Transpose(VC)
         If (MB%Storage.eq.'StorFull') then
-          Call DGemV('T',MB%NRow,MB%NCol,1.0,MB%MatR,MB%NRow,VA%VecR,1,0.0,VC%VecR,1)
+          call DGemV('T',int(MB%NRow,kind=MQC_BlasInt),int(MB%NCol,kind=MQC_BlasInt),1.0,MB%MatR,&
+               int(MB%NRow,kind=MQC_BlasInt),VA%VecR,int(1,kind=MQC_BlasInt),0.0,VC%VecR,&
+               int(1,kind=MQC_BlasInt))
         ElseIf (MB%Storage.eq.'StorSymm'.or.MB%Storage.eq.'StorAsym' .or. &
             MB%Storage.eq.'StorHerm' .or. MB%Storage.eq.'StorAhrm') then
           Tmp1 = MB
           Call MQC_Matrix_Symm2Full(Tmp1)
-          Call DSymV('L',MB%NRow,1.0,Tmp1%MatR,MB%NRow,VA%VecR,1,0.0,VC%VecR,1)
+          call DSymV('L',int(MB%NRow,kind=MQC_BlasInt),1.0,Tmp1%MatR,int(MB%NRow,kind=MQC_BlasInt),VA%VecR,&
+               int(1,kind=MQC_BlasInt),0.0,VC%VecR,int(1,kind=MQC_BlasInt))
           Call MQC_Deallocate_Matrix(Tmp1)
         elseif (MB%Storage.eq.'StorDiag') then
           VC%vecR = MB%matR(:,1) * VA%vecR
@@ -24865,11 +25085,14 @@
         Call MQC_Allocate_Vector(MB%NCol,VC,'Real')
         VC = MQC_Vector_Transpose(VC)
         If (MB%Storage.eq.'StorFull') then
-          Call DGemV('T',MB%NRow,MB%NCol,1.0,MBreal%MatR,MB%NRow,VA%VecR,1,0.0,VC%VecR,1)
+          call DGemV('T',int(MB%NRow,kind=MQC_BlasInt),int(MB%NCol,kind=MQC_BlasInt),1.0,MBreal%MatR,&
+               int(MB%NRow,kind=MQC_BlasInt),VA%VecR,int(1,kind=MQC_BlasInt),0.0,VC%VecR,&
+               int(1,kind=MQC_BlasInt))
         ElseIf (MB%Storage.eq.'StorSymm'.or.MB%Storage.eq.'StorAsym' .or. &
             MB%Storage.eq.'StorHerm' .or. MB%Storage.eq.'StorAhrm') then
           Call MQC_Matrix_Symm2Full(MBreal)
-          Call DSymV('L',MB%NRow,1.0,MBreal%MatR,MB%NRow,VA%VecR,1,0.0,VC%VecR,1)
+          call DSymV('L',int(MB%NRow,kind=MQC_BlasInt),1.0,MBreal%MatR,int(MB%NRow,kind=MQC_BlasInt),VA%VecR,&
+               int(1,kind=MQC_BlasInt),0.0,VC%VecR,int(1,kind=MQC_BlasInt))
           Call MQC_Matrix_Full2Symm(MBreal)
         elseif (MB%Storage.eq.'StorDiag') then
           VC%vecR = MB%matI(:,1) * VA%vecR
@@ -24878,12 +25101,15 @@
         Call MQC_Allocate_Vector(MB%NCol,VC,'Real')
         VC = MQC_Vector_Transpose(VC)
         If (MB%Storage.eq.'StorFull') then
-          Call DGemV('T',MB%nrow,MB%ncol,1.0,MB%matr,MB%nrow,VAreal%vecr,1,0.0,VC%vecr,1)
+          call DGemV('T',int(MB%nrow,kind=MQC_BlasInt),int(MB%ncol,kind=MQC_BlasInt),1.0,MB%matr,&
+               int(MB%nrow,kind=MQC_BlasInt),VAreal%vecr,int(1,kind=MQC_BlasInt),0.0,VC%vecr,&
+               int(1,kind=MQC_BlasInt))
         ElseIf (MB%Storage.eq.'StorSymm'.or.MB%Storage.eq.'StorAsym' .or. &
             MB%Storage.eq.'StorHerm' .or. MB%Storage.eq.'StorAhrm') then
           Tmp1 = MB
           Call MQC_Matrix_Symm2Full(Tmp1)
-          Call DSymV('L',MB%NRow,1.0,Tmp1%MatR,MB%NRow,VAreal%VecR,1,0.0,VC%VecR,1)
+          call DSymV('L',int(MB%NRow,kind=MQC_BlasInt),1.0,Tmp1%MatR,int(MB%NRow,kind=MQC_BlasInt),&
+               VAreal%VecR,int(1,kind=MQC_BlasInt),0.0,VC%VecR,int(1,kind=MQC_BlasInt))
           Call MQC_Deallocate_Matrix(Tmp1)
         elseif (MB%Storage.eq.'StorDiag') then
           VC%vecR = MB%matR(:,1) * VA%vecI
@@ -26777,13 +27003,14 @@
 !     Lee M. Thompson, 2016.
 !
       implicit none
+      integer(kind=MQC_BlasInt)::mqcBlasInfo
       class(mqc_matrix)::a
       type(mqc_scalar)::det
       character(len=64)::StorFlag,TypeFlag
       real(kind=real64),dimension(:,:),allocatable::temp
       Complex(Kind=real64),dimension(:,:),allocatable::tempC
       integer(kind=int64)::sgn,rows,cols,minrc,iError,i
-      integer(kind=int32),dimension(:),allocatable::iPiv
+      integer(kind=MQC_BlasInt),dimension(:),allocatable::iPiv
 !
 !     Determinant of matrix A.
 !
@@ -26808,7 +27035,10 @@
         allocate(iPiv(minrc))
         iPiv = 0
         iError = 1
-        call dgetrf(rows,cols,temp,rows,iPiv,iError)
+        call mqc_check_blas_integer_kind()
+        call dgetrf(int(rows,kind=MQC_BlasInt),int(cols,kind=MQC_BlasInt),temp,int(rows,kind=MQC_BlasInt),&
+             iPiv,mqcBlasInfo)
+        iError = mqcBlasInfo
         if(iError.lt.0) call mqc_error_i('DGETRF exited with error in mqc_matrix_determinant', 6, &
              'iError', iError )
         det = 1.0
@@ -26832,7 +27062,10 @@
         allocate(iPiv(minrc))
         iPiv = 0
         iError = 1
-        call zgetrf(rows,cols,tempC,rows,iPiv,iError)
+        call mqc_check_blas_integer_kind()
+        call zgetrf(int(rows,kind=MQC_BlasInt),int(cols,kind=MQC_BlasInt),tempC,int(rows,kind=MQC_BlasInt),&
+             iPiv,mqcBlasInfo)
+        iError = mqcBlasInfo
         if(iError.lt.0) call mqc_error_i('ZGETRF exited with error in mqc_matrix_determinant', 6, &
              'iError', iError )
         det = cmplx(1.0,0.0,kind=real64)
@@ -27052,6 +27285,7 @@
       function mqc_matrix_inverse(a) result(a_inv)
 !
       implicit none
+      integer(kind=MQC_BlasInt)::mqcBlasInfo
       class(mqc_matrix)::a
       type(mqc_matrix)::a_inv
       character(len=64)::StorFlag,TypeFlag
@@ -27059,7 +27293,7 @@
       Complex(Kind=real64),dimension(:,:),allocatable::tempC
       Complex(Kind=real64),dimension(:),allocatable::workc
       integer(kind=int64)::iError,nDim1,nDim2
-      integer(kind=int32),dimension(:),allocatable::iPiv
+      integer(kind=MQC_BlasInt),dimension(:),allocatable::iPiv
       real(kind=real64),dimension(:),allocatable::work
 !
 !     Inverse of matrix A.
@@ -27080,13 +27314,19 @@
         allocate(iPiv(min(nDim1,nDim2)),work(min(nDim1,nDim2)))
         iPiv = 0
         iError = 0
-        call dgetrf(nDim1,nDim2,temp,nDim1,iPiv,iError)
+        call mqc_check_blas_integer_kind()
+        call dgetrf(int(nDim1,kind=MQC_BlasInt),int(nDim2,kind=MQC_BlasInt),temp,int(nDim1,kind=MQC_BlasInt),&
+             iPiv,mqcBlasInfo)
+        iError = mqcBlasInfo
         if (iError.gt.0) then 
           call mqc_error_i('Upper triangular matrix is singular', 6, 'iError', iError)
         else if (iError.lt.0) then
           call mqc_error_i('Illegal value in dgetrf matrix', 6, 'iError', iError)
         else
-          call dgetri(NDim1,temp,NDim1,IPIV,Work,NDim1,IError)
+          call mqc_check_blas_integer_kind()
+          call dgetri(int(NDim1,kind=MQC_BlasInt),temp,int(NDim1,kind=MQC_BlasInt),IPIV,Work,&
+               int(NDim1,kind=MQC_BlasInt),mqcBlasInfo)
+          IError = mqcBlasInfo
           if(iError.gt.0) then
             call mqc_error_i('Matrix is not invertable', 6, 'iError', iError)
           else if (iError.lt.0) then
@@ -27105,13 +27345,19 @@
         allocate(iPiv(min(nDim1,nDim2)),workc(min(nDim1,nDim2)))
         iPiv = 0
         iError = 0
-        call zgetrf(nDim1,nDim2,tempc,nDim1,iPiv,iError)
+        call mqc_check_blas_integer_kind()
+        call zgetrf(int(nDim1,kind=MQC_BlasInt),int(nDim2,kind=MQC_BlasInt),tempc,int(nDim1,kind=MQC_BlasInt),&
+             iPiv,mqcBlasInfo)
+        iError = mqcBlasInfo
         if (iError.gt.0) then
           call mqc_error_i('Upper triangular matrix is singular', 6, 'iError', iError)
         else if (iError.lt.0) then
           call mqc_error_i('Illegal value in zgetrf matrix', 6, 'iError', iError)
         else
-          call zgetri(NDim1,tempC,NDim1,IPIV,WorkC,NDim1,IError)
+          call mqc_check_blas_integer_kind()
+          call zgetri(int(NDim1,kind=MQC_BlasInt),tempC,int(NDim1,kind=MQC_BlasInt),IPIV,WorkC,&
+               int(NDim1,kind=MQC_BlasInt),mqcBlasInfo)
+          IError = mqcBlasInfo
           if(iError.gt.0) then
             call mqc_error_i('Matrix is not invertable', 6, 'iError', iError)
           else if(iError.lt.0) then
@@ -27276,6 +27522,7 @@
       subroutine mqc_matrix_generalized_eigensystem(a,bIn,eigenvals,reigenvecs,leigenvecs)
 !
       implicit none
+      integer(kind=MQC_BlasInt)::mqcBlasInfo
       class(mqc_matrix),intent(inOut)::a
       type(mqc_matrix),intent(inOut),optional::bIn
       type(mqc_matrix)::b
@@ -27335,13 +27582,21 @@
         lWork = -1
         allocate(eValsOut(nDim2A),work(1))
         if(present(reigenvecs).or.present(leigenvecs)) then
-          call dsygv(1,'V','L',nDim2A,tempA,nDim1A,tempB,nDim1B,eValsOut,work,lWork,iError)
+          call mqc_check_blas_integer_kind()
+          call dsygv(int(1,kind=MQC_BlasInt),'V','L',int(nDim2A,kind=MQC_BlasInt),tempA,&
+               int(nDim1A,kind=MQC_BlasInt),tempB,int(nDim1B,kind=MQC_BlasInt),eValsOut,work,&
+               int(lWork,kind=MQC_BlasInt),mqcBlasInfo)
+          iError = mqcBlasInfo
           if(iError.ne.0) call mqc_error_i('Failure in SSYGV memory evaluation in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
           lWork = work(1)
           deallocate(work)
           allocate(work(lWork))
-          call dsygv(1,'V','L',nDim2A,tempA,nDim1A,tempB,nDim1B,eValsOut,work,lWork,iError)
+          call mqc_check_blas_integer_kind()
+          call dsygv(int(1,kind=MQC_BlasInt),'V','L',int(nDim2A,kind=MQC_BlasInt),tempA,&
+               int(nDim1A,kind=MQC_BlasInt),tempB,int(nDim1B,kind=MQC_BlasInt),eValsOut,work,&
+               int(lWork,kind=MQC_BlasInt),mqcBlasInfo)
+          iError = mqcBlasInfo
           if(iError.lt.0) call mqc_error_i('Failure in SSYGV routine in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
           if(iError.gt.0) then
@@ -27351,13 +27606,21 @@
             if(present(leigenvecs)) leigenvecs = tempA
           endIf
         else
-          call dsygv(1,'N','L',nDim2A,tempA,nDim1A,tempB,nDim1B,eValsOut,work,lWork,iError)
+          call mqc_check_blas_integer_kind()
+          call dsygv(int(1,kind=MQC_BlasInt),'N','L',int(nDim2A,kind=MQC_BlasInt),tempA,&
+               int(nDim1A,kind=MQC_BlasInt),tempB,int(nDim1B,kind=MQC_BlasInt),eValsOut,work,&
+               int(lWork,kind=MQC_BlasInt),mqcBlasInfo)
+          iError = mqcBlasInfo
           if(iError.ne.0) call mqc_error_i('Failure in SSYGV memory evaluation in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
           lWork = work(1)
           deallocate(work)
           allocate(work(lWork))
-          call dsygv(1,'N','L',nDim2A,tempA,nDim1A,tempB,nDim1B,eValsOut,work,lWork,iError)
+          call mqc_check_blas_integer_kind()
+          call dsygv(int(1,kind=MQC_BlasInt),'N','L',int(nDim2A,kind=MQC_BlasInt),tempA,&
+               int(nDim1A,kind=MQC_BlasInt),tempB,int(nDim1B,kind=MQC_BlasInt),eValsOut,work,&
+               int(lWork,kind=MQC_BlasInt),mqcBlasInfo)
+          iError = mqcBlasInfo
           if(iError.lt.0) call mqc_error_i('Failure in SSYGV routine in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
           if(iError.gt.0) npdFlag = 1
@@ -27380,15 +27643,23 @@
           allocate(eValsReal(nDim2A),eValsImag(NDim2A))
           if(present(reigenvecs).or.present(leigenvecs)) then
             allocate(rightvecs(nDim2A,nDim2A),leftvecs(nDim2A,nDim2A))
-            call dggev('V','V',nDim2A,tempA,nDim1A,tempB,NDim1B,eValsReal,eValsImag,eValsOut,leftvecs,NDim2A, &
-              rightvecs,nDim2A,work,lWork,iError)
+            call mqc_check_blas_integer_kind()
+            call dggev('V','V',int(nDim2A,kind=MQC_BlasInt),tempA,int(nDim1A,kind=MQC_BlasInt),tempB,&
+                 int(NDim1B,kind=MQC_BlasInt),eValsReal,eValsImag,eValsOut,leftvecs,&
+                 int(NDim2A,kind=MQC_BlasInt),rightvecs,int(nDim2A,kind=MQC_BlasInt),work,&
+                 int(lWork,kind=MQC_BlasInt),mqcBlasInfo)
+            iError = mqcBlasInfo
             if(iError.ne.0) call mqc_error_i('Failure in DGGEV memory evaluation in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
             lWork = work(1)
             deallocate(work)
             allocate(work(lWork))
-            call dggev('V','V',nDim2A,tempA,nDim1A,tempB,NDim1B,eValsReal,eValsImag,eValsOut,leftvecs,nDim2A, &
-              rightvecs,nDim2A,work,lWork,iError)
+            call mqc_check_blas_integer_kind()
+            call dggev('V','V',int(nDim2A,kind=MQC_BlasInt),tempA,int(nDim1A,kind=MQC_BlasInt),tempB,&
+                 int(NDim1B,kind=MQC_BlasInt),eValsReal,eValsImag,eValsOut,leftvecs,&
+                 int(nDim2A,kind=MQC_BlasInt),rightvecs,int(nDim2A,kind=MQC_BlasInt),work,&
+                 int(lWork,kind=MQC_BlasInt),mqcBlasInfo)
+            iError = mqcBlasInfo
             if(iError.ne.0) call mqc_error_i('Failure in DGGEV routine in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
             if(present(reigenvecs)) reigenvecs = rightvecs
@@ -27412,15 +27683,21 @@
             endDo
           else
             allocate(leftvecs(1,1),rightvecs(1,1))
-            call dggev('N','N',nDim2A,tempA,nDim1A,tempB,NDim1B,eValsReal,eValsImag,eValsOut,leftvecs,1, &
-              rightvecs,1,work,lWork,iError)
+            call mqc_check_blas_integer_kind()
+            call dggev('N','N',int(nDim2A,kind=MQC_BlasInt),tempA,int(nDim1A,kind=MQC_BlasInt),tempB,&
+                 int(NDim1B,kind=MQC_BlasInt),eValsReal,eValsImag,eValsOut,leftvecs,int(1,kind=MQC_BlasInt),&
+                 rightvecs,int(1,kind=MQC_BlasInt),work,int(lWork,kind=MQC_BlasInt),mqcBlasInfo)
+            iError = mqcBlasInfo
             if(iError.ne.0) call mqc_error_i('Failure in DGGEV memory evaluation in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
             lWork = work(1)
             deallocate(work)
             allocate(work(lwork))
-            call dggev('N','N',nDim2A,tempA,nDim1A,tempB,NDim1B,eValsReal,eValsImag,eValsOut,leftvecs,1, &
-              rightvecs,1,work,lwork,iError)
+            call mqc_check_blas_integer_kind()
+            call dggev('N','N',int(nDim2A,kind=MQC_BlasInt),tempA,int(nDim1A,kind=MQC_BlasInt),tempB,&
+                 int(NDim1B,kind=MQC_BlasInt),eValsReal,eValsImag,eValsOut,leftvecs,int(1,kind=MQC_BlasInt),&
+                 rightvecs,int(1,kind=MQC_BlasInt),work,int(lwork,kind=MQC_BlasInt),mqcBlasInfo)
+            iError = mqcBlasInfo
             if(iError.ne.0) call mqc_error_i('Failure in DGGEV routine in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
           endIf
@@ -27441,30 +27718,42 @@
           allocate(eValsA(nDim2A),eValsB(NDim2A),workC(1),work(8*NDim2A))
           if(present(reigenvecs).or.present(leigenvecs)) then
             allocate(rightCvecs(nDim2A,nDim2A),leftCvecs(nDim2A,nDim2A))
-            call zggev('V','V',nDim2A,tempAC,nDim1A,tempBC,NDim1B,eValsA,eValsB,leftCvecs,nDim2A, &
-              rightCvecs,nDim2A,workC,lWork,work,iError)
+            call mqc_check_blas_integer_kind()
+            call zggev('V','V',int(nDim2A,kind=MQC_BlasInt),tempAC,int(nDim1A,kind=MQC_BlasInt),tempBC,&
+                 int(NDim1B,kind=MQC_BlasInt),eValsA,eValsB,leftCvecs,int(nDim2A,kind=MQC_BlasInt),rightCvecs,&
+                 int(nDim2A,kind=MQC_BlasInt),workC,int(lWork,kind=MQC_BlasInt),work,mqcBlasInfo)
+            iError = mqcBlasInfo
             if(iError.ne.0) call mqc_error_i('Failure in ZGGEV memory evaluation in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
             lWork = workC(1)
             deallocate(workC)
             allocate(workC(lWork))
-            call zggev('V','V',nDim2A,tempAC,nDim1A,tempBC,NDim1B,eValsA,eValsB,leftCvecs,nDim2A, &
-              rightCvecs,nDim2A,workC,lWork,work,iError)
+            call mqc_check_blas_integer_kind()
+            call zggev('V','V',int(nDim2A,kind=MQC_BlasInt),tempAC,int(nDim1A,kind=MQC_BlasInt),tempBC,&
+                 int(NDim1B,kind=MQC_BlasInt),eValsA,eValsB,leftCvecs,int(nDim2A,kind=MQC_BlasInt),rightCvecs,&
+                 int(nDim2A,kind=MQC_BlasInt),workC,int(lWork,kind=MQC_BlasInt),work,mqcBlasInfo)
+            iError = mqcBlasInfo
             if(iError.ne.0) call mqc_error_i('Failure in ZGGEV routine in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
             if(present(reigenvecs)) reigenvecs = rightCvecs
             if(present(leigenvecs)) leigenvecs = leftCvecs
           else
             allocate(rightCvecs(1,1),leftCvecs(1,1))
-            call zggev('N','N',nDim2A,tempAC,nDim1A,tempBC,NDim1B,eValsA,eValsB,leftCvecs,1, &
-              rightCvecs,1,workC,lWork,work,iError)
+            call mqc_check_blas_integer_kind()
+            call zggev('N','N',int(nDim2A,kind=MQC_BlasInt),tempAC,int(nDim1A,kind=MQC_BlasInt),tempBC,&
+                 int(NDim1B,kind=MQC_BlasInt),eValsA,eValsB,leftCvecs,int(1,kind=MQC_BlasInt),rightCvecs,&
+                 int(1,kind=MQC_BlasInt),workC,int(lWork,kind=MQC_BlasInt),work,mqcBlasInfo)
+            iError = mqcBlasInfo
             if(iError.ne.0) call mqc_error_i('Failure in ZGGEV memory evaluation in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
             lWork = workC(1)
             deallocate(workC)
             allocate(workC(lWork))
-            call zggev('N','N',nDim2A,tempAC,nDim1A,tempBC,NDim1B,eValsA,eValsB,leftCvecs,1, &
-              rightCvecs,1,workC,lWork,work,iError)
+            call mqc_check_blas_integer_kind()
+            call zggev('N','N',int(nDim2A,kind=MQC_BlasInt),tempAC,int(nDim1A,kind=MQC_BlasInt),tempBC,&
+                 int(NDim1B,kind=MQC_BlasInt),eValsA,eValsB,leftCvecs,int(1,kind=MQC_BlasInt),rightCvecs,&
+                 int(1,kind=MQC_BlasInt),workC,int(lWork,kind=MQC_BlasInt),work,mqcBlasInfo)
+            iError = mqcBlasInfo
             if(iError.ne.0) call mqc_error_i('Failure in ZGGEV routine in mqc_matrix_generalized_eigensystem', 6, &
                  'iError', iError)
           endIf
@@ -27548,6 +27837,7 @@
       Subroutine MQC_Matrix_SVD(A,EVals,EUVecs,EVVecs)
 !
       Implicit None
+      integer(kind=MQC_BlasInt)::mqcBlasInfo
       Class(MQC_Matrix),Intent(InOut)::A
       Type(MQC_Matrix),Optional,Intent(InOut)::EUVecs
       Type(MQC_Matrix),Optional,Intent(InOut)::EVVecs
@@ -27575,13 +27865,19 @@
         Allocate(A_Temp(NDim1,NDim2),A_SVals(Min(NDim1,NDim2)),A_UVecs(NDim1,NDim1), &
           A_VVecs(NDim2,NDim2),Work(1))
         A_Temp = A
-        Call DGESVD('A','A',NDim1,NDim2,A_Temp,NDim1,A_SVals,A_UVecs,NDim1,A_VVecs, &
-          NDim2,Work,Work_Length,IError)
+        call mqc_check_blas_integer_kind()
+        call DGESVD('A','A',int(NDim1,kind=MQC_BlasInt),int(NDim2,kind=MQC_BlasInt),A_Temp,&
+             int(NDim1,kind=MQC_BlasInt),A_SVals,A_UVecs,int(NDim1,kind=MQC_BlasInt),A_VVecs,&
+             int(NDim2,kind=MQC_BlasInt),Work,int(Work_Length,kind=MQC_BlasInt),mqcBlasInfo)
+        IError = mqcBlasInfo
         Work_Length = Int(Work(1))
         DeAllocate(Work)
         Allocate(Work(Work_Length))
-        Call DGESVD('A','A',NDim1,NDim2,A_Temp,NDim1,A_SVals,A_UVecs,NDim1,A_VVecs, &
-          NDim2,Work,Work_Length,IError)
+        call mqc_check_blas_integer_kind()
+        call DGESVD('A','A',int(NDim1,kind=MQC_BlasInt),int(NDim2,kind=MQC_BlasInt),A_Temp,&
+             int(NDim1,kind=MQC_BlasInt),A_SVals,A_UVecs,int(NDim1,kind=MQC_BlasInt),A_VVecs,&
+             int(NDim2,kind=MQC_BlasInt),Work,int(Work_Length,kind=MQC_BlasInt),mqcBlasInfo)
+        IError = mqcBlasInfo
         If(IError.ne.0) Write(*,1050)' SVD FAILED: IError = ',IError
         DeAllocate(Work)
         Work_Length = -1
@@ -27589,13 +27885,19 @@
         Allocate(AC_Temp(NDim1,NDim2),A_SVals(Min(NDim1,NDim2)),AC_UVecs(NDim1,NDim1), &
           AC_VVecs(NDim2,NDim2),WorkC(1),Work(5*min(NDim1,NDim2)))
         AC_Temp = A
-        Call ZGESVD('A','A',NDim1,NDim2,AC_Temp,NDim1,A_SVals,AC_UVecs,NDim1,AC_VVecs, &
-          NDim2,WorkC,Work_Length,Work,IError)
+        call mqc_check_blas_integer_kind()
+        call ZGESVD('A','A',int(NDim1,kind=MQC_BlasInt),int(NDim2,kind=MQC_BlasInt),AC_Temp,&
+             int(NDim1,kind=MQC_BlasInt),A_SVals,AC_UVecs,int(NDim1,kind=MQC_BlasInt),AC_VVecs,&
+             int(NDim2,kind=MQC_BlasInt),WorkC,int(Work_Length,kind=MQC_BlasInt),Work,mqcBlasInfo)
+        IError = mqcBlasInfo
         Work_Length = Int(WorkC(1))
         DeAllocate(WorkC)
         Allocate(WorkC(Work_Length))
-        Call ZGESVD('A','A',NDim1,NDim2,AC_Temp,NDim1,A_SVals,AC_UVecs,NDim1,AC_VVecs, &
-          NDim2,WorkC,Work_Length,Work,IError)
+        call mqc_check_blas_integer_kind()
+        call ZGESVD('A','A',int(NDim1,kind=MQC_BlasInt),int(NDim2,kind=MQC_BlasInt),AC_Temp,&
+             int(NDim1,kind=MQC_BlasInt),A_SVals,AC_UVecs,int(NDim1,kind=MQC_BlasInt),AC_VVecs,&
+             int(NDim2,kind=MQC_BlasInt),WorkC,int(Work_Length,kind=MQC_BlasInt),Work,mqcBlasInfo)
+        IError = mqcBlasInfo
         If(IError.ne.0) Write(*,1050)' SVD FAILED: IError = ',IError
         DeAllocate(WorkC,Work)
         Work_Length = -1
@@ -33500,6 +33802,8 @@
       Integer(kind=int64)::ia,ib,ic,id,i,j,k
       Integer(kind=int64)::dima,dimb,dimc,dimd
       Integer(kind=int64),dimension(2)::va,vb
+      logical::skipZero
+      type(mqc_scalar)::mbNorm
 
       if(present(inorder)) then
         ia=inorder(1)
@@ -33547,7 +33851,14 @@
         Call MQC_Allocate_Matrix(dimc,dimd,MC,'Integer','StorFull')
       EndIf
 
-      if (dima.eq.0.or.dimb.eq.0) then
+      skipZero = dima.eq.0.or.dimb.eq.0
+      if (.not.skipZero.and.MQC_very_small.ge.0.0) then
+        if (MQC_Matrix_HaveReal(MB).or.MQC_Matrix_HaveComplex(MB)) then
+          mbNorm = MB%norm('M')
+          skipZero = mbNorm.le.MQC_very_small
+        end if
+      end if
+      if (skipZero) then
         if (MQC_R4Tensor_HaveComplex(RA).or.MQC_Matrix_HaveComplex(MB)) then
           call MC%init(dimc,dimd,(0.0,0.0))
         elseif (MQC_R4Tensor_HaveReal(RA).or.MQC_Matrix_HaveReal(MB)) then

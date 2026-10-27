@@ -4,7 +4,8 @@ mqcmoddir = $(prefix)/mod
 MQC_MODULE_FILES = mqc_general.mod mqc_binary.mod \
   mqc_datastructures.mod mqc_files.mod mqc_integrals.mod \
   mqc_algebra.mod mqc_algebra2.mod mqc_molecule.mod mqc_est.mod \
-  mqc_matwrapper.mod mqc_gaussian.mod mqc_fullwavefunction.mod
+  mqc_matwrapper.mod mqc_gaussian.mod mqc_fullwavefunction.mod \
+  mqc_nef.mod
 nodist_mqcmod_DATA = $(MQC_MODULE_FILES)
 MQC_SUBMODULE_FILES = mqc_algebra.smod \
   mqc_algebra@mqc_algebra_iterative.smod

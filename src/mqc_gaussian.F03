@@ -3778,6 +3778,7 @@
       character(len=*),intent(in),optional::filename
       logical,optional::foundObj
       character(len=64)::myLabel
+      character(len=16)::genericSymm
       character(len=256)::my_filename,errorMsg
       integer::nOutputArrays,nBasis,nElectrons,multiplicity
       integer(kind=int64),dimension(:),allocatable::elist
@@ -3846,7 +3847,8 @@
               call mqc_error_l(trim(errorMsg),6,'found',found)
             endIf
           else
-            call mqc_integral_allocate(est_integral,'mo coefficients','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'mo coefficients','space',tmpMatrixAlpha, &
+              symmetry='asymmetric')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('ALPHA MO COEFFICIENTS',tmpMatrixAlpha,foundOut=found)
@@ -3872,7 +3874,8 @@
               endIf
             else
               call mqc_integral_allocate(est_integral,'mo coefficients','spin',tmpMatrixAlpha, &
-                tmpMatrixBeta)
+                tmpMatrixBeta, &
+                symmetry='asymmetric')
             endIf
           endIf
         elseIf(fileinfo%isGeneral()) then
@@ -3895,7 +3898,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'mo coefficients','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='asymmetric')
             call est_integral%setEList(elist)
           endIf
         else
@@ -3988,7 +3992,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_integral,'core hamiltonian','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'core hamiltonian','space',tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('CORE HAMILTONIAN ALPHA',tmpMatrixAlpha,foundOut=found)
@@ -4022,7 +4027,8 @@
 !                tmpMatrixBeta = transpose(tmpMatrixBeta)
 !              endIf
               call mqc_integral_allocate(est_integral,'core hamiltonian','spin',tmpMatrixAlpha, &
-                tmpMatrixBeta)
+                tmpMatrixBeta, &
+                symmetry='hermitian')
             endIf
           endIf
         elseIf(fileinfo%isGeneral()) then
@@ -4048,7 +4054,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'core hamiltonian','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           endIf
         else
           call mqc_error_L('Unknown wavefunction type in getESTObj', 6, &
@@ -4073,7 +4080,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_integral,'fock','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'fock','space',tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('ALPHA FOCK MATRIX',tmpMatrixAlpha,foundOut=found)
@@ -4107,7 +4115,8 @@
 !                tmpMatrixBeta = transpose(tmpMatrixBeta)
 !              endIf
               call mqc_integral_allocate(est_integral,'fock','spin',tmpMatrixAlpha, &
-                tmpMatrixBeta)
+                tmpMatrixBeta, &
+                symmetry='hermitian')
             endIf
           endIf
         elseIf(fileinfo%isGeneral()) then
@@ -4133,7 +4142,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'fock','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           endIf
         else
           call mqc_error_L('Unknown wavefunction type in getESTObj', 6, &
@@ -4158,7 +4168,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_integral,'density','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'density','space',tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('ALPHA DENSITY MATRIX',tmpMatrixAlpha,foundOut=found)
@@ -4192,7 +4203,8 @@
 !                tmpMatrixBeta = transpose(tmpMatrixBeta)
 !              endIf
               call mqc_integral_allocate(est_integral,'density','spin',tmpMatrixAlpha, &
-                tmpMatrixBeta)
+                tmpMatrixBeta, &
+                symmetry='hermitian')
             endIf
           endIf
         elseIf(fileinfo%isGeneral()) then
@@ -4218,7 +4230,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'density','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           endIf
         else
           call mqc_error_L('Unknown wavefunction type in getESTObj', 6, &
@@ -4243,7 +4256,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_integral,'density','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'density','space',tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('ALPHA SCF DENSITY MATRIX',tmpMatrixAlpha,foundOut=found)
@@ -4277,7 +4291,8 @@
 !                tmpMatrixBeta = transpose(tmpMatrixBeta)
 !              endIf
               call mqc_integral_allocate(est_integral,'density','spin',tmpMatrixAlpha, &
-                tmpMatrixBeta)
+                tmpMatrixBeta, &
+                symmetry='hermitian')
             endIf
           endIf
         elseIf(fileinfo%isGeneral()) then
@@ -4303,7 +4318,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'density','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           endIf
         else
           call mqc_error_L('Unknown wavefunction type in getESTObj', 6, &
@@ -4328,7 +4344,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_integral,'overlap','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'overlap','space',tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('OVERLAP',tmpMatrixAlpha,foundOut=found)
@@ -4347,7 +4364,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_integral,'overlap','spin',tmpMatrixAlpha, &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isGeneral()) then
           call fileInfo%getArray('OVERLAP',tmpMatrixAlpha,foundOut=found)
@@ -4372,7 +4390,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'overlap','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           endIf
         else
           call mqc_error_L('Unknown wavefunction type in getESTObj', 6, &
@@ -4397,7 +4416,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_integral,'dipole x','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'dipole x','space',tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('DIPOLE INTEGRALS',tmpMatrixAlpha,foundOut=found)
@@ -4416,7 +4436,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_integral,'dipole x','spin',tmpMatrixAlpha, &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isGeneral()) then
           call fileInfo%getArray('DIPOLE INTEGRALS',tmpMatrixAlpha,foundOut=found)
@@ -4441,7 +4462,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'dipole x','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           endIf
         else
           call mqc_error_L('Unknown wavefunction type in getESTObj', 6, &
@@ -4466,7 +4488,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_integral,'dipole y','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'dipole y','space',tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('DIPOLE INTEGRALS',tmpMatrixAlpha,arrayNum=2,foundOut=found)
@@ -4485,7 +4508,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_integral,'dipole y','spin',tmpMatrixAlpha, &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isGeneral()) then
           call fileInfo%getArray('DIPOLE INTEGRALS',tmpMatrixAlpha,arrayNum=2,foundOut=found)
@@ -4510,7 +4534,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'dipole y','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           endIf
         else
           call mqc_error_L('Unknown wavefunction type in getESTObj', 6, &
@@ -4535,7 +4560,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_integral,'dipole z','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'dipole z','space',tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('DIPOLE INTEGRALS',tmpMatrixAlpha,arrayNum=3,foundOut=found)
@@ -4554,7 +4580,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_integral,'dipole z','spin',tmpMatrixAlpha, &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='hermitian')
           endIf
         elseIf(fileinfo%isGeneral()) then
           call fileInfo%getArray('DIPOLE INTEGRALS',tmpMatrixAlpha,arrayNum=3,foundOut=found)
@@ -4579,7 +4606,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'dipole y','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           endIf
         else
           call mqc_error_L('Unknown wavefunction type in getESTObj', 6, &
@@ -4604,7 +4632,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_integral,'vel dipole x','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'vel dipole x','space',tmpMatrixAlpha, &
+              symmetry='antihermitian')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('DIP VEL INTEGRALS',tmpMatrixAlpha,foundOut=found)
@@ -4623,7 +4652,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_integral,'vel dipole x','spin',tmpMatrixAlpha, &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='antihermitian')
           endIf
         elseIf(fileinfo%isGeneral()) then
           call fileInfo%getArray('DIP VEL INTEGRALS',tmpMatrixAlpha,foundOut=found)
@@ -4648,7 +4678,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'vel dipole x','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='antihermitian')
           endIf
         else
           call mqc_error_L('Unknown wavefunction type in getESTObj', 6, &
@@ -4673,7 +4704,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_integral,'vel dipole y','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'vel dipole y','space',tmpMatrixAlpha, &
+              symmetry='antihermitian')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('DIP VEL INTEGRALS',tmpMatrixAlpha,arrayNum=2,foundOut=found)
@@ -4692,7 +4724,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_integral,'vel dipole y','spin',tmpMatrixAlpha, &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='antihermitian')
           endIf
         elseIf(fileinfo%isGeneral()) then
           call fileInfo%getArray('DIP VEL INTEGRALS',tmpMatrixAlpha,arrayNum=2,foundOut=found)
@@ -4717,7 +4750,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'vel dipole y','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='antihermitian')
           endIf
         else
           call mqc_error_L('Unknown wavefunction type in getESTObj', 6, &
@@ -4742,7 +4776,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_integral,'vel dipole z','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_integral,'vel dipole z','space',tmpMatrixAlpha, &
+              symmetry='antihermitian')
           endIf
         elseIf(fileinfo%isUnrestricted()) then
           call fileInfo%getArray('DIP VEL INTEGRALS',tmpMatrixAlpha,arrayNum=3,foundOut=found)
@@ -4761,7 +4796,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_integral,'vel dipole z','spin',tmpMatrixAlpha, &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='antihermitian')
           endIf
         elseIf(fileinfo%isGeneral()) then
           call fileInfo%getArray('DIP VEL INTEGRALS',tmpMatrixAlpha,arrayNum=3,foundOut=found)
@@ -4786,7 +4822,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_integral,'vel dipole y','general',tmpMatrixAlpha, &
-              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='antihermitian')
           endIf
         else
           call mqc_error_L('Unknown wavefunction type in getESTObj', 6, &
@@ -4804,7 +4841,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_wavefunction%overlap_matrix,'overlap','space', &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='hermitian')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'OVERLAP not present on file - skipping'
@@ -4819,7 +4857,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_wavefunction%core_hamiltonian,'core hamiltonian','space', &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='hermitian')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'CORE HAMILTONIAN ALPHA not present on file - skipping'
@@ -4841,7 +4880,8 @@
           call fileInfo%getArray('ALPHA MO COEFFICIENTS',tmpMatrixAlpha,foundOut=found)
           if(found) then
             call mqc_integral_allocate(est_wavefunction%mo_coefficients,'mo coefficients','space', &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='asymmetric')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'ALPHA MO COEFFICIENTS not present on file - skipping'
@@ -4856,7 +4896,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_wavefunction%density_matrix,'density','space', &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='hermitian')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'ALPHA DENSITY MATRIX not present on file - skipping'
@@ -4871,7 +4912,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_wavefunction%scf_density_matrix,'density','space', &
-              tmpMatrixAlpha)
+              tmpMatrixAlpha, &
+              symmetry='hermitian')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'ALPHA SCF DENSITY MATRIX not present on file - skipping'
@@ -4885,7 +4927,8 @@
 !              call mqc_matrix_symm2full(tmpMatrixAlpha,'hermitian')
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
-            call mqc_integral_allocate(est_wavefunction%fock_matrix,'fock','space',tmpMatrixAlpha)
+            call mqc_integral_allocate(est_wavefunction%fock_matrix,'fock','space',tmpMatrixAlpha, &
+              symmetry='hermitian')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'ALPHA FOCK MATRIX not present on file - skipping'
@@ -4908,7 +4951,8 @@
 !              tmpMatrixAlpha = transpose(tmpMatrixAlpha)
 !            endIf
             call mqc_integral_allocate(est_wavefunction%overlap_matrix,'overlap','spin', &
-              tmpMatrixAlpha,tmpMatrixAlpha)
+              tmpMatrixAlpha,tmpMatrixAlpha, &
+              symmetry='hermitian')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'OVERLAP not present on file - skipping'
@@ -4929,7 +4973,8 @@
 !                tmpMatrixBeta = transpose(tmpMatrixBeta)
 !              endIf
               call mqc_integral_allocate(est_wavefunction%core_hamiltonian,'core hamiltonian','spin', &
-                tmpMatrixAlpha,tmpMatrixBeta)
+                tmpMatrixAlpha,tmpMatrixBeta, &
+                symmetry='hermitian')
             else
               if(present(foundObj)) foundObj = .false.
               write(6,'(A)') 'CORE HAMILTONIAN BETA not present on file - skipping'
@@ -4970,7 +5015,8 @@
             call fileInfo%getArray('BETA MO COEFFICIENTS',tmpMatrixBeta,foundOut=found)
             if(found) then
               call mqc_integral_allocate(est_wavefunction%mo_coefficients,'mo coefficients','spin', &
-                tmpMatrixAlpha,tmpMatrixBeta)
+                tmpMatrixAlpha,tmpMatrixBeta, &
+                symmetry='asymmetric')
             else
               if(present(foundObj)) foundObj = .false.
               write(6,'(A)') 'BETA MO COEFFICIENTS not present on file - skipping'
@@ -4999,7 +5045,8 @@
 !                tmpMatrixBeta = transpose(tmpMatrixBeta)
 !              endIf
               call mqc_integral_allocate(est_wavefunction%density_matrix,'density','spin', &
-                tmpMatrixAlpha,tmpMatrixBeta)
+                tmpMatrixAlpha,tmpMatrixBeta, &
+                symmetry='hermitian')
             else
               if(present(foundObj)) foundObj = .false.
               write(6,'(A)') 'BETA DENSITY MATRIX not present on file - skipping'
@@ -5028,7 +5075,8 @@
 !                tmpMatrixBeta = transpose(tmpMatrixBeta)
 !              endIf
               call mqc_integral_allocate(est_wavefunction%scf_density_matrix,'density','spin', &
-                tmpMatrixAlpha,tmpMatrixBeta)
+                tmpMatrixAlpha,tmpMatrixBeta, &
+                symmetry='hermitian')
             else
               if(present(foundObj)) foundObj = .false.
               write(6,'(A)') 'BETA SCF DENSITY MATRIX not present on file - skipping'
@@ -5057,7 +5105,8 @@
 !                tmpMatrixBeta = transpose(tmpMatrixBeta)
 !              endIf
               call mqc_integral_allocate(est_wavefunction%fock_matrix,'fock','spin',tmpMatrixAlpha, &
-                tmpMatrixBeta)
+                tmpMatrixBeta, &
+                symmetry='hermitian')
             else
               if(present(foundObj)) foundObj = .false.
               write(6,'(A)') 'BETA FOCK MATRIX not present on file - skipping'
@@ -5095,7 +5144,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_wavefunction%overlap_matrix,'overlap','general', &
-              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'OVERLAP not present on file - skipping'
@@ -5116,7 +5166,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_wavefunction%core_hamiltonian,'core hamiltonian','general', &
-              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'CORE HAMILTONIAN ALPHA not present on file - skipping'
@@ -5149,7 +5200,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_wavefunction%mo_coefficients,'mo_coefficients','general', &
-              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='asymmetric')
             call est_wavefunction%mo_coefficients%setEList(elist)
           else
             if(present(foundObj)) foundObj = .false.
@@ -5173,7 +5225,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_wavefunction%density_matrix,'density','general', &
-              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'ALPHA DENSITY MATRIX not present on file - skipping'
@@ -5196,7 +5249,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_wavefunction%scf_density_matrix,'density','general', &
-              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'ALPHA SCF DENSITY MATRIX not present on file - skipping'
@@ -5217,7 +5271,8 @@
             tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
             tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
             call mqc_integral_allocate(est_wavefunction%fock_matrix,'fock','general', &
-              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+              tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+              symmetry='hermitian')
           else
             if(present(foundObj)) foundObj = .false.
             write(6,'(A)') 'ALPHA FOCK MATRIX not present on file - skipping'
@@ -5241,6 +5296,11 @@
         endIf
       case default
         call String_Change_Case(label,'u',myLabel)
+        if(trim(myLabel).eq.'COMPLEX ABSORBING POTENTIAL') then
+          genericSymm = 'hermitian'
+        else
+          genericSymm = 'unknown'
+        endIf
         If(present(est_eigenvalues)) then
           if(fileinfo%isRestricted()) then
             call fileInfo%getArray('ALPHA '//trim(myLabel),vectorOut=tmpVectorAlpha,foundOut=found)
@@ -5321,7 +5381,8 @@
                 call mqc_error_l(trim(errorMsg),6,'found',found)
               endIf
             else
-              call mqc_integral_allocate(est_integral,'','space',tmpMatrixAlpha)
+              call mqc_integral_allocate(est_integral,'','space',tmpMatrixAlpha, &
+                symmetry=genericSymm)
             endIf
           elseIf(fileinfo%isUnrestricted()) then
             call fileInfo%getArray('ALPHA '//trim(myLabel),tmpMatrixAlpha,foundOut=found)
@@ -5347,7 +5408,8 @@
                 endIf
               else
                 call mqc_integral_allocate(est_integral,'','spin',tmpMatrixAlpha, &
-                  tmpMatrixBeta)
+                  tmpMatrixBeta, &
+                  symmetry=genericSymm)
               endIf
             endIf
           elseIf(fileinfo%isGeneral()) then
@@ -5370,7 +5432,8 @@
               tmpMatrixAlphaBeta = tmpMatrixAlpha%mat([nBasis+1,-1],[1,nBasis])
               tmpMatrixAlpha = tmpMatrixAlpha%mat([1,nBasis],[1,nBasis])
               call mqc_integral_allocate(est_integral,'','general',tmpMatrixAlpha, &
-                tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+                tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha, &
+                symmetry=genericSymm)
               call est_integral%setEList(elist)
             endIf
           else

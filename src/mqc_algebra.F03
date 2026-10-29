@@ -289,6 +289,8 @@
         Procedure, Public::mpad => MQC_Matrix_Pad
 !>      \brief <b> Check if all values in a MQC Matrix dimension are zero.</b>
         Procedure, Public::iszero => MQC_Matrix_Check_Zeros
+!>      \brief <b> Returns the symmetry implied by the storage format of the MQC Matrix</b>
+        Procedure, Public::getSymm => MQC_Matrix_Get_Symmetry
       End Type MQC_Matrix
 !
 !>    \brief Abstract Hermitian matrix-free linear operator.
@@ -762,6 +764,15 @@
         Module Procedure MQC_Output_Integer_Scalar
         Module Procedure MQC_Output_Real_Scalar
         Module Procedure MQC_Output_Complex_Scalar
+      End Interface
+!
+!>    \brief <b> Copies an MQC matrix into an intrinsic 2D array; with Unpack = .true. a
+!>    packed or diagonal matrix is returned as the full array (the assignment returns
+!>    the raw storage)</b>
+      Interface MQC_Matrix_To_Array
+        Module Procedure MQC_Matrix_To_IntegerArray
+        Module Procedure MQC_Matrix_To_RealArray
+        Module Procedure MQC_Matrix_To_ComplexArray
       End Interface
 !
 !>    \brief <b> Sums two variables</b>
@@ -17010,23 +17021,47 @@
       Class(MQC_Matrix),Intent(In)::Matrix
       Integer(kind=int64),Intent(In)::Rows,Cols
       Type(MQC_Matrix)::MatrixOut
-
-      if (Rows.le.Matrix%NRow) then
-        if (Cols.le.Matrix%NCol) then
-          MatrixOut = Matrix
-          return
-        else
-          call MatrixOut%init(Matrix%NRow,Cols)
-        end if
+      Integer(kind=int64)::newRows,newCols,nOld
+!
+!     The padded matrix keeps the data type of Matrix (the new elements are zero). A
+!     square packed or diagonal matrix padded to a square size keeps its storage: the
+!     stored lower triangle (or diagonal) is followed by zeros.
+      newRows = max(Rows,Matrix%NRow)
+      newCols = max(Cols,Matrix%NCol)
+      if(newRows.eq.Matrix%NRow.and.newCols.eq.Matrix%NCol) then
+        MatrixOut = Matrix
+      elseIf(Matrix%Storage.ne.'StorFull'.and.Matrix%NRow.eq.Matrix%NCol.and.newRows.eq.newCols) then
+        call MQC_Allocate_Matrix(newRows,newCols,MatrixOut,Matrix%Data_Type,Matrix%Storage)
+        select case (Matrix%Data_Type)
+        case('Integer')
+          nOld = size(Matrix%MatI,1)
+          MatrixOut%MatI = 0
+          MatrixOut%MatI(1:nOld,1) = Matrix%MatI(:,1)
+        case('Real')
+          nOld = size(Matrix%MatR,1)
+          MatrixOut%MatR = 0.0
+          MatrixOut%MatR(1:nOld,1) = Matrix%MatR(:,1)
+        case('Complex')
+          nOld = size(Matrix%MatC,1)
+          MatrixOut%MatC = (0.0,0.0)
+          MatrixOut%MatC(1:nOld,1) = Matrix%MatC(:,1)
+        case default
+          call mqc_error_a('Unknown data type in MQC_Matrix_Pad',6,'Matrix%Data_Type',Matrix%Data_Type)
+        end select
       else
-        if (Cols.le.Matrix%NCol) then
-          call MatrixOut%init(Rows,Matrix%NCol)
-        else
-          call MatrixOut%init(Rows,Cols)
-        end if
+        select case (Matrix%Data_Type)
+        case('Integer')
+          call MatrixOut%init(newRows,newCols,0)
+        case('Real')
+          call MatrixOut%init(newRows,newCols,0.0)
+        case('Complex')
+          call MatrixOut%init(newRows,newCols,(0.0,0.0))
+        case default
+          call mqc_error_a('Unknown data type in MQC_Matrix_Pad',6,'Matrix%Data_Type',Matrix%Data_Type)
+        end select
+        if(Matrix%NRow.gt.0.and.Matrix%NCol.gt.0) &
+          call MatrixOut%mput(Matrix,[1,Matrix%NRow],[1,Matrix%NCol])
       end if
-      if(Matrix%NRow.gt.0.and.Matrix%NCol.gt.0) &
-        call MatrixOut%mput(Matrix,[1,Matrix%NRow],[1,Matrix%NCol])
 !
       end function MQC_Matrix_Pad
 !
@@ -17351,8 +17386,7 @@
 !
       implicit none
       type(mqc_matrix),intent(in)::A,B
-      type(mqc_matrix)::C
-      integer(kind=int64)::i,j
+      type(mqc_matrix)::C,Af,Bf
 
       if (A%NRow .ne. B%NRow .or. A%NCol .ne. B%NCol) then
         call mqc_error_I('The two matrices must have the same dimensions in MQC_elementMatrixProduct', 6, &
@@ -17361,6 +17395,46 @@
              'A%NCol', A%NCol, &
              'B%NCol', B%NCol )
       endif
+!
+!     Mixed or packed (anti-)Hermitian storages are multiplied on full copies.
+      if(.not.((A%storage.eq.'StorFull'.and.B%storage.eq.'StorFull').or. &
+        (A%storage.eq.'StorDiag'.and.B%storage.eq.'StorDiag'))) then
+        Af = A
+        Bf = B
+        if(Af%storage.eq.'StorDiag') then
+          call MQC_Matrix_Diag2Full(Af)
+        elseIf(Af%storage.ne.'StorFull') then
+          call MQC_Matrix_Symm2Full(Af)
+        endIf
+        if(Bf%storage.eq.'StorDiag') then
+          call MQC_Matrix_Diag2Full(Bf)
+        elseIf(Bf%storage.ne.'StorFull') then
+          call MQC_Matrix_Symm2Full(Bf)
+        endIf
+        C = MQC_ElementMatrixProduct_Stored(Af,Bf)
+      else
+        C = MQC_ElementMatrixProduct_Stored(A,B)
+      endIf
+!
+      end function MQC_elementMatrixProduct
+!
+!
+!     PROCEDURE MQC_ElementMatrixProduct_Stored
+!
+!>    \brief <b> MQC_ElementMatrixProduct_Stored does the work of MQC_ElementMatrixProduct for two matrices
+!>    that are both full or both diagonal (called by MQC_ElementMatrixProduct)</b>
+!
+!     Authors:
+!     ========
+!>    \author X. Sheng, M. M. F. Moraes
+!>    \date 2017, 2026
+!
+      Function MQC_ElementMatrixProduct_Stored(A,B) Result(C)
+!
+      implicit none
+      type(mqc_matrix),intent(in)::A,B
+      type(mqc_matrix)::C
+      integer(kind=int64)::i,j
 
       if (A%data_type .eq. 'Integer') then
         if (B%data_type .eq. 'Integer') then
@@ -18572,7 +18646,7 @@
         endif
       endif
 
-      end function MQC_elementMatrixProduct
+      end function MQC_ElementMatrixProduct_Stored
 !
 !
 !     PROCEDURE MQC_ElementMatrixDivide
@@ -18613,8 +18687,7 @@
 !
       implicit none
       type(mqc_matrix),intent(in)::A,B
-      type(mqc_matrix)::C,Tmp1
-      integer(kind=int64)::i,j
+      type(mqc_matrix)::C,Af,Bf
 
       if (A%NRow .ne. B%NRow .or. A%NCol .ne. B%NCol) then
         call mqc_error_I('The two matrices must have the same dimensions in MQC_elementMatrixDivide', 6, &
@@ -18623,6 +18696,46 @@
              'A%NCol', A%NCol, &
              'B%NCol', B%NCol )
       endif
+!
+!     Mixed or packed storages are divided on full copies.
+      if(.not.((A%storage.eq.'StorFull'.and.B%storage.eq.'StorFull').or. &
+        (A%storage.eq.'StorDiag'.and.B%storage.eq.'StorDiag'))) then
+        Af = A
+        Bf = B
+        if(Af%storage.eq.'StorDiag') then
+          call MQC_Matrix_Diag2Full(Af)
+        elseIf(Af%storage.ne.'StorFull') then
+          call MQC_Matrix_Symm2Full(Af)
+        endIf
+        if(Bf%storage.eq.'StorDiag') then
+          call MQC_Matrix_Diag2Full(Bf)
+        elseIf(Bf%storage.ne.'StorFull') then
+          call MQC_Matrix_Symm2Full(Bf)
+        endIf
+        C = MQC_ElementMatrixDivide_Stored(Af,Bf)
+      else
+        C = MQC_ElementMatrixDivide_Stored(A,B)
+      endIf
+!
+      end function MQC_elementMatrixDivide
+!
+!
+!     PROCEDURE MQC_ElementMatrixDivide_Stored
+!
+!>    \brief <b> MQC_ElementMatrixDivide_Stored does the work of MQC_ElementMatrixDivide for two matrices
+!>    that are both full or both diagonal (called by MQC_ElementMatrixDivide)</b>
+!
+!     Authors:
+!     ========
+!>    \author X. Sheng, M. M. F. Moraes
+!>    \date 2017, 2026
+!
+      Function MQC_ElementMatrixDivide_Stored(A,B) Result(C)
+!
+      implicit none
+      type(mqc_matrix),intent(in)::A,B
+      type(mqc_matrix)::C,Tmp1
+      integer(kind=int64)::i,j
 
       if (A%data_type .eq. 'Integer') then
         if (B%data_type .eq. 'Integer') then
@@ -19700,7 +19813,7 @@
         endif
       endif
 
-      end function MQC_elementMatrixDivide
+      end function MQC_ElementMatrixDivide_Stored
 !
 !
 !     PROCEDURE MQC_ElementMatrixPower
@@ -19737,12 +19850,12 @@
 !>    \author L. M. Thompson
 !>    \date 2021
 !
-      Function MQC_ElementMatrixPower(A,P) Result(C)
+      Recursive Function MQC_ElementMatrixPower(A,P) Result(C)
 !
       implicit none
       type(mqc_matrix),intent(in)::A
       class(*),intent(in)::P
-      type(mqc_matrix)::C
+      type(mqc_matrix)::C,Af
       type(mqc_scalar)::Psca
       integer(kind=int64)::i,j
 
@@ -19759,50 +19872,58 @@
         call mqc_error_I('P type not defined in MQC_ElementMatrixPower',6)
       end select
 
-      C = A
+!
+!     An element-wise power of an antisymmetric or anti-Hermitian packed matrix does
+!     not keep its storage (even powers are symmetric): work on a full copy.
+      if(A%storage.eq.'StorAsym'.or.A%storage.eq.'StorAhrm') then
+        Af = A
+        call MQC_Matrix_Symm2Full(Af)
+        C = MQC_ElementMatrixPower(Af,Psca)
+      else
+        C = A
 
-      select case (A%data_type)
-      case('Integer')
-        select case (Psca%data_type)
+        select case (A%data_type)
         case('Integer')
-          C%MatI = C%MatI**Psca%ScaI
+          select case (Psca%data_type)
+          case('Integer')
+            C%MatI = C%MatI**Psca%ScaI
+          case('Real')
+            C%MatI = C%MatI**Psca%ScaR
+          case('Complex')
+            C%MatI = C%MatI**Psca%ScaC
+          case default
+            call mqc_error_a('Unrecognized data type of scalar Psca in MQC_ElementMatrixPower',6,'Psca%data_type',&
+              Psca%data_type)
+          end select
         case('Real')
-          C%MatI = C%MatI**Psca%ScaR
+          select case (Psca%data_type)
+          case('Integer')
+            C%MatR = C%MatR**Psca%ScaI
+          case('Real')
+            C%MatR = C%MatR**Psca%ScaR
+          case('Complex')
+            C%MatR = C%MatR**Psca%ScaC
+          case default
+            call mqc_error_a('Unrecognized data type of scalar Psca in MQC_ElementMatrixPower',6,'Psca%data_type',&
+              Psca%data_type)
+          end select
         case('Complex')
-          C%MatI = C%MatI**Psca%ScaC
+          select case (Psca%data_type)
+          case('Integer')
+            C%MatC = C%MatC**Psca%ScaI
+          case('Real')
+            C%MatC = C%MatC**Psca%ScaR
+          case('Complex')
+            C%MatC = C%MatC**Psca%ScaC
+          case default
+            call mqc_error_a('Unrecognized data type of scalar Psca in MQC_ElementMatrixPower',6,'Psca%data_type',&
+              Psca%data_type)
+          end select
         case default
-          call mqc_error_a('Unrecognized data type of scalar Psca in MQC_ElementMatrixPower',6,'Psca%data_type',&
-            Psca%data_type)
+          call mqc_error_a('Unrecognized data type of matrix A in MQC_ElementMatrixPower',6,'A%data_type',&
+            A%data_type)
         end select
-      case('Real')
-        select case (Psca%data_type)
-        case('Integer')
-          C%MatR = C%MatR**Psca%ScaI
-        case('Real')
-          C%MatR = C%MatR**Psca%ScaR
-        case('Complex')
-          C%MatR = C%MatR**Psca%ScaC
-        case default
-          call mqc_error_a('Unrecognized data type of scalar Psca in MQC_ElementMatrixPower',6,'Psca%data_type',&
-            Psca%data_type)
-        end select
-      case('Complex')
-        select case (Psca%data_type)
-        case('Integer')
-          C%MatC = C%MatC**Psca%ScaI
-        case('Real')
-          C%MatC = C%MatC**Psca%ScaR
-        case('Complex')
-          C%MatC = C%MatC**Psca%ScaC
-        case default
-          call mqc_error_a('Unrecognized data type of scalar Psca in MQC_ElementMatrixPower',6,'Psca%data_type',&
-            Psca%data_type)
-        end select
-      case default
-        call mqc_error_a('Unrecognized data type of matrix A in MQC_ElementMatrixPower',6,'A%data_type',&
-          A%data_type)
-      end select
-
+      endIf
       End Function MQC_ElementMatrixPower
 !
 !     PROCEDURE MQC_Matrix_Test_Symmetric
@@ -20001,31 +20122,10 @@
             EndIf
           EndIf
           If(Matrix%Storage.eq.'StorDiag') then
-            Do I = 1, MQC_Matrix_Rows(Matrix)
-              If(Matrix%Data_Type.eq.'Integer') then
-                If(Matrix%MatI(I,1).ne.0) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              ElseIf(Matrix%Data_Type.eq.'Real') then
-                If(abs(Matrix%MatR(I,1)).gt.Thresh) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              ElseIf(Matrix%Data_Type.eq.'Complex') then
-                If((abs(Real(Matrix%MatC(I,1))).gt.Thresh) .or. &
-                  (abs(Aimag(Matrix%MatC(I,1))).gt.Thresh)) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              Else
-                Call MQC_Error_A('Unrecognised data type in mqc_matrix_test_symmetric', 6, &
-                     'Matrix%Data_Type', Matrix%Data_Type )
-              EndIf
-            EndDo
+            Return
           ElseIf(Matrix%Storage.eq.'StorSymm') then
             Do I = 1, MQC_Matrix_Rows(Matrix)
-              Do J = 1, I
+              Do J = 1, I-1
                 If(Matrix%Data_Type.eq.'Integer') then
                   If(Matrix%MatI(symIndexHash(I,J),1).ne.0) then
                     Symmetric = .False.
@@ -20049,28 +20149,7 @@
               EndDo
             EndDo
           ElseIf(Matrix%Storage.eq.'StorAsym') then
-            Do I = 1, MQC_Matrix_Rows(Matrix)
-              If(Matrix%Data_Type.eq.'Integer') then
-                If(Matrix%MatI(symIndexHash(I,I),1).ne.0) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              ElseIf(Matrix%Data_Type.eq.'Real') then
-                If(abs(Matrix%MatR(symIndexHash(I,I),1)).gt.Thresh) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              ElseIf(Matrix%Data_Type.eq.'Complex') then
-                If((abs(Real(Matrix%MatC(symIndexHash(I,I),1))).gt.Thresh) .or. &
-                  (abs(Aimag(Matrix%MatC(symIndexHash(I,I),1))).gt.Thresh)) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              Else
-                Call MQC_Error_A('Unrecognised data type in mqc_matrix_test_symmetric', 6, &
-                     'Matrix%Data_Type', Matrix%Data_Type )
-              EndIf
-            EndDo
+            Return
           ElseIf(Matrix%Storage.eq.'StorHerm') then
             Do I = 1, MQC_Matrix_Rows(Matrix)
               Do J = 1, I-1
@@ -20080,7 +20159,7 @@
                     Return
                   EndIf
                 ElseIf(Matrix%Data_Type.eq.'Real') then
-                  If(Matrix%MatR(symIndexHash(I,J),1).gt.Thresh) then
+                  If(abs(Matrix%MatR(symIndexHash(I,J),1)).gt.Thresh) then
                     Symmetric = .False.
                     Return
                   EndIf
@@ -20096,34 +20175,23 @@
               EndDo
             EndDo
           ElseIf(Matrix%Storage.eq.'StorAhrm') then
-            Do I = 1, MQC_Matrix_Rows(Matrix)
-              If(Matrix%Data_Type.eq.'Integer') then
-                If(Matrix%MatI(symIndexHash(I,I),1).ne.0) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              ElseIf(Matrix%Data_Type.eq.'Real') then
-                If(Matrix%MatR(symIndexHash(I,I),1).gt.Thresh) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              ElseIf(Matrix%Data_Type.eq.'Complex') then
-                If((abs(Real(Matrix%MatC(symIndexHash(I,I),1))).gt.Thresh) .or. &
-                  (abs(Aimag(Matrix%MatC(symIndexHash(I,I),1))).gt.Thresh)) then
-                  Symmetric = .False.
-                  Return
-                EndIf
+!           The upper triangle is -conjg(lower): antisymmetric when the off-diagonal
+!           elements are real (always for real or integer data).
+            If(Matrix%Data_Type.eq.'Integer'.or.Matrix%Data_Type.eq.'Real') then
+              Return
+            ElseIf(Matrix%Data_Type.eq.'Complex') then
+              Do I = 1, MQC_Matrix_Rows(Matrix)
                 Do J = 1, I-1
-                  If(abs(Real(Matrix%MatC(symIndexHash(I,J),1))).gt.Thresh) then
+                  If(abs(Aimag(Matrix%MatC(symIndexHash(I,J),1))).gt.Thresh) then
                     Symmetric = .False.
                     Return
                   EndIf
                 EndDo
-              Else
-                Call MQC_Error_A('Unrecognised data type in mqc_matrix_test_symmetric', 6, &
-                     'Matrix%Data_Type', Matrix%Data_Type )
-              EndIf
-            EndDo
+              EndDo
+            Else
+              Call MQC_Error_A('Unrecognised data type in mqc_matrix_test_symmetric', 6, &
+                   'Matrix%Data_Type', Matrix%Data_Type )
+            EndIf
           ElseIf(Matrix%Storage.eq.'StorFull') then
             Do I = 1, MQC_Matrix_Rows(Matrix)
               Do J = 1, I-1
@@ -20165,19 +20233,7 @@
             EndIf
           EndIf
           If(Matrix%Storage.eq.'StorDiag') then
-            If(Matrix%Data_Type.eq.'Integer'.or.Matrix%Data_Type.eq.'Real') then
-              return
-            ElseIf(Matrix%Data_Type.eq.'Complex') then
-              Do I = 1, MQC_Matrix_Rows(Matrix)
-                If(abs(Aimag(Matrix%MatC(I,1))).gt.Thresh) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              EndDo
-            Else
-              Call MQC_Error_A('Unrecognised data type in mqc_matrix_test_symmetric', 6, &
-                   'Matrix%Data_Type', Matrix%Data_Type )
-            EndIf
+            Return
           ElseIf(Matrix%Storage.eq.'StorSymm') then
             If(Matrix%Data_Type.eq.'Integer'.or.Matrix%Data_Type.eq.'Real') then
               return
@@ -20318,27 +20374,7 @@
             EndIf
           EndIf
           If(Matrix%Storage.eq.'StorDiag') then
-            Do I = 1, MQC_Matrix_Rows(Matrix)
-              If(Matrix%Data_Type.eq.'Integer') then
-                If(Matrix%MatI(I,1).ne.0) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              ElseIf(Matrix%Data_Type.eq.'Real') then
-                If(abs(Matrix%MatR(I,1)).gt.Thresh) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              ElseIf(Matrix%Data_Type.eq.'Complex') then
-                If(abs(Real(Matrix%MatC(I,1))).gt.Thresh) then
-                  Symmetric = .False.
-                  Return
-                EndIf
-              Else
-                Call MQC_Error_A('Unrecognised data type in mqc_matrix_test_symmetric', 6, &
-                     'Matrix%Data_Type', Matrix%Data_Type )
-              EndIf
-            EndDo
+            Return
           ElseIf(Matrix%Storage.eq.'StorSymm') then
             Do I = 1, MQC_Matrix_Rows(Matrix)
               Do J = 1, I
@@ -20494,6 +20530,187 @@
 
       Return
       End Function MQC_Matrix_Test_Symmetric
+!
+!
+!     PROCEDURE MQC_Matrix_Test_Pair_Symmetric
+!
+!>    \brief <b> MQC_Matrix_Test_Pair_Symmetric tests if two MQC matrices are related
+!>    by a symmetry operation</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Matrix_Test_Pair_Symmetric tests if MatrixA = op(MatrixB), element by element,
+!>    returning at the first failure. This is the test for the off-diagonal blocks
+!>    of a matrix built from blocks, [[X, A],[B, Y]]. The following options are
+!>    available:
+!>
+!>    1. Option = 'any' tests all symmetries (default).
+!>    2. Option = 'symmetric' tests A = transpose(B).
+!>    3. Option = 'antisymmetric' tests A = -transpose(B).
+!>    4. Option = 'hermitian' tests A = dagger(B).
+!>    5. Option = 'antihermitian' tests A = -dagger(B).
+!>
+!>    An unallocated matrix is zero: if only one of the two is allocated it must be
+!>    zero. The threshold is MQC_very_small when it is positive, and 1e-10 otherwise.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] MatrixA
+!>    \verbatim
+!>        MatrixA is Class(mqc_matrix)
+!>        The first matrix of the pair.
+!>    \endverbatim
+!>
+!>    \param[in] MatrixB
+!>    \verbatim
+!>        MatrixB is Class(mqc_matrix)
+!>        The second matrix of the pair.
+!>    \endverbatim
+!>
+!>    \param[in] Option
+!>    \verbatim
+!>        Option is Character(len=*),Optional
+!>        = 'any':           test all symmetries
+!>        = 'symmetric':     A = transpose(B)
+!>        = 'antisymmetric': A = -transpose(B)
+!>        = 'hermitian':     A = dagger(B)
+!>        = 'antihermitian': A = -dagger(B)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      recursive Function MQC_Matrix_Test_Pair_Symmetric(MatrixA,MatrixB,Option) Result(Symmetric)
+!
+      Implicit None
+      Class(MQC_Matrix),Intent(In)::MatrixA,MatrixB
+      Character(len=*),Optional,Intent(In)::Option
+      Logical::Symmetric,haveA,haveB,doConjg
+      Type(MQC_Matrix)::Af,Bf
+      Real(kind=real64)::Thresh,Sgn
+      Character(len=64)::myOption
+!
+      If(Present(Option)) then
+        call string_change_case(Option,'l',myOption)
+      else
+        myOption = 'any'
+      endIf
+      If(MQC_very_small.gt.0.0) then
+        Thresh = MQC_very_small
+      Else
+        Thresh = 1e-10
+      EndIf
+      Symmetric = .True.
+      Select Case (myOption)
+      Case ('symmetric','antisymmetric','hermitian','antihermitian')
+        If(myOption.eq.'antisymmetric'.or.myOption.eq.'antihermitian') then
+          Sgn = -1.0
+        Else
+          Sgn = 1.0
+        EndIf
+        doConjg = myOption.eq.'hermitian'.or.myOption.eq.'antihermitian'
+        haveA = MQC_Matrix_isAllocated(MatrixA)
+        haveB = MQC_Matrix_isAllocated(MatrixB)
+        If(haveA.and.haveB) then
+          If(MQC_Matrix_Rows(MatrixA).ne.MQC_Matrix_Columns(MatrixB).or. &
+            MQC_Matrix_Columns(MatrixA).ne.MQC_Matrix_Rows(MatrixB)) then
+            Symmetric = .False.
+          Else
+            Af = MatrixA
+            Bf = MatrixB
+            Call toFull(Af)
+            Call toFull(Bf)
+            Symmetric = pairTest(Af,Bf)
+          EndIf
+        ElseIf(haveA) then
+          Af = MatrixA
+          Call toFull(Af)
+          Symmetric = zeroTest(Af)
+        ElseIf(haveB) then
+          Bf = MatrixB
+          Call toFull(Bf)
+          Symmetric = zeroTest(Bf)
+        EndIf
+      Case ('any')
+        Symmetric = MQC_Matrix_Test_Pair_Symmetric(MatrixA,MatrixB,'symmetric').or. &
+          MQC_Matrix_Test_Pair_Symmetric(MatrixA,MatrixB,'antisymmetric').or. &
+          MQC_Matrix_Test_Pair_Symmetric(MatrixA,MatrixB,'hermitian').or. &
+          MQC_Matrix_Test_Pair_Symmetric(MatrixA,MatrixB,'antihermitian')
+      Case Default
+        Call MQC_Error_A('Invalid option sent to mqc_matrix_test_pair_symmetric', 6, &
+             'myOption', myOption )
+      End Select
+!
+      Contains
+!
+        Subroutine toFull(M)
+        Type(MQC_Matrix),Intent(InOut)::M
+        If(M%Storage.eq.'StorDiag') then
+          Call MQC_Matrix_Diag2Full(M)
+        ElseIf(M%Storage.ne.'StorFull') then
+          Call MQC_Matrix_Symm2Full(M)
+        EndIf
+        End Subroutine toFull
+!
+        Function elem(M,I,J) Result(Z)
+        Type(MQC_Matrix),Intent(In)::M
+        Integer(kind=int64),Intent(In)::I,J
+        Complex(kind=real64)::Z
+        If(M%Data_Type.eq.'Complex') then
+          Z = M%MatC(I,J)
+        ElseIf(M%Data_Type.eq.'Real') then
+          Z = cmplx(M%MatR(I,J),0.0,kind=real64)
+        Else
+          Z = cmplx(real(M%MatI(I,J),kind=real64),0.0,kind=real64)
+        EndIf
+        End Function elem
+!
+        Function pairTest(A,B) Result(Pass)
+        Type(MQC_Matrix),Intent(In)::A,B
+        Logical::Pass
+        Integer(kind=int64)::I,J
+        Complex(kind=real64)::Z
+        Pass = .True.
+        Do J = 1, MQC_Matrix_Columns(A)
+          Do I = 1, MQC_Matrix_Rows(A)
+            Z = elem(B,J,I)
+            If(doConjg) Z = conjg(Z)
+            Z = elem(A,I,J) - Sgn*Z
+            If(abs(Real(Z)).gt.Thresh.or.abs(Aimag(Z)).gt.Thresh) then
+              Pass = .False.
+              Exit
+            EndIf
+          EndDo
+          If(.not.Pass) Exit
+        EndDo
+        End Function pairTest
+!
+        Function zeroTest(A) Result(Pass)
+        Type(MQC_Matrix),Intent(In)::A
+        Logical::Pass
+        Integer(kind=int64)::I,J
+        Complex(kind=real64)::Z
+        Pass = .True.
+        Do J = 1, MQC_Matrix_Columns(A)
+          Do I = 1, MQC_Matrix_Rows(A)
+            Z = elem(A,I,J)
+            If(abs(Real(Z)).gt.Thresh.or.abs(Aimag(Z)).gt.Thresh) then
+              Pass = .False.
+              Exit
+            EndIf
+          EndDo
+          If(.not.Pass) Exit
+        EndDo
+        End Function zeroTest
+!
+      End Function MQC_Matrix_Test_Pair_Symmetric
 !
 !
 !     PROCEDURE MQC_Matrix_Test_Diagonal
@@ -20743,6 +20960,13 @@
         Matrix%Data_Type = 'Complex'
         If(Allocated(Matrix%MatC)) DeAllocate(Matrix%MatC)
         Allocate(Matrix%MatC(MCur,NCur))
+      EndIf
+!
+!     A real or integer symmetric (antisymmetric) matrix is also Hermitian
+!     (anti-Hermitian): StorSymm and StorAsym are only used for complex data.
+      If(Matrix%Data_Type.ne.'Complex') then
+        If(Matrix%Storage.eq.'StorSymm') Matrix%Storage = 'StorHerm'
+        If(Matrix%Storage.eq.'StorAsym') Matrix%Storage = 'StorAhrm'
       EndIf
 
       Matrix%NRow = M
@@ -21275,6 +21499,219 @@
       End Subroutine MQC_Set_Matrix2ComplexArray
 !
 !
+!     PROCEDURE MQC_Matrix_To_IntegerArray
+!
+!>    \brief <b> MQC_Matrix_To_IntegerArray copies an MQC matrix into an intrinsic 2D
+!>    array, optionally unpacking it</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Without Unpack (or with Unpack = .false.) this is the assignment ArrayOut =
+!>    MatrixIn, which returns the raw storage (e.g. the packed lower triangle as an
+!>    n(n+1)/2 x 1 array). With Unpack = .true. a packed or diagonal matrix is
+!>    returned as the full rows x columns array.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] ArrayOut
+!>    \verbatim
+!>        ArrayOut is Integer(kind=int64),Dimension(:,:),Allocatable
+!>        The output array.
+!>    \endverbatim
+!>
+!>    \param[in] MatrixIn
+!>    \verbatim
+!>        MatrixIn is Type(MQC_Matrix)
+!>        The matrix to copy.
+!>    \endverbatim
+!>
+!>    \param[in] Unpack
+!>    \verbatim
+!>        Unpack is Logical,Optional
+!>        If .true., return the full array. The default is .false.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_Matrix_To_IntegerArray(ArrayOut,MatrixIn,Unpack)
+!
+!     Variable Declarations.
+      Implicit None
+      Integer(kind=int64),Dimension(:,:),Allocatable,Intent(InOut)::ArrayOut
+      Type(MQC_Matrix),Intent(In)::MatrixIn
+      Logical,Optional,Intent(In)::Unpack
+      Type(MQC_Matrix)::Mf
+      Logical::myUnpack
+!
+      myUnpack = .false.
+      If(Present(Unpack)) myUnpack = Unpack
+      If(myUnpack.and.(MatrixIn%Storage.eq.'StorDiag'.or.MatrixIn%Storage.eq.'StorSymm'.or. &
+        MatrixIn%Storage.eq.'StorAsym'.or.MatrixIn%Storage.eq.'StorHerm'.or. &
+        MatrixIn%Storage.eq.'StorAhrm')) then
+        Mf = MatrixIn
+        If(Mf%Storage.eq.'StorDiag') then
+          Call MQC_Matrix_Diag2Full(Mf)
+        Else
+          Call MQC_Matrix_Symm2Full(Mf)
+        EndIf
+        Call MQC_Set_Matrix2IntegerArray(ArrayOut,Mf)
+      Else
+        Call MQC_Set_Matrix2IntegerArray(ArrayOut,MatrixIn)
+      EndIf
+!
+      End Subroutine MQC_Matrix_To_IntegerArray
+!
+!
+!     PROCEDURE MQC_Matrix_To_RealArray
+!
+!>    \brief <b> MQC_Matrix_To_RealArray copies an MQC matrix into an intrinsic 2D
+!>    array, optionally unpacking it</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Without Unpack (or with Unpack = .false.) this is the assignment ArrayOut =
+!>    MatrixIn, which returns the raw storage (e.g. the packed lower triangle as an
+!>    n(n+1)/2 x 1 array). With Unpack = .true. a packed or diagonal matrix is
+!>    returned as the full rows x columns array.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] ArrayOut
+!>    \verbatim
+!>        ArrayOut is Real(kind=real64),Dimension(:,:),Allocatable
+!>        The output array.
+!>    \endverbatim
+!>
+!>    \param[in] MatrixIn
+!>    \verbatim
+!>        MatrixIn is Type(MQC_Matrix)
+!>        The matrix to copy.
+!>    \endverbatim
+!>
+!>    \param[in] Unpack
+!>    \verbatim
+!>        Unpack is Logical,Optional
+!>        If .true., return the full array. The default is .false.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_Matrix_To_RealArray(ArrayOut,MatrixIn,Unpack)
+!
+!     Variable Declarations.
+      Implicit None
+      Real(kind=real64),Dimension(:,:),Allocatable,Intent(InOut)::ArrayOut
+      Type(MQC_Matrix),Intent(In)::MatrixIn
+      Logical,Optional,Intent(In)::Unpack
+      Type(MQC_Matrix)::Mf
+      Logical::myUnpack
+!
+      myUnpack = .false.
+      If(Present(Unpack)) myUnpack = Unpack
+      If(myUnpack.and.(MatrixIn%Storage.eq.'StorDiag'.or.MatrixIn%Storage.eq.'StorSymm'.or. &
+        MatrixIn%Storage.eq.'StorAsym'.or.MatrixIn%Storage.eq.'StorHerm'.or. &
+        MatrixIn%Storage.eq.'StorAhrm')) then
+        Mf = MatrixIn
+        If(Mf%Storage.eq.'StorDiag') then
+          Call MQC_Matrix_Diag2Full(Mf)
+        Else
+          Call MQC_Matrix_Symm2Full(Mf)
+        EndIf
+        Call MQC_Set_Matrix2RealArray(ArrayOut,Mf)
+      Else
+        Call MQC_Set_Matrix2RealArray(ArrayOut,MatrixIn)
+      EndIf
+!
+      End Subroutine MQC_Matrix_To_RealArray
+!
+!
+!     PROCEDURE MQC_Matrix_To_ComplexArray
+!
+!>    \brief <b> MQC_Matrix_To_ComplexArray copies an MQC matrix into an intrinsic 2D
+!>    array, optionally unpacking it</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Without Unpack (or with Unpack = .false.) this is the assignment ArrayOut =
+!>    MatrixIn, which returns the raw storage (e.g. the packed lower triangle as an
+!>    n(n+1)/2 x 1 array). With Unpack = .true. a packed or diagonal matrix is
+!>    returned as the full rows x columns array.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] ArrayOut
+!>    \verbatim
+!>        ArrayOut is Complex(Kind=real64),Dimension(:,:),Allocatable
+!>        The output array.
+!>    \endverbatim
+!>
+!>    \param[in] MatrixIn
+!>    \verbatim
+!>        MatrixIn is Type(MQC_Matrix)
+!>        The matrix to copy.
+!>    \endverbatim
+!>
+!>    \param[in] Unpack
+!>    \verbatim
+!>        Unpack is Logical,Optional
+!>        If .true., return the full array. The default is .false.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_Matrix_To_ComplexArray(ArrayOut,MatrixIn,Unpack)
+!
+!     Variable Declarations.
+      Implicit None
+      Complex(Kind=real64),Dimension(:,:),Allocatable,Intent(InOut)::ArrayOut
+      Type(MQC_Matrix),Intent(In)::MatrixIn
+      Logical,Optional,Intent(In)::Unpack
+      Type(MQC_Matrix)::Mf
+      Logical::myUnpack
+!
+      myUnpack = .false.
+      If(Present(Unpack)) myUnpack = Unpack
+      If(myUnpack.and.(MatrixIn%Storage.eq.'StorDiag'.or.MatrixIn%Storage.eq.'StorSymm'.or. &
+        MatrixIn%Storage.eq.'StorAsym'.or.MatrixIn%Storage.eq.'StorHerm'.or. &
+        MatrixIn%Storage.eq.'StorAhrm')) then
+        Mf = MatrixIn
+        If(Mf%Storage.eq.'StorDiag') then
+          Call MQC_Matrix_Diag2Full(Mf)
+        Else
+          Call MQC_Matrix_Symm2Full(Mf)
+        EndIf
+        Call MQC_Set_Matrix2ComplexArray(ArrayOut,Mf)
+      Else
+        Call MQC_Set_Matrix2ComplexArray(ArrayOut,MatrixIn)
+      EndIf
+!
+      End Subroutine MQC_Matrix_To_ComplexArray
+!
+!
 !     PROCEDURE MQC_Set_Matrix2Matrix
 !
 !>    \brief <b> MQC_Set_Matrix2Matrix is a subroutine that sets an MQC matrix equal
@@ -21778,6 +22215,8 @@
       If(Allocated(Matrix%MatC)) Deallocate(Matrix%MatC)
       Matrix%Data_Type = 'Integer'
 !
+      If(Matrix%Storage.eq.'StorSymm') Matrix%Storage = 'StorHerm'
+      If(Matrix%Storage.eq.'StorAsym') Matrix%Storage = 'StorAhrm'
       Return
       End Subroutine MQC_Matrix_Copy_Complex2Int
 !
@@ -21822,6 +22261,8 @@
       If(Allocated(Matrix%MatC)) Deallocate(Matrix%MatC)
       Matrix%Data_Type = 'Real'
 !
+      If(Matrix%Storage.eq.'StorSymm') Matrix%Storage = 'StorHerm'
+      If(Matrix%Storage.eq.'StorAsym') Matrix%Storage = 'StorAhrm'
       Return
       End Subroutine MQC_Matrix_Copy_Complex2Real
 !
@@ -22229,6 +22670,616 @@
       End Function MQC_Matrix_HaveDiagonal   
 !
 !
+!     PROCEDURE MQC_Matrix_Get_Symmetry
+!
+!>    \brief <b> MQC_Matrix_Get_Symmetry returns the symmetry implied by the storage
+!>    format of an MQC matrix</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Matrix_Get_Symmetry returns the symmetry that the storage format of an MQC
+!>    matrix guarantees, without testing the elements:
+!>      StorSymm -> 'symmetric'
+!>      StorAsym -> 'antisymmetric'
+!>      StorHerm -> 'hermitian'
+!>      StorAhrm -> 'antihermitian'
+!>      StorDiag -> 'diagonal'
+!>      StorFull -> 'unknown' (no symmetry known; use MQC_Matrix_Test_Symmetric)
+!>    An unallocated matrix returns 'unallocated'. A real symmetric (antisymmetric)
+!>    matrix is also hermitian (antihermitian).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Matrix
+!>    \verbatim
+!>        Matrix is Class(MQC_Matrix)
+!>        The MQC matrix to be queried.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_Matrix_Get_Symmetry(Matrix) Result(Symmetry)
+!
+!     Variable Declarations.
+      Implicit None
+      Class(MQC_Matrix),Intent(In)::Matrix
+      Character(len=16)::Symmetry
+!
+      If(.not.MQC_Matrix_isAllocated(Matrix)) then
+        Symmetry = 'unallocated'
+      Else
+        Select Case (Matrix%Storage)
+        Case ('StorSymm')
+          Symmetry = 'symmetric'
+        Case ('StorAsym')
+          Symmetry = 'antisymmetric'
+        Case ('StorHerm')
+          Symmetry = 'hermitian'
+        Case ('StorAhrm')
+          Symmetry = 'antihermitian'
+        Case ('StorDiag')
+          Symmetry = 'diagonal'
+        Case Default
+          Symmetry = 'unknown'
+        End Select
+      EndIf
+!
+      End Function MQC_Matrix_Get_Symmetry
+!
+!
+!     PROCEDURE MQC_Matrix_Pack
+!
+!>    \brief <b> MQC_Matrix_Pack stores an MQC matrix in the lower-triangular packed
+!>    format of a given symmetry</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Matrix_Pack stores a square MQC matrix in the packed format of the
+!>    requested symmetry, keeping the lower triangle:
+!>      'hermitian'     -> StorHerm
+!>      'antihermitian' -> StorAhrm
+!>      'symmetric'     -> StorSymm
+!>      'antisymmetric' -> StorAsym
+!>    The elements are not tested: the caller must know that the matrix has the
+!>    requested symmetry (e.g. from MQC_Matrix_Test_Symmetric). The data type is
+!>    kept, so a real matrix can be stored as StorHerm or StorAhrm.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] Matrix
+!>    \verbatim
+!>        Matrix is Type(MQC_Matrix)
+!>        The matrix to be packed.
+!>    \endverbatim
+!>
+!>    \param[in] Symmetry
+!>    \verbatim
+!>        Symmetry is Character(len=*)
+!>        = 'hermitian', 'antihermitian', 'symmetric' or 'antisymmetric'.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_Matrix_Pack(Matrix,Symmetry)
+!
+!     Variable Declarations.
+      Implicit None
+      Type(MQC_Matrix),Intent(InOut)::Matrix
+      Character(len=*),Intent(In)::Symmetry
+      Character(len=64)::mySymmetry
+      Character(len=10)::TargetStor
+      Real(kind=real64),Dimension(:,:),Allocatable::Temp
+      Integer(kind=int64),Dimension(:,:),Allocatable::TempI
+      Complex(Kind=real64),Dimension(:,:),Allocatable::TempC
+      Integer(kind=int64)::I,J,II,N
+!
+      call string_change_case(Symmetry,'l',mySymmetry)
+      Select Case (mySymmetry)
+      Case ('hermitian')
+        TargetStor = 'StorHerm'
+      Case ('antihermitian')
+        TargetStor = 'StorAhrm'
+      Case ('symmetric')
+        TargetStor = 'StorSymm'
+      Case ('antisymmetric')
+        TargetStor = 'StorAsym'
+      Case Default
+        Call MQC_Error_A('Invalid symmetry sent to MQC_Matrix_Pack', 6, &
+             'mySymmetry', mySymmetry )
+      End Select
+      If(MQC_Matrix_isAllocated(Matrix)) then
+  !     Real and integer data use StorHerm/StorAhrm for the symmetric/antisymmetric case.
+        If(Matrix%Data_Type.ne.'Complex') then
+          If(TargetStor.eq.'StorSymm') TargetStor = 'StorHerm'
+          If(TargetStor.eq.'StorAsym') TargetStor = 'StorAhrm'
+        EndIf
+        If(Matrix%Storage.ne.TargetStor) then
+          If(MQC_Matrix_Rows(Matrix).ne.MQC_Matrix_Columns(Matrix)) &
+            Call MQC_Error_I('Matrix must be square in MQC_Matrix_Pack', 6, &
+                 'MQC_Matrix_Rows(Matrix)', MQC_Matrix_Rows(Matrix), &
+                 'MQC_Matrix_Columns(Matrix)', MQC_Matrix_Columns(Matrix) )
+          If(Matrix%Storage.eq.'StorDiag') then
+            Call MQC_Matrix_Diag2Full(Matrix)
+          ElseIf(Matrix%Storage.ne.'StorFull') then
+            Call MQC_Matrix_Symm2Full(Matrix)
+          EndIf
+          N = MQC_Matrix_Rows(Matrix)
+          If(Matrix%Data_Type.eq.'Real') then
+            Allocate(Temp(N,N))
+            Temp = Matrix%MatR
+            Call MQC_Deallocate_Matrix(Matrix)
+            Call MQC_Allocate_Matrix(N,N,Matrix,'Real',TargetStor)
+            Do I = 1, N
+              II = (I*(I-1))/2
+              Do J = 1, I
+                Matrix%MatR(II+J,1) = Temp(I,J)
+              EndDo
+            EndDo
+            Deallocate(Temp)
+          ElseIf(Matrix%Data_Type.eq.'Integer') then
+            Allocate(TempI(N,N))
+            TempI = Matrix%MatI
+            Call MQC_Deallocate_Matrix(Matrix)
+            Call MQC_Allocate_Matrix(N,N,Matrix,'Integer',TargetStor)
+            Do I = 1, N
+              II = (I*(I-1))/2
+              Do J = 1, I
+                Matrix%MatI(II+J,1) = TempI(I,J)
+              EndDo
+            EndDo
+            Deallocate(TempI)
+          Else
+            Allocate(TempC(N,N))
+            TempC = Matrix%MatC
+            Call MQC_Deallocate_Matrix(Matrix)
+            Call MQC_Allocate_Matrix(N,N,Matrix,'Complex',TargetStor)
+            Do I = 1, N
+              II = (I*(I-1))/2
+              Do J = 1, I
+                Matrix%MatC(II+J,1) = TempC(I,J)
+              EndDo
+            EndDo
+            Deallocate(TempC)
+          EndIf
+        EndIf
+      EndIf
+!
+      End Subroutine MQC_Matrix_Pack
+!
+!
+!     PROCEDURE MQC_Matrix_Element_Complex
+!
+!>    \brief <b> MQC_Matrix_Element_Complex returns element (I,J) of an MQC matrix as
+!>    a complex number for any storage</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The element is read directly from the stored data (full, packed or diagonal)
+!>    without unpacking the matrix. An unallocated matrix is zero.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_Matrix_Element_Complex(Matrix,I,J) Result(Z)
+!
+!     Variable Declarations.
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::Matrix
+      Integer(kind=int64),Intent(In)::I,J
+      Complex(kind=real64)::Z
+      Integer(kind=int64)::K
+      Logical::upper
+!
+      Z = (0.0,0.0)
+      If(MQC_Matrix_isAllocated(Matrix)) then
+        Select Case (Matrix%Storage)
+        Case ('StorFull')
+          If(Matrix%Data_Type.eq.'Complex') then
+            Z = Matrix%MatC(I,J)
+          ElseIf(Matrix%Data_Type.eq.'Real') then
+            Z = cmplx(Matrix%MatR(I,J),0.0,kind=real64)
+          Else
+            Z = cmplx(real(Matrix%MatI(I,J),kind=real64),0.0,kind=real64)
+          EndIf
+        Case ('StorDiag')
+          If(I.eq.J) then
+            If(Matrix%Data_Type.eq.'Complex') then
+              Z = Matrix%MatC(I,1)
+            ElseIf(Matrix%Data_Type.eq.'Real') then
+              Z = cmplx(Matrix%MatR(I,1),0.0,kind=real64)
+            Else
+              Z = cmplx(real(Matrix%MatI(I,1),kind=real64),0.0,kind=real64)
+            EndIf
+          EndIf
+        Case ('StorSymm','StorAsym','StorHerm','StorAhrm')
+          upper = I.lt.J
+          If(upper) then
+            K = (J*(J-1))/2+I
+          Else
+            K = (I*(I-1))/2+J
+          EndIf
+          If(Matrix%Data_Type.eq.'Complex') then
+            Z = Matrix%MatC(K,1)
+          ElseIf(Matrix%Data_Type.eq.'Real') then
+            Z = cmplx(Matrix%MatR(K,1),0.0,kind=real64)
+          Else
+            Z = cmplx(real(Matrix%MatI(K,1),kind=real64),0.0,kind=real64)
+          EndIf
+          If(upper) then
+            If(Matrix%Storage.eq.'StorAsym') then
+              Z = -Z
+            ElseIf(Matrix%Storage.eq.'StorHerm') then
+              Z = conjg(Z)
+            ElseIf(Matrix%Storage.eq.'StorAhrm') then
+              Z = -conjg(Z)
+            EndIf
+          EndIf
+        Case Default
+          Call MQC_Error_A('Storage type not defined in MQC_Matrix_Element_Complex', 6, &
+               'Matrix%Storage', Matrix%Storage )
+        End Select
+      EndIf
+!
+      End Function MQC_Matrix_Element_Complex
+!
+!
+!     PROCEDURE MQC_Matrix_Packed_Block_Join
+!
+!>    \brief <b> MQC_Matrix_Packed_Block_Join builds a packed matrix from its
+!>    diagonal blocks and its lower off-diagonal block</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Matrix_Packed_Block_Join returns the (NA+NB) x (NA+NB) matrix
+!>      | A   .  |
+!>      | AB  B  |
+!>    in the lower-triangular packed storage of the given symmetry ('hermitian',
+!>    'antihermitian', 'symmetric' or 'antisymmetric'). Only the lower triangle is
+!>    needed, so it is copied directly from the lower triangles of A and B and from
+!>    all of AB (NB x NA); the upper triangle follows from the symmetry. A and B are
+!>    usually stored packed already and are read without unpacking. Unallocated
+!>    blocks are zero. The result is complex if any block is complex.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_Matrix_Packed_Block_Join(A,AB,B,NA,NB,Symmetry) Result(C)
+!
+!     Variable Declarations.
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::A,AB,B
+      Integer(kind=int64),Intent(In)::NA,NB
+      Character(len=*),Intent(In)::Symmetry
+      Type(MQC_Matrix)::C
+      Character(len=64)::mySymmetry
+      Character(len=10)::TargetStor
+      Logical::isComplex
+      Integer(kind=int64)::I,J,N,II
+      Complex(kind=real64)::Z
+!
+      call string_change_case(Symmetry,'l',mySymmetry)
+      Select Case (mySymmetry)
+      Case ('hermitian')
+        TargetStor = 'StorHerm'
+      Case ('antihermitian')
+        TargetStor = 'StorAhrm'
+      Case ('symmetric')
+        TargetStor = 'StorSymm'
+      Case ('antisymmetric')
+        TargetStor = 'StorAsym'
+      Case Default
+        Call MQC_Error_A('Invalid symmetry sent to MQC_Matrix_Packed_Block_Join', 6, &
+             'mySymmetry', mySymmetry )
+      End Select
+      N = NA + NB
+      isComplex = .false.
+      If(MQC_Matrix_isAllocated(A)) isComplex = isComplex.or.A%Data_Type.eq.'Complex'
+      If(MQC_Matrix_isAllocated(AB)) isComplex = isComplex.or.AB%Data_Type.eq.'Complex'
+      If(MQC_Matrix_isAllocated(B)) isComplex = isComplex.or.B%Data_Type.eq.'Complex'
+      If(isComplex) then
+        Call MQC_Allocate_Matrix(N,N,C,'Complex',TargetStor)
+      Else
+        Call MQC_Allocate_Matrix(N,N,C,'Real',TargetStor)
+      EndIf
+      Do I = 1, N
+        II = (I*(I-1))/2
+        Do J = 1, I
+          If(I.le.NA) then
+            Z = MQC_Matrix_Element_Complex(A,I,J)
+          ElseIf(J.le.NA) then
+            Z = MQC_Matrix_Element_Complex(AB,I-NA,J)
+          Else
+            Z = MQC_Matrix_Element_Complex(B,I-NA,J-NA)
+          EndIf
+          If(isComplex) then
+            C%MatC(II+J,1) = Z
+          Else
+            C%MatR(II+J,1) = real(Z)
+          EndIf
+        EndDo
+      EndDo
+!
+      End Function MQC_Matrix_Packed_Block_Join
+!
+!
+!     PROCEDURE MQC_Matrix_Packed_Block_Split
+!
+!>    \brief <b> MQC_Matrix_Packed_Block_Split splits a packed matrix into its
+!>    diagonal blocks and its lower off-diagonal block</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Matrix_Packed_Block_Split is the inverse of MQC_Matrix_Packed_Block_Join.
+!>    The (NA+NB) x (NA+NB) packed matrix
+!>      | A   .  |
+!>      | AB  B  |
+!>    is split into A (NA x NA) and B (NB x NB), returned in the packed storage of C,
+!>    and AB (NB x NA), returned in StorFull. All three lie in the stored lower
+!>    triangle, so nothing is unpacked; the upper off-diagonal block is implied by
+!>    the symmetry and is not formed. A is the first NA(NA+1)/2 packed elements. A
+!>    block with a zero dimension is left unallocated. A diagonal (StorDiag) C gives
+!>    diagonal A and B and no AB (it is zero).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_Matrix_Packed_Block_Split(C,NA,NB,A,AB,B)
+!
+!     Variable Declarations.
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::C
+      Integer(kind=int64),Intent(In)::NA,NB
+      Type(MQC_Matrix),Intent(Out)::A,AB,B
+      Integer(kind=int64)::I,J,II,IC
+!
+      Select Case (C%Storage)
+      Case ('StorHerm','StorAhrm','StorSymm','StorAsym')
+        If(MQC_Matrix_Rows(C).ne.NA+NB) &
+          Call MQC_Error_I('Block dimensions do not match C in MQC_Matrix_Packed_Block_Split', 6, &
+               'MQC_Matrix_Rows(C)', MQC_Matrix_Rows(C), 'NA', NA, 'NB', NB )
+        If(NA.gt.0) then
+          Call MQC_Allocate_Matrix(NA,NA,A,C%Data_Type,C%Storage)
+          Select Case (C%Data_Type)
+          Case ('Real')
+            A%MatR(:,1) = C%MatR(1:(NA*(NA+1))/2,1)
+          Case ('Integer')
+            A%MatI(:,1) = C%MatI(1:(NA*(NA+1))/2,1)
+          Case ('Complex')
+            A%MatC(:,1) = C%MatC(1:(NA*(NA+1))/2,1)
+          Case Default
+            Call MQC_Error_A('Unknown data type in MQC_Matrix_Packed_Block_Split', 6, &
+                 'C%Data_Type', C%Data_Type )
+          End Select
+        EndIf
+        If(NB.gt.0) then
+          Call MQC_Allocate_Matrix(NB,NB,B,C%Data_Type,C%Storage)
+          Do I = 1, NB
+            II = (I*(I-1))/2
+            IC = ((NA+I)*(NA+I-1))/2 + NA
+            Select Case (C%Data_Type)
+            Case ('Real')
+              B%MatR(II+1:II+I,1) = C%MatR(IC+1:IC+I,1)
+            Case ('Integer')
+              B%MatI(II+1:II+I,1) = C%MatI(IC+1:IC+I,1)
+            Case ('Complex')
+              B%MatC(II+1:II+I,1) = C%MatC(IC+1:IC+I,1)
+            Case Default
+              Call MQC_Error_A('Unknown data type in MQC_Matrix_Packed_Block_Split', 6, &
+                   'C%Data_Type', C%Data_Type )
+            End Select
+          EndDo
+        EndIf
+        If(NA.gt.0.and.NB.gt.0) then
+          Call MQC_Allocate_Matrix(NB,NA,AB,C%Data_Type,'StorFull')
+          Do I = 1, NB
+            IC = ((NA+I)*(NA+I-1))/2
+            Do J = 1, NA
+              Select Case (C%Data_Type)
+              Case ('Real')
+                AB%MatR(I,J) = C%MatR(IC+J,1)
+              Case ('Integer')
+                AB%MatI(I,J) = C%MatI(IC+J,1)
+              Case ('Complex')
+                AB%MatC(I,J) = C%MatC(IC+J,1)
+              Case Default
+                Call MQC_Error_A('Unknown data type in MQC_Matrix_Packed_Block_Split', 6, &
+                     'C%Data_Type', C%Data_Type )
+              End Select
+            EndDo
+          EndDo
+        EndIf
+      Case ('StorDiag')
+        If(MQC_Matrix_Rows(C).ne.NA+NB) &
+          Call MQC_Error_I('Block dimensions do not match C in MQC_Matrix_Packed_Block_Split', 6, &
+               'MQC_Matrix_Rows(C)', MQC_Matrix_Rows(C), 'NA', NA, 'NB', NB )
+        If(NA.gt.0) then
+          Call MQC_Allocate_Matrix(NA,NA,A,C%Data_Type,'StorDiag')
+          Select Case (C%Data_Type)
+          Case ('Real')
+            A%MatR(:,1) = C%MatR(1:NA,1)
+          Case ('Integer')
+            A%MatI(:,1) = C%MatI(1:NA,1)
+          Case ('Complex')
+            A%MatC(:,1) = C%MatC(1:NA,1)
+          Case Default
+            Call MQC_Error_A('Unknown data type in MQC_Matrix_Packed_Block_Split', 6, &
+                 'C%Data_Type', C%Data_Type )
+          End Select
+        EndIf
+        If(NB.gt.0) then
+          Call MQC_Allocate_Matrix(NB,NB,B,C%Data_Type,'StorDiag')
+          Select Case (C%Data_Type)
+          Case ('Real')
+            B%MatR(:,1) = C%MatR(NA+1:NA+NB,1)
+          Case ('Integer')
+            B%MatI(:,1) = C%MatI(NA+1:NA+NB,1)
+          Case ('Complex')
+            B%MatC(:,1) = C%MatC(NA+1:NA+NB,1)
+          Case Default
+            Call MQC_Error_A('Unknown data type in MQC_Matrix_Packed_Block_Split', 6, &
+                 'C%Data_Type', C%Data_Type )
+          End Select
+        EndIf
+      Case Default
+        Call MQC_Error_A('C must be packed or diagonal in MQC_Matrix_Packed_Block_Split', 6, &
+             'C%Storage', C%Storage )
+      End Select
+!
+      End Subroutine MQC_Matrix_Packed_Block_Split
+!
+!
+!     PROCEDURE MQC_Vector_Diagonal_Symmetry
+!
+!>    \brief <b> MQC_Vector_Diagonal_Symmetry returns the symmetry of the diagonal
+!>    matrix built from an MQC vector</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Returns 'hermitian' when every element is real, 'antihermitian' when every
+!>    element is imaginary and 'unknown' otherwise. The threshold is MQC_very_small
+!>    (1e-10 when it is not positive), relative to max(1,|element|).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_Vector_Diagonal_Symmetry(Vector) Result(Symmetry)
+!
+!     Variable Declarations.
+      Implicit None
+      Type(MQC_Vector),Intent(In)::Vector
+      Character(len=16)::Symmetry
+      Logical::realOK,imagOK
+      Real(kind=real64)::thresh,scale
+      Integer(kind=int64)::I
+!
+      If(MQC_very_small.gt.0.0) then
+        thresh = MQC_very_small
+      Else
+        thresh = 1e-10
+      EndIf
+      If(Vector%Data_Type.ne.'Complex') then
+        Symmetry = 'hermitian'
+      Else
+        realOK = .true.
+        imagOK = .true.
+        Do I = 1, Vector%Length
+          scale = thresh*max(1.0,abs(Vector%VecC(I)))
+          If(abs(aimag(Vector%VecC(I))).gt.scale) realOK = .false.
+          If(abs(real(Vector%VecC(I))).gt.scale) imagOK = .false.
+        EndDo
+        If(realOK) then
+          Symmetry = 'hermitian'
+        ElseIf(imagOK) then
+          Symmetry = 'antihermitian'
+        Else
+          Symmetry = 'unknown'
+        EndIf
+      EndIf
+!
+      End Function MQC_Vector_Diagonal_Symmetry
+!
+!
+!     PROCEDURE MQC_Matrix_Diag_Join
+!
+!>    \brief <b> MQC_Matrix_Diag_Join builds a diagonal (StorDiag) matrix from the
+!>    diagonals of two square blocks</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Returns the (NA+NB) x (NA+NB) StorDiag matrix whose diagonal is the diagonal of
+!>    DA followed by the diagonal of DB (any storage, read without unpacking).
+!>    Unallocated blocks are zero. The result is complex if any block is complex.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_Matrix_Diag_Join(DA,DB,NA,NB) Result(C)
+!
+!     Variable Declarations.
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::DA,DB
+      Integer(kind=int64),Intent(In)::NA,NB
+      Type(MQC_Matrix)::C
+      Logical::isComplex
+      Integer(kind=int64)::I,N
+      Complex(kind=real64)::Z
+!
+      N = NA + NB
+      isComplex = .false.
+      If(MQC_Matrix_isAllocated(DA)) isComplex = isComplex.or.DA%Data_Type.eq.'Complex'
+      If(MQC_Matrix_isAllocated(DB)) isComplex = isComplex.or.DB%Data_Type.eq.'Complex'
+      If(isComplex) then
+        Call MQC_Allocate_Matrix(N,N,C,'Complex','StorDiag')
+      Else
+        Call MQC_Allocate_Matrix(N,N,C,'Real','StorDiag')
+      EndIf
+      Do I = 1, N
+        If(I.le.NA) then
+          Z = MQC_Matrix_Element_Complex(DA,I,I)
+        Else
+          Z = MQC_Matrix_Element_Complex(DB,I-NA,I-NA)
+        EndIf
+        If(isComplex) then
+          C%MatC(I,1) = Z
+        Else
+          C%MatR(I,1) = real(Z)
+        EndIf
+      EndDo
+!
+      End Function MQC_Matrix_Diag_Join
+!
+!
 !     PROCEDURE MQC_Matrix_Transpose
 !
 !>    \brief <b> MQC_Matrix_Transpose is a function that returns the transpose of a
@@ -22426,7 +23477,7 @@
           MQC_Matrix_Conjugate_Transpose%MatC = (-1)*Matrix%MatC
           Do I = 1, Size(MQC_Matrix_Conjugate_Transpose,1)
             MQC_Matrix_Conjugate_Transpose%MatC(symIndexHash(I,I),1) = &
-              (-1)*MQC_Matrix_Conjugate_Transpose%MatC(symIndexHash(I,I),1)
+              conjg(Matrix%MatC(symIndexHash(I,I),1))
           EndDo
         Else
           Call MQC_Error_A('Unrecognise matrix storage type in MQC_Matrix_Conjugate_Transpose', 6, &
@@ -23124,16 +24175,16 @@
         TempC = Matrix%MatC
         Call MQC_Deallocate_Matrix(Matrix)
         If(myOption.eq.'symmetric') then
-          Call MQC_Allocate_Matrix(Size(Temp,1),Size(Temp,1),Matrix,'Complex', &
+          Call MQC_Allocate_Matrix(Size(TempC,1),Size(TempC,1),Matrix,'Complex', &
             'StorSymm')
         elseIf(myOption.eq.'antisymmetric') then
-          Call MQC_Allocate_Matrix(Size(Temp,1),Size(Temp,1),Matrix,'Complex', &
+          Call MQC_Allocate_Matrix(Size(TempC,1),Size(TempC,1),Matrix,'Complex', &
             'StorAsym')
         elseIf(myOption.eq.'hermitian') then
-          Call MQC_Allocate_Matrix(Size(Temp,1),Size(Temp,1),Matrix,'Complex', &
+          Call MQC_Allocate_Matrix(Size(TempC,1),Size(TempC,1),Matrix,'Complex', &
             'StorHerm')
         elseIf(myOption.eq.'antihermitian') then
-          Call MQC_Allocate_Matrix(Size(Temp,1),Size(Temp,1),Matrix,'Complex', &
+          Call MQC_Allocate_Matrix(Size(TempC,1),Size(TempC,1),Matrix,'Complex', &
             'StorAhrm')
         endIf
         Matrix%MatC = Cmplx(0.0,0.0)
@@ -23618,9 +24669,13 @@
         if(Tmp2%storage.eq.'StorFull') then
           storage = 'StorFull'
           Call MQC_Matrix_Symm2Full(Tmp1)
-        elseIf(Tmp2%storage.eq.'StorDiag') then
+        elseIf(Tmp2%storage.eq.'StorDiag'.and.Tmp1%storage.eq.'StorSymm') then
           storage = Tmp1%storage
           Call MQC_Matrix_Diag2Symm(Tmp2)
+        elseIf(Tmp2%storage.eq.'StorDiag') then
+          storage = 'StorFull'
+          Call MQC_Matrix_Symm2Full(Tmp1)
+          Call MQC_Matrix_Diag2Full(Tmp2)
         elseIf(Tmp2%storage.ne.Tmp1%storage) then
           storage = 'StorFull'
           Call MQC_Matrix_Symm2Full(Tmp1)
@@ -23636,9 +24691,13 @@
         case('StorFull')
           storage = 'StorFull'
           Call MQC_Matrix_Diag2Full(Tmp1)
-        case('StorSymm','StorHerm','StorAsym','StorAhrm')
+        case('StorSymm')
           storage = Tmp2%storage
           Call MQC_Matrix_Diag2Symm(Tmp1)
+        case('StorHerm','StorAsym','StorAhrm')
+          storage = 'StorFull'
+          Call MQC_Matrix_Diag2Full(Tmp1)
+          Call MQC_Matrix_Symm2Full(Tmp2)
         case('StorDiag')
           storage = 'StorDiag'
         case default
@@ -23766,9 +24825,13 @@
         if(Tmp2%storage.eq.'StorFull') then
           storage = 'StorFull'
           call MQC_Matrix_Symm2Full(Tmp1)
-        elseIf(Tmp2%storage.eq.'StorDiag') then
+        elseIf(Tmp2%storage.eq.'StorDiag'.and.Tmp1%storage.eq.'StorSymm') then
           storage = Tmp1%Storage
           call MQC_Matrix_Diag2Symm(Tmp2)
+        elseIf(Tmp2%storage.eq.'StorDiag') then
+          storage = 'StorFull'
+          call MQC_Matrix_Symm2Full(Tmp1)
+          call MQC_Matrix_Diag2Full(Tmp2)
         elseIf(Tmp2%storage.ne.Tmp1%storage) then
           storage = 'StorFull'
           Call MQC_Matrix_Symm2Full(Tmp1)
@@ -23784,9 +24847,13 @@
         case('StorFull')
           storage = 'StorFull'
           call MQC_Matrix_Diag2Full(Tmp1)
-        case('StorSymm','StorHerm','StorAsym','StorAhrm')
+        case('StorSymm')
           storage = Tmp2%storage
           call MQC_Matrix_Diag2Symm(Tmp1)
+        case('StorHerm','StorAsym','StorAhrm')
+          storage = 'StorFull'
+          call MQC_Matrix_Diag2Full(Tmp1)
+          call MQC_Matrix_Symm2Full(Tmp2)
         case('StorDiag')
           storage = 'StorDiag'
         case default
@@ -24660,14 +25727,16 @@
 !>    \verbatim
 !>
 !>    The structure of A is taken from its storage type:
-!>      StorHerm, real StorSymm, real/Hermitian StorDiag -> Hermitian
-!>      StorAhrm, real StorAsym                          -> anti-Hermitian
-!>      StorFull: Hermitian if MQC_Matrix_Test_Symmetric(A,'hermitian') holds
-!>      anything else                                    -> general
+!>      StorHerm with a real diagonal, real StorSymm         -> Hermitian
+!>      StorAhrm with an imaginary diagonal, real StorAsym  -> anti-Hermitian
+!>      StorFull/StorDiag: Hermitian if MQC_Matrix_Test_Symmetric(A,'hermitian',.true.)
+!>      anything else                                    -> full
+!>    With ForceSym the structure is taken from ForceSym and A is not tested; the
+!>    caller must know that A has it (e.g. from the symmetry flag of an integral).
 !>    For a Hermitian (anti-Hermitian) A, T = A B is formed with ZHEMM (ZGEMM), or DGEMM if real,
 !>    and only the lower triangle of C = dagger(B) T is formed with ZGEMMT/DGEMMT. C is
-!>    returned packed: StorHerm/StorAhrm (complex) or StorSymm/StorAsym (real).
-!>    The general case is MatMul(Dagger(B),MatMul(A,B)) in StorFull.
+!>    returned packed: StorHerm/StorAhrm (real data included).
+!>    The full case is MatMul(Dagger(B),MatMul(A,B)) in StorFull.
 !>
 !>    \endverbatim
 !
@@ -24684,18 +25753,27 @@
 !>        B is type(MQC_Matrix)
 !>        n x m matrix.
 !>    \endverbatim
+!>
+!>    \param[in] ForceSym
+!>    \verbatim
+!>        ForceSym is Character(len=*),Optional
+!>        = 'hermitian':     A is Hermitian (the matrix is not tested)
+!>        = 'antihermitian': A is anti-Hermitian (the matrix is not tested)
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      Function MQC_Matrix_Hermitian_Sandwich(A,B) Result(C)
+      Function MQC_Matrix_Hermitian_Sandwich(A,B,ForceSym) Result(C)
       Implicit None
       Type(MQC_Matrix),Intent(In)::A,B
+      Character(len=*),Optional,Intent(In)::ForceSym
       Type(MQC_Matrix)::C
       Type(MQC_Matrix)::Af,Bf
       Character(len=16)::structure
+      Character(len=64)::myForceSym
       Integer(kind=int64)::I,J,M,N,II
       Integer(kind=MQC_BlasInt)::N32,M32
       Real(kind=real64)::oneR,zeroR
@@ -24703,118 +25781,134 @@
       Real(kind=real64),Dimension(:,:),Allocatable::AR,BR,TR,CR
       Complex(kind=real64),Dimension(:,:),Allocatable::AC,BC,TC,CC
 !
-      structure = 'general'
-      If(MQC_Matrix_Rows(A).eq.MQC_Matrix_Columns(A)) then
+      structure = 'full'
+      If(Present(ForceSym)) then
+        If(MQC_Matrix_Rows(A).ne.MQC_Matrix_Columns(A)) &
+          Call MQC_Error_I('A must be square with ForceSym in MQC_Matrix_Hermitian_Sandwich', 6, &
+               'MQC_Matrix_Rows(A)', MQC_Matrix_Rows(A), &
+               'MQC_Matrix_Columns(A)', MQC_Matrix_Columns(A) )
+        call string_change_case(ForceSym,'l',myForceSym)
+        Select Case (myForceSym)
+        Case ('hermitian','antihermitian')
+          structure = myForceSym
+        Case Default
+          Call MQC_Error_A('Invalid ForceSym sent to MQC_Matrix_Hermitian_Sandwich', 6, &
+               'myForceSym', myForceSym )
+        End Select
+      ElseIf(MQC_Matrix_Rows(A).eq.MQC_Matrix_Columns(A)) then
+!       The structure is tested in the mathematical sense (Math = .true.): the
+!       Hermitian path (ZHEMM, real diagonal of C) needs a real diagonal of A and the
+!       anti-Hermitian path an imaginary one. For packed storage only the diagonal is
+!       checked (O(n)).
         Select Case (A%Storage)
         Case ('StorHerm')
-          structure = 'hermitian'
+          If(MQC_Matrix_Test_Symmetric(A,'hermitian',.true.)) structure = 'hermitian'
         Case ('StorSymm')
           If(.not.MQC_Matrix_HaveComplex(A)) structure = 'hermitian'
         Case ('StorAhrm')
-          structure = 'antihermitian'
+          If(MQC_Matrix_Test_Symmetric(A,'antihermitian',.true.)) structure = 'antihermitian'
         Case ('StorAsym')
           If(.not.MQC_Matrix_HaveComplex(A)) structure = 'antihermitian'
         Case ('StorDiag','StorFull')
-          If(MQC_Matrix_Test_Symmetric(A,'hermitian')) structure = 'hermitian'
+          If(MQC_Matrix_Test_Symmetric(A,'hermitian',.true.)) structure = 'hermitian'
         End Select
       EndIf
 !
-      If(structure.eq.'general') then
+      If(structure.eq.'full') then
         C = MatMul(Dagger(B),MatMul(A,B))
-        Return
-      EndIf
-!
-      Af = A
-      Bf = B
-      If(Af%Storage.eq.'StorDiag') then
-        Call MQC_Matrix_Diag2Full(Af)
-      ElseIf(Af%Storage.ne.'StorFull') then
-        Call MQC_Matrix_Symm2Full(Af)
-      EndIf
-      If(Bf%Storage.eq.'StorDiag') then
-        Call MQC_Matrix_Diag2Full(Bf)
-      ElseIf(Bf%Storage.ne.'StorFull') then
-        Call MQC_Matrix_Symm2Full(Bf)
-      EndIf
-      N = MQC_Matrix_Rows(Bf)
-      M = MQC_Matrix_Columns(Bf)
-      N32 = int(N,kind=MQC_BlasInt)
-      M32 = int(M,kind=MQC_BlasInt)
-!
-      If(MQC_Matrix_HaveComplex(Af).or.MQC_Matrix_HaveComplex(Bf)) then
-        oneC = (1.0,0.0)
-        zeroC = (0.0,0.0)
-        Allocate(AC(N,N),BC(N,M),TC(N,M),CC(M,M))
-        If(MQC_Matrix_HaveComplex(Af)) then
-          AC = Af%MatC
-        ElseIf(MQC_Matrix_HaveReal(Af)) then
-          AC = cmplx(Af%MatR,0.0,kind=real64)
-        Else
-          AC = cmplx(real(Af%MatI,kind=real64),0.0,kind=real64)
-        EndIf
-        If(MQC_Matrix_HaveComplex(Bf)) then
-          BC = Bf%MatC
-        ElseIf(MQC_Matrix_HaveReal(Bf)) then
-          BC = cmplx(Bf%MatR,0.0,kind=real64)
-        Else
-          BC = cmplx(real(Bf%MatI,kind=real64),0.0,kind=real64)
-        EndIf
-        If(structure.eq.'hermitian') then
-          call ZHEMM('L','L',N32,M32,oneC,AC,N32,BC,N32,zeroC,TC,N32)
-        Else
-          call ZGEMM('N','N',N32,M32,N32,oneC,AC,N32,BC,N32,zeroC,TC,N32)
-        EndIf
-        CC = zeroC
-        call ZGEMMT('L','C','N',M32,N32,oneC,BC,N32,TC,N32,zeroC,CC,M32)
-        If(structure.eq.'hermitian') then
-          Call MQC_Allocate_Matrix(M,M,C,'Complex','StorHerm')
-        Else
-          Call MQC_Allocate_Matrix(M,M,C,'Complex','StorAhrm')
-        EndIf
-        Do I = 1, M
-          II = (I*(I-1))/2
-          Do J = 1, I-1
-            C%MatC(II+J,1) = CC(I,J)
-          EndDo
-          If(structure.eq.'hermitian') then
-            C%MatC(II+I,1) = cmplx(real(CC(I,I)),0.0,kind=real64)
-          Else
-            C%MatC(II+I,1) = cmplx(0.0,aimag(CC(I,I)),kind=real64)
-          EndIf
-        EndDo
       Else
-        oneR = 1.0
-        zeroR = 0.0
-        Allocate(AR(N,N),BR(N,M),TR(N,M),CR(M,M))
-        If(MQC_Matrix_HaveReal(Af)) then
-          AR = Af%MatR
-        Else
-          AR = real(Af%MatI,kind=real64)
+        Af = A
+        Bf = B
+        If(Af%Storage.eq.'StorDiag') then
+          Call MQC_Matrix_Diag2Full(Af)
+        ElseIf(Af%Storage.ne.'StorFull') then
+          Call MQC_Matrix_Symm2Full(Af)
         EndIf
-        If(MQC_Matrix_HaveReal(Bf)) then
-          BR = Bf%MatR
-        Else
-          BR = real(Bf%MatI,kind=real64)
+        If(Bf%Storage.eq.'StorDiag') then
+          Call MQC_Matrix_Diag2Full(Bf)
+        ElseIf(Bf%Storage.ne.'StorFull') then
+          Call MQC_Matrix_Symm2Full(Bf)
         EndIf
-        call DGEMM('N','N',N32,M32,N32,oneR,AR,N32,BR,N32,zeroR,TR,N32)
-        CR = zeroR
-        call DGEMMT('L','T','N',M32,N32,oneR,BR,N32,TR,N32,zeroR,CR,M32)
-        If(structure.eq.'hermitian') then
-          Call MQC_Allocate_Matrix(M,M,C,'Real','StorSymm')
-        Else
-          Call MQC_Allocate_Matrix(M,M,C,'Real','StorAsym')
-        EndIf
-        Do I = 1, M
-          II = (I*(I-1))/2
-          Do J = 1, I-1
-            C%MatR(II+J,1) = CR(I,J)
-          EndDo
-          If(structure.eq.'hermitian') then
-            C%MatR(II+I,1) = CR(I,I)
+        N = MQC_Matrix_Rows(Bf)
+        M = MQC_Matrix_Columns(Bf)
+        N32 = int(N,kind=MQC_BlasInt)
+        M32 = int(M,kind=MQC_BlasInt)
+  !
+        If(MQC_Matrix_HaveComplex(Af).or.MQC_Matrix_HaveComplex(Bf)) then
+          oneC = (1.0,0.0)
+          zeroC = (0.0,0.0)
+          Allocate(AC(N,N),BC(N,M),TC(N,M),CC(M,M))
+          If(MQC_Matrix_HaveComplex(Af)) then
+            AC = Af%MatC
+          ElseIf(MQC_Matrix_HaveReal(Af)) then
+            AC = cmplx(Af%MatR,0.0,kind=real64)
           Else
-            C%MatR(II+I,1) = zeroR
+            AC = cmplx(real(Af%MatI,kind=real64),0.0,kind=real64)
           EndIf
-        EndDo
+          If(MQC_Matrix_HaveComplex(Bf)) then
+            BC = Bf%MatC
+          ElseIf(MQC_Matrix_HaveReal(Bf)) then
+            BC = cmplx(Bf%MatR,0.0,kind=real64)
+          Else
+            BC = cmplx(real(Bf%MatI,kind=real64),0.0,kind=real64)
+          EndIf
+          If(structure.eq.'hermitian') then
+            call ZHEMM('L','L',N32,M32,oneC,AC,N32,BC,N32,zeroC,TC,N32)
+          Else
+            call ZGEMM('N','N',N32,M32,N32,oneC,AC,N32,BC,N32,zeroC,TC,N32)
+          EndIf
+          CC = zeroC
+          call ZGEMMT('L','C','N',M32,N32,oneC,BC,N32,TC,N32,zeroC,CC,M32)
+          If(structure.eq.'hermitian') then
+            Call MQC_Allocate_Matrix(M,M,C,'Complex','StorHerm')
+          Else
+            Call MQC_Allocate_Matrix(M,M,C,'Complex','StorAhrm')
+          EndIf
+          Do I = 1, M
+            II = (I*(I-1))/2
+            Do J = 1, I-1
+              C%MatC(II+J,1) = CC(I,J)
+            EndDo
+            If(structure.eq.'hermitian') then
+              C%MatC(II+I,1) = cmplx(real(CC(I,I)),0.0,kind=real64)
+            Else
+              C%MatC(II+I,1) = cmplx(0.0,aimag(CC(I,I)),kind=real64)
+            EndIf
+          EndDo
+        Else
+          oneR = 1.0
+          zeroR = 0.0
+          Allocate(AR(N,N),BR(N,M),TR(N,M),CR(M,M))
+          If(MQC_Matrix_HaveReal(Af)) then
+            AR = Af%MatR
+          Else
+            AR = real(Af%MatI,kind=real64)
+          EndIf
+          If(MQC_Matrix_HaveReal(Bf)) then
+            BR = Bf%MatR
+          Else
+            BR = real(Bf%MatI,kind=real64)
+          EndIf
+          call DGEMM('N','N',N32,M32,N32,oneR,AR,N32,BR,N32,zeroR,TR,N32)
+          CR = zeroR
+          call DGEMMT('L','T','N',M32,N32,oneR,BR,N32,TR,N32,zeroR,CR,M32)
+          If(structure.eq.'hermitian') then
+            Call MQC_Allocate_Matrix(M,M,C,'Real','StorSymm')
+          Else
+            Call MQC_Allocate_Matrix(M,M,C,'Real','StorAsym')
+          EndIf
+          Do I = 1, M
+            II = (I*(I-1))/2
+            Do J = 1, I-1
+              C%MatR(II+J,1) = CR(I,J)
+            EndDo
+            If(structure.eq.'hermitian') then
+              C%MatR(II+I,1) = CR(I,I)
+            Else
+              C%MatR(II+I,1) = zeroR
+            EndIf
+          EndDo
+        EndIf
       EndIf
 !
       End Function MQC_Matrix_Hermitian_Sandwich
@@ -25251,7 +26345,12 @@
       Type(MQC_Matrix)::Matrix_Res
 
       Call MQC_Deallocate_Matrix(Matrix_Res)
-      If (Matrix%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Integer') then
+!
+!     A complex scalar on a packed or diagonal matrix: the storage of the result is
+!     inferred by MQC_Complex_Scaled_Matrix (without unpacking).
+      If(Scalar%Data_Type.eq.'Complex'.and.Matrix%Storage.ne.'StorFull') then
+        Matrix_Res = MQC_Complex_Scaled_Matrix(Scalar%ScaC,Matrix)
+      ElseIf (Matrix%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Integer') then
         Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Integer',Matrix%Storage)
         Matrix_Res%MatI = Scalar%ScaI * Matrix%MatI
       ElseIf (Matrix%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Real') then
@@ -25330,7 +26429,12 @@
       Type(MQC_Matrix)::Matrix_Res
 
       Call MQC_Deallocate_Matrix(Matrix_Res)
-      If (Matrix%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Integer') then
+!
+!     A complex scalar on a packed or diagonal matrix: the storage of the result is
+!     inferred by MQC_Complex_Scaled_Matrix (without unpacking).
+      If(Scalar%Data_Type.eq.'Complex'.and.Matrix%Storage.ne.'StorFull') then
+        Matrix_Res = MQC_Complex_Scaled_Matrix(Scalar%ScaC,Matrix)
+      ElseIf (Matrix%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Integer') then
         Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Integer',Matrix%Storage)
         Matrix_Res%MatI = Scalar%ScaI * Matrix%MatI
       ElseIf (Matrix%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Real') then
@@ -25629,28 +26733,10 @@
       Implicit None
       Complex(kind=real64),Intent(In)::Comp
       Type(MQC_Matrix),Intent(In)::Matrix
-      Type(MQC_Matrix)::Matrix_Res,TmpMatrix
-
-      Call MQC_Deallocate_Matrix(Matrix_Res)
-      Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex','StorFull')
-      if (Matrix%Storage.ne.'StorFull') then
-        TmpMatrix =  MQC_Matrix_Symm2Full_Func(Matrix)
-        if (TmpMatrix%Data_Type.eq.'Integer') then
-          Matrix_Res%MatC = Comp *TmpMatrix%MatI
-        else if (TmpMatrix%Data_Type.eq.'Real') then
-          Matrix_Res%MatC = Comp *TmpMatrix%MatR
-        else 
-          Matrix_Res%MatC = Comp *TmpMatrix%MatC
-        end if
-      else if (Matrix%Data_Type.eq.'Integer') then
-        Matrix_Res%MatC = Comp * Matrix%MatI
-      else if (Matrix%Data_Type.eq.'Real') then
-        Matrix_Res%MatC = Comp * Matrix%MatR
-      else 
-        Matrix_Res%MatC = Comp * Matrix%MatC
-      end if
-      call MQC_Matrix_Full2Symm(Matrix_Res) 
-
+      Type(MQC_Matrix)::Matrix_Res
+!
+      Matrix_Res = MQC_Complex_Scaled_Matrix(Comp,Matrix)
+!
       End Function MQC_ComplexMatrixProduct
 !
 !
@@ -25693,29 +26779,112 @@
       Implicit None
       Complex(kind=real64),Intent(In)::Comp
       Type(MQC_Matrix),Intent(In)::Matrix
-      Type(MQC_Matrix)::Matrix_Res,TmpMatrix
-
-      Call MQC_Deallocate_Matrix(Matrix_Res)
-      Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex','StorFull')
-      if (Matrix%Storage.ne.'StorFull') then
-        TmpMatrix =  MQC_Matrix_Symm2Full_Func(Matrix)
-        if (TmpMatrix%Data_Type.eq.'Integer') then
-          Matrix_Res%MatC = Comp *TmpMatrix%MatI
-        else if (TmpMatrix%Data_Type.eq.'Real') then
-          Matrix_Res%MatC = Comp *TmpMatrix%MatR
-        else 
-          Matrix_Res%MatC = Comp *TmpMatrix%MatC
-        end if
-      else if (Matrix%Data_Type.eq.'Integer') then
-        Matrix_Res%MatC = Comp * Matrix%MatI
-      else if (Matrix%Data_Type.eq.'Real') then
-        Matrix_Res%MatC = Comp * Matrix%MatR
-      else 
-        Matrix_Res%MatC = Comp * Matrix%MatC
-      end if
-      call MQC_Matrix_Full2Symm(Matrix_Res) 
-
+      Type(MQC_Matrix)::Matrix_Res
+!
+      Matrix_Res = MQC_Complex_Scaled_Matrix(Comp,Matrix)
+!
       End Function MQC_MatrixComplexProduct
+!
+!
+!     PROCEDURE MQC_Complex_Scaled_Matrix
+!
+!>    \brief <b> MQC_Complex_Scaled_Matrix returns an MQC matrix multiplied by an
+!>    intrinsic complex scalar, keeping the packed storage when the product allows
+!>    it</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The storage of c*A follows from the storage of A and from c:
+!>      StorSymm, StorAsym, StorDiag: kept for any c
+!>      real StorHerm/StorAhrm (also symmetric/antisymmetric): kept for a real c,
+!>      swapped for an imaginary c, StorSymm/StorAsym for any other c
+!>      complex StorHerm/StorAhrm: kept for a real c, swapped (StorHerm <-> StorAhrm)
+!>      for a purely imaginary c, full otherwise
+!>      StorFull: full, then packed by MQC_Matrix_Full2Symm when it is symmetric
+!>    The packed data are scaled directly, without unpacking.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_Complex_Scaled_Matrix(Comp,Matrix) Result(Matrix_Res)
+!
+      Implicit None
+      Complex(kind=real64),Intent(In)::Comp
+      Type(MQC_Matrix),Intent(In)::Matrix
+      Type(MQC_Matrix)::Matrix_Res,TmpMatrix
+      Character(len=8)::newStorage
+!
+      Call MQC_Deallocate_Matrix(Matrix_Res)
+      newStorage = Matrix%Storage
+      Select Case (Matrix%Storage)
+      Case ('StorSymm','StorAsym','StorDiag')
+        continue
+      Case ('StorHerm','StorAhrm')
+        If(Matrix%Data_Type.ne.'Complex') then
+!         Real data are both (anti)symmetric and (anti-)Hermitian: an imaginary c swaps
+!         the Hermitian label, any other complex c keeps only the transpose symmetry.
+          If(aimag(Comp).eq.0.0) then
+            continue
+          ElseIf(real(Comp).eq.0.0) then
+            If(Matrix%Storage.eq.'StorHerm') then
+              newStorage = 'StorAhrm'
+            Else
+              newStorage = 'StorHerm'
+            EndIf
+          ElseIf(Matrix%Storage.eq.'StorHerm') then
+            newStorage = 'StorSymm'
+          Else
+            newStorage = 'StorAsym'
+          EndIf
+        ElseIf(aimag(Comp).eq.0.0) then
+          continue
+        ElseIf(real(Comp).eq.0.0) then
+          If(Matrix%Storage.eq.'StorHerm') then
+            newStorage = 'StorAhrm'
+          Else
+            newStorage = 'StorHerm'
+          EndIf
+        Else
+          newStorage = 'StorFull'
+        EndIf
+      Case ('StorFull')
+        continue
+      Case Default
+        Call MQC_Error_A('Storage type not defined in MQC_Complex_Scaled_Matrix', 6, &
+             'Matrix%Storage', Matrix%Storage )
+      End Select
+!
+      If(newStorage.eq.'StorFull') then
+        TmpMatrix = Matrix
+        If(TmpMatrix%Storage.ne.'StorFull') Call MQC_Matrix_Symm2Full(TmpMatrix)
+        Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex','StorFull')
+        If(TmpMatrix%Data_Type.eq.'Integer') then
+          Matrix_Res%MatC = Comp*TmpMatrix%MatI
+        ElseIf(TmpMatrix%Data_Type.eq.'Real') then
+          Matrix_Res%MatC = Comp*TmpMatrix%MatR
+        Else
+          Matrix_Res%MatC = Comp*TmpMatrix%MatC
+        EndIf
+        If(Matrix%Storage.eq.'StorFull') Call MQC_Matrix_Full2Symm(Matrix_Res)
+      Else
+        Call MQC_Allocate_Matrix(Matrix%NRow,Matrix%NCol,Matrix_Res,'Complex',newStorage)
+        If(Matrix%Data_Type.eq.'Integer') then
+          Matrix_Res%MatC = Comp*Matrix%MatI
+        ElseIf(Matrix%Data_Type.eq.'Real') then
+          Matrix_Res%MatC = Comp*Matrix%MatR
+        Else
+          Matrix_Res%MatC = Comp*Matrix%MatC
+        EndIf
+      EndIf
+!
+      End Function MQC_Complex_Scaled_Matrix
 !
 !
 !     PROCEDURE MQC_MatrixScalarDivide
@@ -26270,24 +27439,7 @@
           Call MQC_Error_A('Matrix type not defined in MQC_Matrix_Scalar_Put', 6, &
                'Matrix%Data_Type', Matrix%Data_Type )
         EndIf
-        If(myOption.eq.'symmetric') then
-          call Matrix%put(scalar,IndJ,IndI)
-        elseIf(myOption.eq.'antisymmetric') then
-          call Matrix%put((-1)*scalar,IndJ,IndI)
-        elseIf(myOption.eq.'hermitian') then
-          call Matrix%put(conjg(scalar),IndJ,IndI)
-        elseIf(myOption.eq.'antihermitian') then
-          call Matrix%put((-1)*conjg(scalar),IndJ,IndI)
-        endIf
-      ElseIf (Matrix%Storage.eq.'StorSymm' .or. Matrix%Storage.eq.'StorAsym' .or. &
-          Matrix%Storage.eq.'StorHerm' .or. Matrix%Storage.eq.'StorAhrm') then 
-        If(((IndI.ne.IndJ).and.(myOption.eq.'symmetric'.and.Matrix%Storage.ne.'StorSymm')).or. &
-          ((IndI.ne.IndJ).and.(myOption.eq.'antisymmetric'.and.Matrix%Storage.ne.'StorAsym')).or. &
-          ((IndI.ne.IndJ).and.(myOption.eq.'hermitian'.and.Matrix%Storage.ne.'StorHerm')).or. &
-          ((IndI.ne.IndJ).and.(myOption.eq.'antihermitian'.and.Matrix%Storage.ne.'StorAhrm')).or. &
-          ((IndI.ne.IndJ).and.(myOption.eq.'element'))) then
-          call mqc_matrix_symm2full(Matrix)
-          call Matrix%put(scalar,IndI,IndJ)
+        If(IndI.ne.IndJ) then
           If(myOption.eq.'symmetric') then
             call Matrix%put(scalar,IndJ,IndI)
           elseIf(myOption.eq.'antisymmetric') then
@@ -26297,7 +27449,27 @@
           elseIf(myOption.eq.'antihermitian') then
             call Matrix%put((-1)*conjg(scalar),IndJ,IndI)
           endIf
+        EndIf
+      ElseIf (Matrix%Storage.eq.'StorSymm' .or. Matrix%Storage.eq.'StorAsym' .or. &
+          Matrix%Storage.eq.'StorHerm' .or. Matrix%Storage.eq.'StorAhrm') then 
+        If(((IndI.ne.IndJ).and.(myOption.eq.'symmetric'.and.Matrix%Storage.ne.'StorSymm')).or. &
+          ((IndI.ne.IndJ).and.(myOption.eq.'antisymmetric'.and.Matrix%Storage.ne.'StorAsym')).or. &
+          ((IndI.ne.IndJ).and.(myOption.eq.'hermitian'.and.Matrix%Storage.ne.'StorHerm')).or. &
+          ((IndI.ne.IndJ).and.(myOption.eq.'antihermitian'.and.Matrix%Storage.ne.'StorAhrm')).or. &
+          ((IndI.ne.IndJ).and.(myOption.eq.'element')).or. &
+          ((IndI.eq.IndJ).and..not.diagCompatible(Matrix%Storage,Scalar))) then
+          call mqc_matrix_symm2full(Matrix)
+          call Matrix%put(scalar,IndI,IndJ,myOption)
         Else
+          If(IndI.lt.IndJ) then
+            If(Matrix%Storage.eq.'StorAsym') then
+              Scalar = (-1)*Scalar
+            ElseIf(Matrix%Storage.eq.'StorHerm') then
+              Scalar = conjg(Scalar)
+            ElseIf(Matrix%Storage.eq.'StorAhrm') then
+              Scalar = (-1)*conjg(Scalar)
+            EndIf
+          EndIf
           If (Matrix%Data_Type.eq.'Integer') then
             If (Scalar%Data_Type.eq.'Integer') then
               Matrix%MatI(symIndexHash(IndI,IndJ),1) = Scalar%ScaI
@@ -26405,6 +27577,40 @@
              'Matrix%Storage', Matrix%Storage )
       EndIf
 
+!
+      Contains
+!
+        Function diagCompatible(Storage,Scalar) Result(OK)
+        Character(len=*),Intent(In)::Storage
+        Type(MQC_Scalar),Intent(In)::Scalar
+        Logical::OK
+        Real(kind=real64)::Thresh,ReS,ImS
+        If(MQC_very_small.gt.0.0) then
+          Thresh = MQC_very_small
+        Else
+          Thresh = 1e-10
+        EndIf
+        ImS = 0.0
+        If(Scalar%Data_Type.eq.'Integer') then
+          ReS = real(Scalar%ScaI,kind=real64)
+        ElseIf(Scalar%Data_Type.eq.'Real') then
+          ReS = Scalar%ScaR
+        Else
+          ReS = real(Scalar%ScaC)
+          ImS = aimag(Scalar%ScaC)
+        EndIf
+        Select Case (Storage)
+        Case ('StorHerm')
+          OK = abs(ImS).le.Thresh
+        Case ('StorAhrm')
+          OK = abs(ReS).le.Thresh
+        Case ('StorAsym')
+          OK = abs(ReS).le.Thresh.and.abs(ImS).le.Thresh
+        Case Default
+          OK = .true.
+        End Select
+        End Function diagCompatible
+!
       End Subroutine MQC_Matrix_Scalar_Put_Int
 !
 !
@@ -27266,6 +28472,10 @@
 !>    \verbatim
 !>
 !>    MQC_Matrix_Inverse is a function that returns the inverse of an MQC matrix.
+!>    Diagonal matrices are inverted element by element and packed Hermitian,
+!>    anti-Hermitian and symmetric matrices with the packed LAPACK routines; the
+!>    result keeps the storage (and so the symmetry) of the input. Other matrices are
+!>    inverted by LU (an antisymmetric input gives a packed antisymmetric result).
 !>
 !>    \endverbatim
 !
@@ -27295,6 +28505,10 @@
       integer(kind=int64)::iError,nDim1,nDim2
       integer(kind=MQC_BlasInt),dimension(:),allocatable::iPiv
       real(kind=real64),dimension(:),allocatable::work
+      character(len=16)::structure
+      real(kind=real64),dimension(:),allocatable::tempP
+      complex(kind=real64),dimension(:),allocatable::tempPC
+      integer(kind=int64)::i
 !
 !     Inverse of matrix A.
 !
@@ -27302,77 +28516,223 @@
       nDim2 = mqc_matrix_columns(a)
       storFlag = a%Storage
       typeFlag = a%Data_Type
-      if(a%Storage.eq.'StorDiag') call mqc_matrix_diag2Full(a)
-      if(a%Storage.eq.'StorSymm'.or.a%Storage.eq.'StorAsym'.or. &
-        a%Storage.eq.'StorHerm'.or.a%Storage.eq.'StorAhrm') &
-        call mqc_matrix_symm2Full(a)
-      if(a%Data_Type.eq.'Integer'.or.a%Data_Type.eq.'Real') then
-        If(a%Data_Type.eq.'Integer') call mqc_matrix_copy_int2Real(a)
-        allocate(temp(nDim1,nDim2))
-        temp = a%matr
-
-        allocate(iPiv(min(nDim1,nDim2)),work(min(nDim1,nDim2)))
-        iPiv = 0
-        iError = 0
+      if(nDim1.ne.nDim2) call mqc_error_i('Matrix must be square in mqc_matrix_inverse',6, &
+        'nDim1',nDim1,'nDim2',nDim2)
+!
+!     Diagonal and packed matrices are inverted in their own storage when the
+!     structure allows it (packed storage is checked in the mathematical sense, which
+!     only looks at the diagonal): StorDiag element by element, real StorHerm
+!     (symmetric) with DSPTRF/DSPTRI, complex StorHerm with ZHPTRF/ZHPTRI, complex
+!     StorSymm with ZSPTRF/ZSPTRI, and complex StorAhrm (A = iH) through H = -iA.
+!     The packed lower triangle is passed as LAPACK 'U' storage. Any other matrix is
+!     inverted by LU on the full matrix; an antisymmetric (or real anti-Hermitian)
+!     input gives a packed result.
+      select case (a%Storage)
+      case('StorDiag')
+        structure = 'diagonal'
+      case('StorHerm')
+        if(a%Data_Type.ne.'Complex') then
+          structure = 'realsymmetric'
+        elseIf(MQC_Matrix_Test_Symmetric(a,'hermitian',.true.)) then
+          structure = 'hermitian'
+        else
+          structure = 'full'
+        endIf
+      case('StorSymm')
+        if(a%Data_Type.eq.'Complex') then
+          structure = 'symmetric'
+        else
+          structure = 'full'
+        endIf
+      case('StorAhrm')
+        if(a%Data_Type.eq.'Complex'.and.MQC_Matrix_Test_Symmetric(a,'antihermitian',.true.)) then
+          structure = 'antihermitian'
+        else
+          structure = 'full'
+        endIf
+      case('StorFull','StorAsym')
+        structure = 'full'
+      case default
+        call mqc_error_a('Unknown storage in mqc_matrix_inverse',6,'a%Storage',a%Storage)
+      end select
+!
+      select case (structure)
+      case('diagonal')
+        if(a%Data_Type.eq.'Complex') then
+          call MQC_Allocate_Matrix(nDim1,nDim1,a_inv,'Complex','StorDiag')
+          do i = 1, nDim1
+            if(a%MatC(i,1).eq.(0.0,0.0)) &
+              call mqc_error_i('Diagonal matrix is singular in mqc_matrix_inverse',6,'i',i)
+            a_inv%MatC(i,1) = 1.0/a%MatC(i,1)
+          end do
+        else
+          call MQC_Allocate_Matrix(nDim1,nDim1,a_inv,'Real','StorDiag')
+          do i = 1, nDim1
+            if(a%Data_Type.eq.'Integer') then
+              a_inv%MatR(i,1) = real(a%MatI(i,1),kind=real64)
+            else
+              a_inv%MatR(i,1) = a%MatR(i,1)
+            endIf
+            if(a_inv%MatR(i,1).eq.0.0) &
+              call mqc_error_i('Diagonal matrix is singular in mqc_matrix_inverse',6,'i',i)
+            a_inv%MatR(i,1) = 1.0/a_inv%MatR(i,1)
+          end do
+        endIf
+      case('realsymmetric')
+        if(a%Data_Type.eq.'Integer') then
+          tempP = real(a%MatI(:,1),kind=real64)
+        else
+          tempP = a%MatR(:,1)
+        endIf
+        allocate(iPiv(nDim1),work(nDim1))
         call mqc_check_blas_integer_kind()
-        call dgetrf(int(nDim1,kind=MQC_BlasInt),int(nDim2,kind=MQC_BlasInt),temp,int(nDim1,kind=MQC_BlasInt),&
-             iPiv,mqcBlasInfo)
-        iError = mqcBlasInfo
-        if (iError.gt.0) then 
-          call mqc_error_i('Upper triangular matrix is singular', 6, 'iError', iError)
-        else if (iError.lt.0) then
-          call mqc_error_i('Illegal value in dgetrf matrix', 6, 'iError', iError)
+        call dsptrf('U',int(nDim1,kind=MQC_BlasInt),tempP,iPiv,mqcBlasInfo)
+        call packedCheck('dsptrf')
+        call mqc_check_blas_integer_kind()
+        call dsptri('U',int(nDim1,kind=MQC_BlasInt),tempP,iPiv,work,mqcBlasInfo)
+        call packedCheck('dsptri')
+        call MQC_Allocate_Matrix(nDim1,nDim1,a_inv,'Real','StorHerm')
+        a_inv%MatR(:,1) = tempP
+      case('hermitian','symmetric','antihermitian')
+        if(structure.eq.'antihermitian') then
+          tempPC = (0.0,-1.0)*a%MatC(:,1)
+        else
+          tempPC = a%MatC(:,1)
+        endIf
+        allocate(iPiv(nDim1),workc(nDim1))
+        if(structure.eq.'symmetric') then
+          call mqc_check_blas_integer_kind()
+          call zsptrf('U',int(nDim1,kind=MQC_BlasInt),tempPC,iPiv,mqcBlasInfo)
+          call packedCheck('zsptrf')
+          call mqc_check_blas_integer_kind()
+          call zsptri('U',int(nDim1,kind=MQC_BlasInt),tempPC,iPiv,workc,mqcBlasInfo)
+          call packedCheck('zsptri')
         else
           call mqc_check_blas_integer_kind()
-          call dgetri(int(NDim1,kind=MQC_BlasInt),temp,int(NDim1,kind=MQC_BlasInt),IPIV,Work,&
-               int(NDim1,kind=MQC_BlasInt),mqcBlasInfo)
-          IError = mqcBlasInfo
-          if(iError.gt.0) then
-            call mqc_error_i('Matrix is not invertable', 6, 'iError', iError)
-          else if (iError.lt.0) then
-            call mqc_error_i('Illegal value in dgetri matrix', 6, 'iError', iError)
-          end if
-        end if
-        a_inv = temp
-        if(allocated(iPiv)) deallocate(iPiv)
-        if(allocated(work)) deallocate(work)
-        if(allocated(temp)) deallocate(temp)
-        if(TypeFlag.eq.'Integer') Call MQC_Matrix_Copy_Real2Int(a)
-      elseIf(a%Data_Type.eq.'Complex') then
-        allocate(tempc(nDim1,nDim2))
-        tempc = a%matc
-        
-        allocate(iPiv(min(nDim1,nDim2)),workc(min(nDim1,nDim2)))
-        iPiv = 0
-        iError = 0
-        call mqc_check_blas_integer_kind()
-        call zgetrf(int(nDim1,kind=MQC_BlasInt),int(nDim2,kind=MQC_BlasInt),tempc,int(nDim1,kind=MQC_BlasInt),&
-             iPiv,mqcBlasInfo)
-        iError = mqcBlasInfo
-        if (iError.gt.0) then
-          call mqc_error_i('Upper triangular matrix is singular', 6, 'iError', iError)
-        else if (iError.lt.0) then
-          call mqc_error_i('Illegal value in zgetrf matrix', 6, 'iError', iError)
-        else
+          call zhptrf('U',int(nDim1,kind=MQC_BlasInt),tempPC,iPiv,mqcBlasInfo)
+          call packedCheck('zhptrf')
           call mqc_check_blas_integer_kind()
-          call zgetri(int(NDim1,kind=MQC_BlasInt),tempC,int(NDim1,kind=MQC_BlasInt),IPIV,WorkC,&
-               int(NDim1,kind=MQC_BlasInt),mqcBlasInfo)
-          IError = mqcBlasInfo
-          if(iError.gt.0) then
-            call mqc_error_i('Matrix is not invertable', 6, 'iError', iError)
-          else if(iError.lt.0) then
-            call mqc_error_i('Illegal value in zgetri matrix', 6, 'iError', iError)
-          end if
-        end if
-        a_inv = tempC
+          call zhptri('U',int(nDim1,kind=MQC_BlasInt),tempPC,iPiv,workc,mqcBlasInfo)
+          call packedCheck('zhptri')
+!         The diagonal of the inverse of a Hermitian matrix is real.
+          do i = 1, nDim1
+            tempPC((i*(i+1))/2) = cmplx(real(tempPC((i*(i+1))/2)),0.0,kind=real64)
+          end do
+        endIf
+        select case (structure)
+        case('hermitian')
+          call MQC_Allocate_Matrix(nDim1,nDim1,a_inv,'Complex','StorHerm')
+          a_inv%MatC(:,1) = tempPC
+        case('symmetric')
+          call MQC_Allocate_Matrix(nDim1,nDim1,a_inv,'Complex','StorSymm')
+          a_inv%MatC(:,1) = tempPC
+        case('antihermitian')
+          call MQC_Allocate_Matrix(nDim1,nDim1,a_inv,'Complex','StorAhrm')
+          a_inv%MatC(:,1) = (0.0,-1.0)*tempPC
+        case default
+          call mqc_error_a('Unknown structure in mqc_matrix_inverse',6,'structure',structure)
+        end select
         if(allocated(iPiv)) deallocate(iPiv)
         if(allocated(workc)) deallocate(workc)
-        if(allocated(tempC)) deallocate(tempC)
-      endIf
-      if(StorFlag.eq.'StorDiag') Call MQC_Matrix_Full2Diag(a)
-      if(StorFlag.eq.'StorSymm'.or.StorFlag.eq.'StorAsym'.or.&
-        StorFlag.eq.'StorHerm'.or.StorFlag.eq.'StorAhrm') &
-        Call MQC_Matrix_Full2Symm(a)
+      case('full')
+        if(a%Storage.eq.'StorDiag') call mqc_matrix_diag2Full(a)
+        if(a%Storage.eq.'StorSymm'.or.a%Storage.eq.'StorAsym'.or. &
+          a%Storage.eq.'StorHerm'.or.a%Storage.eq.'StorAhrm') &
+          call mqc_matrix_symm2Full(a)
+        if(a%Data_Type.eq.'Integer'.or.a%Data_Type.eq.'Real') then
+          If(a%Data_Type.eq.'Integer') call mqc_matrix_copy_int2Real(a)
+          allocate(temp(nDim1,nDim2))
+          temp = a%matr
+
+          allocate(iPiv(min(nDim1,nDim2)),work(min(nDim1,nDim2)))
+          iPiv = 0
+          iError = 0
+          call mqc_check_blas_integer_kind()
+          call dgetrf(int(nDim1,kind=MQC_BlasInt),int(nDim2,kind=MQC_BlasInt),temp,int(nDim1,kind=MQC_BlasInt),&
+               iPiv,mqcBlasInfo)
+          iError = mqcBlasInfo
+          if (iError.gt.0) then 
+            call mqc_error_i('Upper triangular matrix is singular', 6, 'iError', iError)
+          else if (iError.lt.0) then
+            call mqc_error_i('Illegal value in dgetrf matrix', 6, 'iError', iError)
+          else
+            call mqc_check_blas_integer_kind()
+            call dgetri(int(NDim1,kind=MQC_BlasInt),temp,int(NDim1,kind=MQC_BlasInt),IPIV,Work,&
+                 int(NDim1,kind=MQC_BlasInt),mqcBlasInfo)
+            IError = mqcBlasInfo
+            if(iError.gt.0) then
+              call mqc_error_i('Matrix is not invertable', 6, 'iError', iError)
+            else if (iError.lt.0) then
+              call mqc_error_i('Illegal value in dgetri matrix', 6, 'iError', iError)
+            end if
+          end if
+          a_inv = temp
+          if(allocated(iPiv)) deallocate(iPiv)
+          if(allocated(work)) deallocate(work)
+          if(allocated(temp)) deallocate(temp)
+          if(TypeFlag.eq.'Integer') Call MQC_Matrix_Copy_Real2Int(a)
+        elseIf(a%Data_Type.eq.'Complex') then
+          allocate(tempc(nDim1,nDim2))
+          tempc = a%matc
+        
+          allocate(iPiv(min(nDim1,nDim2)),workc(min(nDim1,nDim2)))
+          iPiv = 0
+          iError = 0
+          call mqc_check_blas_integer_kind()
+          call zgetrf(int(nDim1,kind=MQC_BlasInt),int(nDim2,kind=MQC_BlasInt),tempc,int(nDim1,kind=MQC_BlasInt),&
+               iPiv,mqcBlasInfo)
+          iError = mqcBlasInfo
+          if (iError.gt.0) then
+            call mqc_error_i('Upper triangular matrix is singular', 6, 'iError', iError)
+          else if (iError.lt.0) then
+            call mqc_error_i('Illegal value in zgetrf matrix', 6, 'iError', iError)
+          else
+            call mqc_check_blas_integer_kind()
+            call zgetri(int(NDim1,kind=MQC_BlasInt),tempC,int(NDim1,kind=MQC_BlasInt),IPIV,WorkC,&
+                 int(NDim1,kind=MQC_BlasInt),mqcBlasInfo)
+            IError = mqcBlasInfo
+            if(iError.gt.0) then
+              call mqc_error_i('Matrix is not invertable', 6, 'iError', iError)
+            else if(iError.lt.0) then
+              call mqc_error_i('Illegal value in zgetri matrix', 6, 'iError', iError)
+            end if
+          end if
+          a_inv = tempC
+          if(allocated(iPiv)) deallocate(iPiv)
+          if(allocated(workc)) deallocate(workc)
+          if(allocated(tempC)) deallocate(tempC)
+        endIf
+        if(StorFlag.eq.'StorDiag') Call MQC_Matrix_Full2Diag(a)
+        if(StorFlag.eq.'StorSymm'.or.StorFlag.eq.'StorAsym'.or.&
+          StorFlag.eq.'StorHerm'.or.StorFlag.eq.'StorAhrm') &
+          Call MQC_Matrix_Full2Symm(a)
+!       The inverse of an antisymmetric (real anti-Hermitian) matrix is antisymmetric.
+        if(((StorFlag.eq.'StorAhrm'.and.TypeFlag.ne.'Complex').or.StorFlag.eq.'StorAsym').and. &
+          MQC_Matrix_Test_Symmetric(a,'antisymmetric',.true.)) then
+          call MQC_Matrix_Pack(a_inv,'antisymmetric')
+          do i = 1, nDim1
+            if(a_inv%Data_Type.eq.'Complex') then
+              a_inv%MatC((i*(i+1))/2,1) = (0.0,0.0)
+            else
+              a_inv%MatR((i*(i+1))/2,1) = 0.0
+            endIf
+          end do
+        endIf
+      case default
+        call mqc_error_a('Unknown structure in mqc_matrix_inverse',6,'structure',structure)
+      end select
+!
+      contains
+!
+        subroutine packedCheck(routine)
+        character(len=*),intent(in)::routine
+        iError = mqcBlasInfo
+        if(iError.gt.0) then
+          call mqc_error_i('Matrix is singular in mqc_matrix_inverse ('//routine//')',6,'iError',iError)
+        elseIf(iError.lt.0) then
+          call mqc_error_i('Illegal value in mqc_matrix_inverse ('//routine//')',6,'iError',iError)
+        endIf
+        end subroutine packedCheck
 !
       end function mqc_matrix_inverse
 !
@@ -27975,51 +29335,40 @@
 !
       Subroutine MQC_Matrix_RMS_Max(A,rms_A,max_A)
 !
+!     Variable Declarations.
       Implicit None
       Class(MQC_Matrix),Intent(InOut)::A
+      Type(MQC_Matrix)::Af
       Real(kind=real64),Dimension(:,:),Allocatable::A_Temp
       Complex(Kind=real64),Dimension(:,:),Allocatable::AC_Temp
       Type(MQC_Scalar),Intent(Out)::rms_A,max_A
-!
       Integer(kind=int64)::N
-      Character(len=64)::typeFlag,storFlag
 !
-!     Do the work.
-!
-      typeFlag = A%Data_Type
-      storFlag = A%Storage
-      N = MQC_Matrix_Rows(A)*MQC_Matrix_Columns(A)
-      if(storFlag.eq.'StorDiag') call mqc_matrix_diag2Full(A) 
-      if(storFlag.eq.'StorSymm'.or.storFlag.eq.'StorAsym'.or.&
-        storFlag.eq.'StorHerm'.or.storFlag.eq.'StorAhrm') &
-        call mqc_matrix_symm2Full(A)
-      if(storFlag.eq.'StorFull') then
-        if(typeFlag.eq.'Real'.or.typeFlag.eq.'Integer') then
-          if(typeFlag.eq.'Integer') call mqc_matrix_copy_int2Real(A)
-          allocate(A_Temp(MQC_Matrix_Rows(A),MQC_Matrix_Columns(A)))
-          rms_A = sqrt(dot_product(Reshape(A_Temp,[N]),Reshape(A_Temp,[N]))/N)
-          max_A = maxval(abs(A_Temp))
-          deallocate(A_Temp)
-        elseIf(typeFlag.eq.'Complex') then
-          allocate(AC_Temp(MQC_Matrix_Rows(A),MQC_Matrix_Columns(A)))
-          rms_A = sqrt(dot_product(Reshape(AC_Temp,[N]),Reshape(AC_Temp,[N]))/N)
-          max_A = real(maxval(abs(AC_Temp)))
-          deallocate(AC_Temp)
-        else
-          call mqc_error_a('Unrecognised type in mqc_matrix_rms_max', 6, &
-               'typeFlag', typeFlag )
-        endIf
-      else
-        call mqc_error_a('storFlag not recognised in mqc_matrix_rms_max', 6, &
-             'storFlag', storFlag )
+!     The values are taken from a full copy, so A keeps its storage.
+      Af = A
+      if(Af%Storage.eq.'StorDiag') then
+        call mqc_matrix_diag2Full(Af)
+      elseIf(Af%Storage.ne.'StorFull') then
+        call mqc_matrix_symm2Full(Af)
       endIf
-!
-      if(typeFlag.eq.'Integer') call mqc_matrix_copy_real2Int(A)
-      if(storFlag.eq.'StorSymm'.or.storFlag.eq.'StorAsym'.or.&
-        storFlag.eq.'StorHerm'.or.storFlag.eq.'StorAhrm') &
-        call mqc_matrix_full2Symm(A)
-      if(storFlag.eq.'StorDiag') call mqc_matrix_full2Diag(A)
-!
+      N = MQC_Matrix_Rows(Af)*MQC_Matrix_Columns(Af)
+      if(Af%Data_Type.eq.'Real'.or.Af%Data_Type.eq.'Integer') then
+        if(Af%Data_Type.eq.'Integer') call mqc_matrix_copy_int2Real(Af)
+        allocate(A_Temp(MQC_Matrix_Rows(Af),MQC_Matrix_Columns(Af)))
+        A_Temp = Af%MatR
+        rms_A = sqrt(dot_product(Reshape(A_Temp,[N]),Reshape(A_Temp,[N]))/N)
+        max_A = maxval(abs(A_Temp))
+        deallocate(A_Temp)
+      elseIf(Af%Data_Type.eq.'Complex') then
+        allocate(AC_Temp(MQC_Matrix_Rows(Af),MQC_Matrix_Columns(Af)))
+        AC_Temp = Af%MatC
+        rms_A = sqrt(real(dot_product(Reshape(AC_Temp,[N]),Reshape(AC_Temp,[N])))/N)
+        max_A = real(maxval(abs(AC_Temp)))
+        deallocate(AC_Temp)
+      else
+        call mqc_error_a('Unrecognised type in mqc_matrix_rms_max', 6, &
+             'Af%Data_Type', Af%Data_Type )
+      endIf
       Return
       End Subroutine MQC_Matrix_RMS_Max
 !
@@ -28546,14 +29895,9 @@
 !     Do the work.
 !
       output = A
-      if(A%Data_Type.eq.'Complex') then
-        call MQC_Matrix_Copy_Complex2Real(output)
-        if(output%Storage.eq.'StorHerm') then
-          output%Storage = 'StorSymm'
-        elseIf(output%Storage.eq.'StorAhrm') then
-          output%Storage = 'StorAsym'
-        endIf
-      endIf
+!     The real part keeps the (anti)symmetry of the transpose; for real data it is
+!     stored as StorHerm (symmetric) or StorAhrm (antisymmetric).
+      if(A%Data_Type.eq.'Complex') call MQC_Matrix_Copy_Complex2Real(output)
 !
       end function mqc_matrix_complex_realPart
 !
@@ -28605,11 +29949,15 @@
         output = A
         call MQC_Matrix_Copy_Complex2Real(output)
         output%matR = aimag(A%matC)
-        if(output%Storage.eq.'StorHerm') then
-          output%Storage = 'StorAsym'
-        elseIf(output%Storage.eq.'StorAhrm') then
-          output%Storage = 'StorSymm'
-        endIf
+!       The imaginary part of a Hermitian (anti-Hermitian) matrix is antisymmetric
+!       (symmetric); the one of a complex symmetric (antisymmetric) matrix keeps it.
+!       Real data use StorHerm (symmetric) and StorAhrm (antisymmetric).
+        select case (A%Storage)
+        case('StorHerm','StorAsym')
+          output%Storage = 'StorAhrm'
+        case('StorAhrm','StorSymm')
+          output%Storage = 'StorHerm'
+        end select
       case default
         call mqc_error_a('Unrecognized MQC_Matrix data type in mqc_matrix_complex_realPart',&
           6,'A%Data_Type',A%Data_Type)
@@ -28860,13 +30208,13 @@
 !
       select case(MatrixIn%Data_Type)
       case('Integer')
-        intMatrix = MatrixIn
+        call MQC_Matrix_To_Array(intMatrix,MatrixIn,unpack=.true.)
         VectorOut = reshape(intMatrix,[DimArr(1)]) 
       case('Real')
-        realMatrix = MatrixIn
+        call MQC_Matrix_To_Array(realMatrix,MatrixIn,unpack=.true.)
         VectorOut = reshape(realMatrix,[DimArr(1)]) 
       case('Complex')
-        compMatrix = MatrixIn
+        call MQC_Matrix_To_Array(compMatrix,MatrixIn,unpack=.true.)
         VectorOut = reshape(compMatrix,[DimArr(1)]) 
       case default
         call mqc_error_a('Unrecognized data type in MatrixIn in MQC_Matrix_Reshape_Vector',6,&
@@ -28888,7 +30236,10 @@
 !>    \verbatim
 !>
 !>    MQC_Matrix_MPInv is a function that returns the Moore-Penrose psuedoinverse 
-!>    of a MQC matrix.    
+!>    of a MQC matrix. Diagonal matrices are handled element by element (StorDiag
+!>    result). Hermitian and anti-Hermitian matrices use their eigenvalues, whose
+!>    absolute values are the singular values, and unitary eigenvectors; the result
+!>    is packed (StorHerm/StorAhrm). Other matrices use the SVD.
 !>
 !>    \endverbatim
 !
@@ -28926,7 +30277,6 @@
 !
       Implicit None
       Class(MQC_Matrix)::A
-!
       Type(MQC_Matrix)::EUVecs,EVVecs,SMat
       Type(MQC_Vector)::EVals
       Type(MQC_Matrix)::PInv
@@ -28934,45 +30284,143 @@
       class(*),optional::tol
       Integer(kind=int64),optional::spaceDim
       Integer(kind=int64)::I,mySpaceDim
+      Character(len=16)::structure,dSymmetry
+      Real(kind=real64)::myThresh,maxAbs
+      Complex(kind=real64)::Z
 !
-      call A%SVD(EVals,EUVecs,EVVecs)
-      if(present(tol)) then
-        select type (tol)
-        type is (integer)
-          thresh = tol
-        type is (real)
-          thresh = tol
-        type is (complex)
-          thresh = tol
-        type is (mqc_scalar)
-          thresh = tol
-        class default
-          call mqc_error('Tolerance type not defined in MQC_Matrix_MPInv')
-        end select
-      else
-        thresh = evals%maxval()*epsilon(1.0e0)*max(size(A,1),size(A,2))
-        if (thresh.lt.1.0e-10) thresh = 1.0e-10
-      endif
-      Zero = 0.0e0
-      mySpaceDim = Size(EVals)
-
-      outer: Do I = 1, Size(EVals)
-        If(EVals%at(I).gt.Thresh) then
-          call EVals%put(1.0/EVals%at(I),I)
+!     A diagonal matrix is pseudo-inverted element by element. A Hermitian or
+!     anti-Hermitian matrix uses its eigenvalues (the singular values are their
+!     absolute values) and unitary eigenvectors: PInv = U D+ dagger(U), formed with
+!     HermMatMul, which keeps the (anti-)Hermitian structure packed. Any other matrix
+!     uses the SVD.
+      select case (A%Storage)
+      case('StorDiag')
+        structure = 'diagonal'
+      case('StorHerm')
+        if(A%Data_Type.ne.'Complex') then
+          structure = 'normal'
+        elseIf(MQC_Matrix_Test_Symmetric(A,'hermitian',.true.)) then
+          structure = 'normal'
         else
-          mySpaceDim = I - 1
-          exit outer
+          structure = 'svd'
         endIf
-      EndDo outer
-      if(present(spaceDim)) spaceDim = mySpaceDim
-      if (mySpaceDim.eq.0) then
-        call PInv%init(A%NRow,A%NCol,zero)
-      else
-        call MQC_Matrix_DiagMatrix_Put_Vector(EVals%vat(1,mySpaceDim),SMat)
-        PInv = matmul(matmul(dagger(EVVecs%mat([1,mySpaceDim],[0])),SMat),&
-                             dagger(EUVecs%mat([0],[1,mySpaceDim])))
-      end if
-!      
+      case('StorAhrm')
+        if(MQC_Matrix_Test_Symmetric(A,'antihermitian',.true.)) then
+          structure = 'normal'
+        else
+          structure = 'svd'
+        endIf
+      case('StorFull')
+        if(MQC_Matrix_Test_Symmetric(A,'hermitian',.true.).or. &
+          MQC_Matrix_Test_Symmetric(A,'antihermitian',.true.)) then
+          structure = 'normal'
+        else
+          structure = 'svd'
+        endIf
+      case('StorSymm','StorAsym')
+        structure = 'svd'
+      case default
+        call mqc_error_a('Unknown storage in MQC_Matrix_MPInv',6,'A%Storage',A%Storage)
+      end select
+      Zero = 0.0e0
+!
+      select case (structure)
+      case('diagonal','normal')
+        if(structure.eq.'diagonal') then
+          EVals = mqc_matrix_diagonal_elements(A)
+        else
+          call A%diag(EVals,EUVecs)
+        endIf
+        maxAbs = 0.0
+        do I = 1, Size(EVals)
+          Thresh = EVals%at(I)
+          maxAbs = max(maxAbs,abs(Thresh%cval()))
+        end do
+        if(present(tol)) then
+          select type (tol)
+          type is (integer)
+            thresh = tol
+          type is (real)
+            thresh = tol
+          type is (complex)
+            thresh = tol
+          type is (mqc_scalar)
+            thresh = tol
+          class default
+            call mqc_error('Tolerance type not defined in MQC_Matrix_MPInv')
+          end select
+          myThresh = abs(thresh%cval())
+        else
+          myThresh = maxAbs*epsilon(1.0e0)*max(size(A,1),size(A,2))
+          if(myThresh.lt.1.0e-10) myThresh = 1.0e-10
+        endif
+        mySpaceDim = 0
+        do I = 1, Size(EVals)
+          Thresh = EVals%at(I)
+          Z = Thresh%cval()
+          if(abs(Z).gt.myThresh) then
+            call EVals%put(1.0/EVals%at(I),I)
+            mySpaceDim = mySpaceDim + 1
+          else
+            call EVals%put(Zero,I)
+          endIf
+        end do
+        if(present(spaceDim)) spaceDim = mySpaceDim
+        if(mySpaceDim.eq.0) then
+          call PInv%init(A%NRow,A%NCol,zero)
+        elseIf(structure.eq.'diagonal') then
+          PInv = MQC_Matrix_DiagMatrix_Put_Vector_Func(EVals)
+        else
+          SMat = MQC_Matrix_DiagMatrix_Put_Vector_Func(EVals)
+          dSymmetry = MQC_Vector_Diagonal_Symmetry(EVals)
+          if(dSymmetry.eq.'unknown') then
+            PInv = MQC_Matrix_Hermitian_Sandwich(SMat,dagger(EUVecs))
+          else
+            PInv = MQC_Matrix_Hermitian_Sandwich(SMat,dagger(EUVecs),forceSym=dSymmetry)
+          endIf
+        endIf
+      case('svd')
+        call A%SVD(EVals,EUVecs,EVVecs)
+        if(present(tol)) then
+          select type (tol)
+          type is (integer)
+            thresh = tol
+          type is (real)
+            thresh = tol
+          type is (complex)
+            thresh = tol
+          type is (mqc_scalar)
+            thresh = tol
+          class default
+            call mqc_error('Tolerance type not defined in MQC_Matrix_MPInv')
+          end select
+        else
+          thresh = evals%maxval()*epsilon(1.0e0)*max(size(A,1),size(A,2))
+          if (thresh.lt.1.0e-10) thresh = 1.0e-10
+        endif
+        Zero = 0.0e0
+        mySpaceDim = Size(EVals)
+
+        outer: Do I = 1, Size(EVals)
+          If(EVals%at(I).gt.Thresh) then
+            call EVals%put(1.0/EVals%at(I),I)
+          else
+            mySpaceDim = I - 1
+            exit outer
+          endIf
+        EndDo outer
+        if(present(spaceDim)) spaceDim = mySpaceDim
+        if (mySpaceDim.eq.0) then
+          call PInv%init(A%NRow,A%NCol,zero)
+        else
+          call MQC_Matrix_DiagMatrix_Put_Vector(EVals%vat(1,mySpaceDim),SMat)
+          PInv = matmul(matmul(dagger(EVVecs%mat([1,mySpaceDim],[0])),SMat),&
+                               dagger(EUVecs%mat([0],[1,mySpaceDim])))
+        end if
+  !      
+      case default
+        call mqc_error_a('Unknown structure in MQC_Matrix_MPInv',6,'structure',structure)
+      end select
       Return
       End Function MQC_Matrix_MPInv
 !
@@ -29105,6 +30553,12 @@
 !>
 !>    MQC_Matrix_Power is a function that returns the value of a MQC matrix raised
 !>    to a power. The power can be integer, real, complex or an MQC scalar.
+!>    A diagonal matrix is raised element by element (StorDiag result). A Hermitian
+!>    or anti-Hermitian matrix uses its unitary eigenvectors, A^P = U D^P dagger(U),
+!>    formed with HermMatMul: the result is packed (StorHerm/StorAhrm) when D^P is
+!>    real/imaginary. Other matrices use A^P = U D^P U^-1 from the general
+!>    eigensystem. Negative real eigenvalues with a non-integer power give the
+!>    principal complex value.
 !>
 !>    \endverbatim
 !
@@ -29133,8 +30587,11 @@
       class(mqc_matrix),intent(inOut)::A
       class(*)::P
       type(mqc_vector)::sVals
-      type(mqc_matrix)::uMatrix
+      type(mqc_matrix)::uMatrix,dMatrix
       type(mqc_scalar)::scalar
+      character(len=16)::structure,dSymmetry
+      complex(kind=real64)::z
+      logical::integerPower
 !
 !     Do the work.
 !
@@ -29148,14 +30605,91 @@
       type is (mqc_scalar)
         scalar = P
       class default
-        call mqc_error_I('P type not defined in MQC_Vector_Power',6)
+        call mqc_error_I('P type not defined in MQC_Matrix_Power',6)
       end select
 !
-      call A%eigensys(eigenvals=sVals,reigenvecs=uMatrix)
-!      call A%diag(evals=sVals,evecs=uMatrix)
-      call sVals%power(scalar)
-      call sVals%diag(A)
-      A = matmul(matmul(uMatrix,A),dagger(uMatrix))
+!     A diagonal matrix is raised element by element. A Hermitian or anti-Hermitian
+!     matrix (packed, or full and tested) is diagonalized by MQC_Matrix_Diagonalize,
+!     which gives a unitary U, and A^P = U D^P dagger(U) is formed with HermMatMul.
+!     Any other matrix uses the general eigensystem and A^P = U D^P U^-1.
+      select case (A%Storage)
+      case('StorDiag')
+        structure = 'diagonal'
+      case('StorHerm')
+        if(A%Data_Type.ne.'Complex') then
+          structure = 'normal'
+        elseIf(MQC_Matrix_Test_Symmetric(A,'hermitian',.true.)) then
+          structure = 'normal'
+        else
+          structure = 'general'
+        endIf
+      case('StorAhrm')
+        if(MQC_Matrix_Test_Symmetric(A,'antihermitian',.true.)) then
+          structure = 'normal'
+        else
+          structure = 'general'
+        endIf
+      case('StorFull')
+        if(MQC_Matrix_Test_Symmetric(A,'hermitian',.true.).or. &
+          MQC_Matrix_Test_Symmetric(A,'antihermitian',.true.)) then
+          structure = 'normal'
+        else
+          structure = 'general'
+        endIf
+      case('StorSymm','StorAsym')
+        structure = 'general'
+      case default
+        call mqc_error_a('Unknown storage in MQC_Matrix_Power',6,'A%Storage',A%Storage)
+      end select
+      z = scalar%cval()
+      integerPower = aimag(z).eq.0.0.and.real(z).eq.anint(real(z))
+!
+      select case (structure)
+      case('diagonal')
+        sVals = mqc_matrix_diagonal_elements(A)
+        call powerValues()
+        A = MQC_Matrix_DiagMatrix_Put_Vector_Func(sVals)
+      case('normal')
+        call A%diag(sVals,uMatrix)
+        call powerValues()
+        dMatrix = MQC_Matrix_DiagMatrix_Put_Vector_Func(sVals)
+        dSymmetry = MQC_Vector_Diagonal_Symmetry(sVals)
+        if(dSymmetry.eq.'unknown') then
+          A = MQC_Matrix_Hermitian_Sandwich(dMatrix,dagger(uMatrix))
+        else
+          A = MQC_Matrix_Hermitian_Sandwich(dMatrix,dagger(uMatrix),forceSym=dSymmetry)
+        endIf
+      case('general')
+        if(A%Storage.ne.'StorFull') call MQC_Matrix_Symm2Full(A)
+        call A%eigensys(eigenvals=sVals,reigenvecs=uMatrix)
+        call powerValues()
+        dMatrix = MQC_Matrix_DiagMatrix_Put_Vector_Func(sVals)
+        A = matmul(matmul(uMatrix,dMatrix),mqc_matrix_inverse(uMatrix))
+      case default
+        call mqc_error_a('Unknown structure in MQC_Matrix_Power',6,'structure',structure)
+      end select
+!
+      contains
+!
+!       A negative real value raised to a non-integer power is complex.
+        subroutine powerValues()
+        logical::negative
+        negative = .false.
+        if(.not.integerPower) then
+          select case (sVals%Data_Type)
+          case('Real')
+            negative = any(sVals%VecR.lt.0.0)
+          case('Integer')
+            negative = any(sVals%VecI.lt.0)
+          case('Complex')
+            negative = .false.
+          case default
+            call mqc_error_a('Unknown data type in MQC_Matrix_Power',6,'sVals%Data_Type',sVals%Data_Type)
+          end select
+        endIf
+        if(negative) sVals = (1.0,0.0)*sVals
+        call sVals%power(scalar)
+        end subroutine powerValues
 !
       end subroutine mqc_matrix_power
 !
@@ -32494,17 +34028,17 @@
 
       if((size(D1).eq.2.or.D1(1).eq.0).and.(size(D2).eq.2.or.D2(1).eq.0)) then
         if(MQC_Matrix_HaveInteger(MatrixIn)) then
-          ItmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(ItmpMatrix,MatrixIn,unpack=.true.)
           allocate(ItmpTensor(size(ItmpMatrix,1),size(ItmpMatrix,2),1,1))
           ItmpTensor(:,:,1,1) = ItmpMatrix
           TensorIn = ItmpTensor
         elseIf(MQC_Matrix_HaveReal(MatrixIn)) then
-          RtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(RtmpMatrix,MatrixIn,unpack=.true.)
           allocate(RtmpTensor(size(RtmpMatrix,1),size(RtmpMatrix,2),1,1))
           RtmpTensor(:,:,1,1) = RtmpMatrix
           TensorIn = RtmpTensor
         elseIf(MQC_Matrix_HaveComplex(MatrixIn)) then
-          CtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(CtmpMatrix,MatrixIn,unpack=.true.)
           allocate(CtmpTensor(size(CtmpMatrix,1),size(CtmpMatrix,2),1,1))
           CtmpTensor(:,:,1,1) = CtmpMatrix
           TensorIn = CtmpTensor
@@ -32512,17 +34046,17 @@
         call Ten%tput(TensorIn,D1,D2,[D3(1),D3(1)],[D4(1),D4(1)])
       elseIf((size(D1).eq.2.or.D1(1).eq.0).and.(size(D3).eq.2.or.D3(1).eq.0)) then
         if(MQC_Matrix_HaveInteger(MatrixIn)) then
-          ItmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(ItmpMatrix,MatrixIn,unpack=.true.)
           allocate(ItmpTensor(size(ItmpMatrix,1),1,size(ItmpMatrix,2),1))
           ItmpTensor(:,1,:,1) = ItmpMatrix
           TensorIn = ItmpTensor
         elseIf(MQC_Matrix_HaveReal(MatrixIn)) then
-          RtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(RtmpMatrix,MatrixIn,unpack=.true.)
           allocate(RtmpTensor(size(RtmpMatrix,1),1,size(RtmpMatrix,2),1))
           RtmpTensor(:,1,:,1) = RtmpMatrix
           TensorIn = RtmpTensor
         elseIf(MQC_Matrix_HaveComplex(MatrixIn)) then
-          CtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(CtmpMatrix,MatrixIn,unpack=.true.)
           allocate(CtmpTensor(size(CtmpMatrix,1),1,size(CtmpMatrix,2),1))
           CtmpTensor(:,1,:,1) = CtmpMatrix
           TensorIn = CtmpTensor
@@ -32530,17 +34064,17 @@
         call Ten%tput(TensorIn,D1,[D2(1),D2(1)],D3,[D4(1),D4(1)])
       elseIf((size(D1).eq.2.or.D1(1).eq.0).and.(size(D4).eq.2.or.D4(1).eq.0)) then
         if(MQC_Matrix_HaveInteger(MatrixIn)) then
-          ItmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(ItmpMatrix,MatrixIn,unpack=.true.)
           allocate(ItmpTensor(size(ItmpMatrix,1),1,1,size(ItmpMatrix,2)))
           ItmpTensor(:,1,1,:) = ItmpMatrix
           TensorIn = ItmpTensor
         elseIf(MQC_Matrix_HaveReal(MatrixIn)) then
-          RtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(RtmpMatrix,MatrixIn,unpack=.true.)
           allocate(RtmpTensor(size(RtmpMatrix,1),1,1,size(RtmpMatrix,2)))
           RtmpTensor(:,1,1,:) = RtmpMatrix
           TensorIn = RtmpTensor
         elseIf(MQC_Matrix_HaveComplex(MatrixIn)) then
-          CtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(CtmpMatrix,MatrixIn,unpack=.true.)
           allocate(CtmpTensor(size(CtmpMatrix,1),1,1,size(CtmpMatrix,2)))
           CtmpTensor(:,1,1,:) = CtmpMatrix
           TensorIn = CtmpTensor
@@ -32548,17 +34082,17 @@
         call Ten%tput(TensorIn,D1,[D2(1),D2(1)],[D3(1),D3(1)],D4)
       elseIf((size(D2).eq.2.or.D2(1).eq.0).and.(size(D3).eq.2.or.D3(1).eq.0)) then
         if(MQC_Matrix_HaveInteger(MatrixIn)) then
-          ItmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(ItmpMatrix,MatrixIn,unpack=.true.)
           allocate(ItmpTensor(1,size(ItmpMatrix,1),size(ItmpMatrix,2),1))
           ItmpTensor(1,:,:,1) = ItmpMatrix
           TensorIn = ItmpTensor
         elseIf(MQC_Matrix_HaveReal(MatrixIn)) then
-          RtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(RtmpMatrix,MatrixIn,unpack=.true.)
           allocate(RtmpTensor(1,size(RtmpMatrix,1),size(RtmpMatrix,2),1))
           RtmpTensor(1,:,:,1) = RtmpMatrix
           TensorIn = RtmpTensor
         elseIf(MQC_Matrix_HaveComplex(MatrixIn)) then
-          CtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(CtmpMatrix,MatrixIn,unpack=.true.)
           allocate(CtmpTensor(1,size(CtmpMatrix,1),size(CtmpMatrix,2),1))
           CtmpTensor(1,:,:,1) = CtmpMatrix
           TensorIn = CtmpTensor
@@ -32566,17 +34100,17 @@
         call Ten%tput(TensorIn,[D1(1),D1(1)],D2,D3,[D4(1),D4(1)])
       elseIf((size(D2).eq.2.or.D2(1).eq.0).and.(size(D4).eq.2.or.D4(1).eq.0)) then
         if(MQC_Matrix_HaveInteger(MatrixIn)) then
-          ItmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(ItmpMatrix,MatrixIn,unpack=.true.)
           allocate(ItmpTensor(1,size(ItmpMatrix,1),1,size(ItmpMatrix,2)))
           ItmpTensor(1,:,1,:) = ItmpMatrix
           TensorIn = ItmpTensor
         elseIf(MQC_Matrix_HaveReal(MatrixIn)) then
-          RtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(RtmpMatrix,MatrixIn,unpack=.true.)
           allocate(RtmpTensor(1,size(RtmpMatrix,1),1,size(RtmpMatrix,2)))
           RtmpTensor(1,:,1,:) = RtmpMatrix
           TensorIn = RtmpTensor
         elseIf(MQC_Matrix_HaveComplex(MatrixIn)) then
-          CtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(CtmpMatrix,MatrixIn,unpack=.true.)
           allocate(CtmpTensor(1,size(CtmpMatrix,1),1,size(CtmpMatrix,2)))
           CtmpTensor(1,:,1,:) = CtmpMatrix
           TensorIn = CtmpTensor
@@ -32584,17 +34118,17 @@
         call Ten%tput(TensorIn,[D1(1),D1(1)],D2,[D3(1),D3(1)],D4)
       elseIf((size(D3).eq.2.or.D3(1).eq.0).and.(size(D4).eq.2.or.D4(1).eq.0)) then
         if(MQC_Matrix_HaveInteger(MatrixIn)) then
-          ItmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(ItmpMatrix,MatrixIn,unpack=.true.)
           allocate(ItmpTensor(1,1,size(ItmpMatrix,1),size(ItmpMatrix,2)))
           ItmpTensor(1,1,:,:) = ItmpMatrix
           TensorIn = ItmpTensor
         elseIf(MQC_Matrix_HaveReal(MatrixIn)) then
-          RtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(RtmpMatrix,MatrixIn,unpack=.true.)
           allocate(RtmpTensor(1,1,size(RtmpMatrix,1),size(RtmpMatrix,2)))
           RtmpTensor(1,1,:,:) = RtmpMatrix
           TensorIn = RtmpTensor
         elseIf(MQC_Matrix_HaveComplex(MatrixIn)) then
-          CtmpMatrix = MatrixIn
+          call MQC_Matrix_To_Array(CtmpMatrix,MatrixIn,unpack=.true.)
           allocate(CtmpTensor(1,1,size(CtmpMatrix,1),size(CtmpMatrix,2)))
           CtmpTensor(1,1,:,:) = CtmpMatrix
           TensorIn = CtmpTensor

@@ -81,18 +81,50 @@
 !              |-----|-----|
 !              |. ab | bb .|
 !
+!       Symmetry: 
+!         unknown       => will be tested
+!         asymmetric    => tested, no symmetry; or non-square integrals
+!         fullsymmetric => square, no block stored (i.e. only zeros)
+!         realdiag      => real diagonal (diag Hermitian)
+!         imagdiag      => imaginary diagonal (diag Anti-Hermitian)
+!         complexdiag   => complex diagonal (diag symmetric)
+!         hermitian     => A(I,J) = conjg(A(J,I))
+!         antihermitian => A(I,J) = (-1)*conjg(A(J,I))
+!         symmetric     => A(I,J) = A(J,I)
+!         antisymmetric => A(I,J) = (-1)*A(J,I)  
+!
         Type(MQC_Matrix),Private::Alpha,Beta,AlphaBeta,BetaAlpha
         Character(Len=64),Private::Array_Name ! See below 
         Character(Len=64),Private::Array_Type ! Space,Spin,General
+        Character(Len=16),Private::Symmetry='unknown'
         Integer(kind=int64),Private::nARows=0,nACols=0,nBRows=0,nBCols=0
         Integer(kind=int64),Dimension(:),Allocatable,Private::Energy_List
-      Contains 
+      Contains
 !>      \brief <b> Print the MQC_SCF_Integral object</b>
         Procedure, Public::print => mqc_print_integral
         Procedure, Private::hasAlpha => mqc_integral_has_alpha
         Procedure, Private::hasBeta => mqc_integral_has_beta
         Procedure, Private::hasAlphaBeta => mqc_integral_has_alphabeta
         Procedure, Private::hasBetaAlpha => mqc_integral_has_betaalpha
+        Procedure, Private::baBlock => mqc_integral_ba_block
+        Procedure, Private::baElement => mqc_integral_ba_element
+        Procedure, Private::isCompressed => mqc_integral_is_compressed
+        Procedure, Private::expandSymm => mqc_integral_expand_symmetry
+        Procedure, Private::compressSymm => mqc_integral_compress_symmetry
+        Procedure, Private::isSquare => mqc_integral_is_square
+        Procedure, Private::dropZeroBlocks => mqc_integral_drop_zero_blocks
+        Procedure, Private::defaultSymm => mqc_integral_default_symmetry
+        Procedure, Private::storageSymm => mqc_integral_symmetry_from_storage
+        Procedure, Private::isDiag => mqc_integral_is_diagonal
+        Procedure, Private::diagLabel => mqc_integral_diagonal_label
+        Procedure, Private::symmSet => mqc_integral_symmetry_set
+!>      \brief <b> Return the symmetry flag of the MQC_SCF_Integral object</b>
+        Procedure, Public::getSymm => mqc_integral_get_symmetry
+!>      \brief <b> Check and set the symmetry flag of the MQC_SCF_Integral object</b>
+        Procedure, Public::setSymm => mqc_integral_set_symmetry
+!>      \brief <b> Import the values of a full (alpha+beta) MQC matrix into an initialized
+!>      MQC_SCF_Integral object</b>
+        Procedure, Public::imp => mqc_integral_import_matrix
         Procedure, Public::type => mqc_integral_array_type
         Procedure, Public::blockSize => mqc_integral_dimension 
 !>      \brief <b> Return the label of the MQC_SCF_Integral object</b>
@@ -897,7 +929,7 @@
             call mqc_print(integral%getBlock('alphabeta'),iout,'Alpha-Beta Block',formatStr=formatStr)
           endIf
           if(integral%hasBetaAlpha()) then
-            call integral%betaalpha%print(iout,'Beta-Alpha Block',formatStr=formatStr)
+            call mqc_print(integral%baBlock(),iout,'Beta-Alpha Block',formatStr=formatStr)
           else
             call mqc_print(integral%getBlock('betaalpha'),iout,'Beta-Alpha Block',formatStr=formatStr)
           endIf
@@ -918,7 +950,7 @@
             call mqc_print(integral%getBlock('alphabeta'),iout,'Alpha-Beta Block')
           endIf
           if(integral%hasBetaAlpha()) then
-            call integral%betaalpha%print(iout,'Beta-Alpha Block')
+            call mqc_print(integral%baBlock(),iout,'Beta-Alpha Block')
           else
             call mqc_print(integral%getBlock('betaalpha'),iout,'Beta-Alpha Block')
           endIf
@@ -1661,7 +1693,9 @@
       logical::hasBetaAlpha
 !
       hasBetaAlpha = .false.
-      if(MQC_Matrix_isAllocated(integral%betaAlpha)) hasBetaAlpha = .true. 
+      if(MQC_Matrix_isAllocated(integral%betaAlpha)) hasBetaAlpha = .true.
+      if(integral%isCompressed().and.MQC_Matrix_isAllocated(integral%alphaBeta)) &
+        hasBetaAlpha = .true.
 !
       end function mqc_integral_has_betaAlpha
 !
@@ -2526,7 +2560,7 @@
       abNorm = 0.0
       baNorm = 0.0
       if(integral%hasAlphaBeta()) abNorm = MQC_Matrix_Norm(integral%alphaBeta)
-      if(integral%hasBetaAlpha()) baNorm = MQC_Matrix_Norm(integral%betaAlpha)
+      if(integral%hasBetaAlpha()) baNorm = MQC_Matrix_Norm(integral%baBlock())
       if(abNorm.ge.MQC_very_small.or.baNorm.ge.MQC_very_small) return
       if(sameDims) then
         if(MQC_Matrix_Norm(aa-bb).lt.MQC_very_small) then
@@ -3602,6 +3636,21 @@
 !>        nDimB2 is integer(kind=int64),optional
 !>        The columns of the beta block.
 !>    \endverbatim
+!>
+!>    \param[in] Symmetry
+!>    \verbatim
+!>        Symmetry is Character(len=*),optional
+!>        A symmetry flag expected for the integral (see MQC_Integral_Set_Symmetry).
+!>        It is checked and set when it holds; when the check fails the integral is
+!>        left 'unknown' without an error. A zero ('fullsymmetric') or non-square
+!>        ('asymmetric') integral keeps its flag.
+!>        For a general integral with Symmetry = 'hermitian', 'antihermitian',
+!>        'symmetric' or 'antisymmetric' and only one of AlphaBeta and BetaAlpha
+!>        given, the other block of a square integral is implied by the symmetry
+!>        (it is not zero); only alpha and beta are then tested. When the test
+!>        fails the implied betaAlpha is stored and the flag is 'unknown'. For a
+!>        non-square integral the missing block is zero.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
@@ -3609,14 +3658,17 @@
 !>    \date 2016, 2025
 !
       subroutine mqc_integral_allocate(integral,arrayName,arrayType,alpha, &
-          beta,alphaBeta,betaAlpha,nDimA1,nDimA2,nDimB1,nDimB2) 
+          beta,alphaBeta,betaAlpha,nDimA1,nDimA2,nDimB1,nDimB2,symmetry) 
 !
       implicit none
       class(mqc_scf_integral),intent(out)::integral
       character(len=*),intent(in)::arrayName,arrayType
       type(mqc_matrix),optional,intent(in)::alpha,beta,alphaBeta,betaAlpha
       integer(kind=int64),optional,intent(in)::nDimA1,nDimA2,nDimB1,nDimB2
-      character(len=64)::myArrayName,myArrayType
+      character(len=*),optional,intent(in)::symmetry
+      character(len=64)::myArrayName,myArrayType,mySymmetry
+      logical::symmetryOK,impliedOffDiag
+      integer(kind=int64)::inA1,inA2,inB1,inB2,inAB1,inAB2,inBA1,inBA2
 !
       call string_change_case(arrayType,'L',myArrayType)
       call string_change_case(arrayName,'L',myArrayName)
@@ -3631,7 +3683,41 @@
       if(myArrayType.ne.'space'.and.myArrayType.ne.'spin'.and.myArrayType.ne.'general') &
         call mqc_error_a('ArrayType name not recognized in mqc_integral_allocate',6,&
         'myArrayType',myArrayType)
-      if(present(alpha).and.allocated(alpha).and.size(alpha,1).ne.0.and.size(alpha,2).ne.0) then
+      inA1 = 0
+      inA2 = 0
+      inB1 = 0
+      inB2 = 0
+      inAB1 = 0
+      inAB2 = 0
+      inBA1 = 0
+      inBA2 = 0
+      mySymmetry = 'unknown'
+      if(present(symmetry)) call string_change_case(symmetry,'l',mySymmetry)
+      if(present(alpha)) then
+        if(allocated(alpha)) then
+          inA1 = size(alpha,1)
+          inA2 = size(alpha,2)
+        endIf
+      endIf
+      if(present(beta)) then
+        if(allocated(beta)) then
+          inB1 = size(beta,1)
+          inB2 = size(beta,2)
+        endIf
+      endIf
+      if(present(alphaBeta)) then
+        if(allocated(alphaBeta)) then
+          inAB1 = size(alphaBeta,1)
+          inAB2 = size(alphaBeta,2)
+        endIf
+      endIf
+      if(present(betaAlpha)) then
+        if(allocated(betaAlpha)) then
+          inBA1 = size(betaAlpha,1)
+          inBA2 = size(betaAlpha,2)
+        endIf
+      endIf
+      if(inA1.ne.0.and.inA2.ne.0) then
         integral%alpha = alpha
         integral%nARows = size(integral%alpha,1)
         integral%nACols = size(integral%alpha,2)
@@ -3648,15 +3734,15 @@
       else
         if(present(nDimA1)) then
           integral%nARows = nDimA1
-        else if (present(alpha).and.allocated(alpha).and.size(alpha,1).ne.0) then
-          integral%nARows = size(alpha,1)
+        else if (inA1.ne.0) then
+          integral%nARows = inA1
         else
           integral%nARows = 0
         endIf
         if(present(nDimA2)) then
           integral%nACols = nDimA2
-        else if (present(alpha).and.allocated(alpha).and.size(alpha,2).ne.0) then
-          integral%nACols = size(alpha,2)
+        else if (inA2.ne.0) then
+          integral%nACols = inA2
         else
           integral%nACols = 0
         endIf
@@ -3676,7 +3762,7 @@
             'integral%nACols',integral%nACols)
         endIf
       elseif(myArrayType.eq.'spin'.or.myArrayType.eq.'general') then
-        if(present(beta).and.allocated(beta).and.size(beta,1).ne.0.and.size(beta,2).ne.0) then
+        if(inB1.ne.0.and.inB2.ne.0) then
           integral%beta = beta
           integral%nBRows = size(integral%beta,1)
           integral%nBCols = size(integral%beta,2)
@@ -3693,15 +3779,15 @@
         else
           if(present(nDimB1)) then
             integral%nBRows = nDimB1
-          else if(present(beta).and.allocated(beta).and.size(beta,1).ne.0) then
-            integral%nBRows = size(beta,1)
+          else if(inB1.ne.0) then
+            integral%nBRows = inB1
           else
             integral%nBRows = 0
           endIf
           if(present(nDimB2)) then
             integral%nBCols = nDimB2
-          else if(present(beta).and.allocated(beta).and.size(beta,2).ne.0) then
-            integral%nBCols = size(beta,2)
+          else if(inB2.ne.0) then
+            integral%nBCols = inB2
           else
             integral%nBCols = 0
           endIf
@@ -3709,19 +3795,15 @@
       endIf
 
       if(myArrayType.ne.'general') then
-        if(present(alphaBeta)) then
-          if(allocated(alphaBeta).and.size(alphaBeta,1).ne.0.and.size(alphaBeta,2).ne.0) &
-            call mqc_error_a('Alpha-beta block given for a non-general integral in mqc_integral_allocate',&
-            6,'myArrayType',myArrayType)
-        endIf
-        if(present(betaAlpha)) then
-          if(allocated(betaAlpha).and.size(betaAlpha,1).ne.0.and.size(betaAlpha,2).ne.0) &
-            call mqc_error_a('Beta-alpha block given for a non-general integral in mqc_integral_allocate',&
-            6,'myArrayType',myArrayType)
-        endIf
+        if(inAB1.ne.0.and.inAB2.ne.0) &
+          call mqc_error_a('Alpha-beta block given for a non-general integral in mqc_integral_allocate',&
+          6,'myArrayType',myArrayType)
+        if(inBA1.ne.0.and.inBA2.ne.0) &
+          call mqc_error_a('Beta-alpha block given for a non-general integral in mqc_integral_allocate',&
+          6,'myArrayType',myArrayType)
       endIf
       if(myArrayType.eq.'general') then
-        if(present(alphaBeta).and.allocated(alphaBeta).and.size(alphaBeta,1).ne.0.and.size(alphaBeta,2).ne.0) then
+        if(inAB1.ne.0.and.inAB2.ne.0) then
           integral%alphaBeta = alphaBeta
           if(integral%nBRows.eq.0) integral%nBRows = size(integral%alphaBeta,1)
           if(integral%nACols.eq.0) integral%nACols = size(integral%alphaBeta,2)
@@ -3733,7 +3815,7 @@
             'size(integral%alphaBeta,2)',size(integral%alphaBeta,2),&
             'integral%nACols',integral%nACols)
         endIf
-        if(present(betaAlpha).and.allocated(betaAlpha).and.size(betaAlpha,1).ne.0.and.size(betaAlpha,2).ne.0) then
+        if(inBA1.ne.0.and.inBA2.ne.0) then
           integral%betaAlpha = betaAlpha
           if(integral%nARows.eq.0) integral%nARows = size(integral%betaAlpha,1)
           if(integral%nBCols.eq.0) integral%nBCols = size(integral%betaAlpha,2)
@@ -3745,7 +3827,51 @@
             'size(integral%betaAlpha,2)',size(integral%betaAlpha,2),&
             'integral%nBCols',integral%nBCols)
         endIf
-      endIf 
+      endIf
+!
+!     With a Hermitian, anti-Hermitian, symmetric or antisymmetric symmetry and only
+!     one off-diagonal block given, the other one is implied by the symmetry. A given
+!     betaAlpha is stored as the alphaBeta it implies.
+      impliedOffDiag = myArrayType.eq.'general'.and.integral%isSquare().and. &
+        any(mySymmetry.eq.[character(len=16)::'hermitian','antihermitian','symmetric','antisymmetric']).and. &
+        ((inAB1.ne.0.and.inAB2.ne.0).neqv.(inBA1.ne.0.and.inBA2.ne.0))
+      if(impliedOffDiag.and..not.MQC_Matrix_isAllocated(integral%alphaBeta)) then
+        select case (mySymmetry)
+        case('hermitian')
+          integral%alphaBeta = dagger(integral%betaAlpha)
+        case('antihermitian')
+          integral%alphaBeta = (-1)*dagger(integral%betaAlpha)
+        case('symmetric')
+          integral%alphaBeta = transpose(integral%betaAlpha)
+        case('antisymmetric')
+          integral%alphaBeta = (-1)*transpose(integral%betaAlpha)
+        case default
+          call mqc_error_a('Invalid symmetry in mqc_integral_allocate',6,'mySymmetry',mySymmetry)
+        end select
+        call mqc_deallocate_matrix(integral%betaAlpha)
+      endIf
+!
+!     Blocks with only zero elements are not stored; the dimensions are kept.
+      call integral%dropZeroBlocks()
+      call integral%defaultSymm()
+!
+!     The expected symmetry is set when it holds (no error otherwise).
+      if(impliedOffDiag.and.integral%symmetry.ne.'fullsymmetric') then
+!       Only alpha and beta are tested: the off-diagonal pair follows from the symmetry.
+        symmetryOK = integral%symmetry.eq.'unknown'
+        if(symmetryOK.and.integral%hasAlpha()) &
+          symmetryOK = mqc_matrix_test_symmetric(integral%alpha,mySymmetry,.true.)
+        if(symmetryOK.and.integral%hasBeta()) &
+          symmetryOK = mqc_matrix_test_symmetric(integral%beta,mySymmetry,.true.)
+        integral%symmetry = mySymmetry
+        if(symmetryOK) then
+          call integral%compressSymm()
+        else
+          call integral%expandSymm()
+        endIf
+      elseIf(present(symmetry).and.integral%symmetry.eq.'unknown') then
+        if(mySymmetry.ne.'unknown') symmetryOK = mqc_integral_try_symmetry(integral,mySymmetry)
+      endIf
 !
       end subroutine mqc_integral_allocate
 !
@@ -3822,20 +3948,16 @@
 !
         implicit none
         type(mqc_matrix)::matrix
-        class(mqc_scf_integral)::integral
+        class(mqc_scf_integral),intent(out)::integral
         character(len=*)::integralName,integralType
         integer(kind=int64),optional::nBasis
 !
         call string_change_case(integralType,'L')
-        integral%array_name = integralName
 !
-        if((integralType == 'space').or.(integralType == 'spin').or.&
-          (integralType == 'general')) then         
-          integral%array_type = integralType
-        else
+        if((integralType /= 'space').and.(integralType /= 'spin').and.&
+          (integralType /= 'general')) &
           call mqc_error_a('Bad integralType specification in MQC_Matrix_To_Integral',6,&
             'integralType = ', integralType)
-        endif
 !
         if((integralType /= 'space').and..not.(present(nBasis))) then
           call mqc_error('Integral types "spin" and "general" require nBasis argument '&
@@ -3843,30 +3965,198 @@
         end if
 !
         if(integralType == 'space') then
-          integral%alpha = matrix
-        else if(integralType == 'spin') then
-          integral%alpha = matrix%mat([1,nBasis],[1,nBasis])
-          integral%beta = matrix%mat([nBasis+1,nBasis*2],[nBasis+1,nBasis*2])
+          call mqc_integral_allocate(integral,integralName,'space',matrix)
+          call integral%storageSymm(matrix)
         else
-          integral%alpha = matrix%mat([1,nBasis],[1,nBasis])
-          integral%beta = matrix%mat([nBasis+1,nBasis*2],[nBasis+1,nBasis*2])
-          integral%alphaBeta = matrix%mat([nBasis+1,nBasis*2],[1,nBasis])
-          integral%betaAlpha = matrix%mat([1,nBasis],[nBasis+1,nBasis*2])
-        endif
-
-        if(integralType == 'space') then
-          integral%nARows = size(matrix,1)
-          integral%nACols = size(matrix,2)
-          integral%nBRows = integral%nARows
-          integral%nBCols = integral%nACols
-        else
-          integral%nARows = nBasis
-          integral%nACols = nBasis
-          integral%nBRows = nBasis
-          integral%nBCols = nBasis
+          call mqc_integral_allocate(integral,integralName,integralType,nDimA1=nBasis, &
+            nDimA2=nBasis,nDimB1=nBasis,nDimB2=nBasis)
+          call integral%imp(matrix)
         endIf
 !
         end subroutine mqc_matrix_to_integral
+!
+!
+!     PROCEDURE MQC_Integral_Import_Matrix
+!
+!>    \brief <b> MQC_Integral_Import_Matrix imports the values of a full (alpha+beta)
+!>    MQC matrix into an initialized MQC integral</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Integral_Import_Matrix splits a full matrix of size
+!>    (nARows+nBRows) x (nACols+nBCols) using the type and the dimensions of the
+!>    integral, which must have been initialized (e.g. with MQC_Integral_Allocate):
+!>      alpha     = rows 1:nARows,          columns 1:nACols
+!>      beta      = rows nARows+1:nARows+nBRows, columns nACols+1:nACols+nBCols
+!>      alphaBeta = rows nARows+1:nARows+nBRows, columns 1:nACols (bottom-left)
+!>      betaAlpha = rows 1:nARows,          columns nACols+1:nACols+nBCols (top-right)
+!>    Values that the type of the integral cannot hold promote it: non-zero
+!>    off-diagonal blocks make it 'general', and a beta block different from alpha
+!>    makes a 'space' integral 'spin'. The name, the dimensions and the energy list
+!>    are kept and blocks with only zero elements are not stored. A matrix stored
+!>    packed (or diagonal) has that symmetry by construction, so the integral gets
+!>    the same symmetry flag without a check.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] Integral
+!>    \verbatim
+!>        Integral is Class(mqc_scf_integral)
+!>        The initialized MQC integral that receives the values.
+!>    \endverbatim
+!>
+!>    \param[in] Matrix
+!>    \verbatim
+!>        Matrix is Type(mqc_matrix)
+!>        The full (alpha+beta) matrix.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_integral_import_matrix(integral,matrix)
+!
+      implicit none
+      class(mqc_scf_integral),intent(inOut)::integral
+      type(mqc_matrix),intent(in)::matrix
+      type(mqc_matrix)::aa,bb,ab,ba,diff
+      character(len=64)::myName,newType
+      integer(kind=int64)::nA1,nA2,nB1,nB2,nT1,nT2
+      integer(kind=int64),dimension(:),allocatable::eList
+      logical::hasEList
+      real(kind=real64)::thresh
+!
+      select case (integral%array_type)
+      case('space','spin','general')
+        continue
+      case default
+        call mqc_error_a('The integral must be initialized before mqc_integral_import_matrix',6, &
+          'integral%array_type',integral%array_type)
+      end select
+      nA1 = integral%nARows
+      nA2 = integral%nACols
+      nB1 = integral%nBRows
+      nB2 = integral%nBCols
+      nT1 = nA1 + nB1
+      nT2 = nA2 + nB2
+      if(size(matrix,1).ne.nT1.or.size(matrix,2).ne.nT2) &
+        call mqc_error_i('Matrix and integral dimensions differ in mqc_integral_import_matrix',6, &
+          'size(matrix,1)',size(matrix,1),'nARows+nBRows',nT1, &
+          'size(matrix,2)',size(matrix,2),'nACols+nBCols',nT2)
+      thresh = max(MQC_very_small,0.0)
+!
+      if(nA1.gt.0.and.nA2.gt.0) aa = matrix%mat([1,nA1],[1,nA2])
+      if(nB1.gt.0.and.nB2.gt.0) bb = matrix%mat([nA1+1,nT1],[nA2+1,nT2])
+      if(nB1.gt.0.and.nA2.gt.0) ab = matrix%mat([nA1+1,nT1],[1,nA2])
+      if(nA1.gt.0.and.nB2.gt.0) ba = matrix%mat([1,nA1],[nA2+1,nT2])
+!
+!     Values that the type cannot hold promote it.
+      newType = integral%array_type
+      if(nonZero(ab).or.nonZero(ba)) newType = 'general'
+      if(newType.eq.'space') then
+        if(MQC_Matrix_isAllocated(aa).and.MQC_Matrix_isAllocated(bb)) then
+          diff = aa - bb
+          if(.not.diff%iszero(thresh)) newType = 'spin'
+        endIf
+      endIf
+!
+      myName = integral%array_name
+      hasEList = allocated(integral%Energy_List)
+      if(hasEList) eList = integral%Energy_List
+      select case (newType)
+      case('space')
+        call mqc_integral_allocate(integral,myName,'space',aa,nDimA1=nA1,nDimA2=nA2, &
+          nDimB1=nB1,nDimB2=nB2)
+      case('spin')
+        call mqc_integral_allocate(integral,myName,'spin',aa,bb,nDimA1=nA1,nDimA2=nA2, &
+          nDimB1=nB1,nDimB2=nB2)
+      case('general')
+        call mqc_integral_allocate(integral,myName,'general',aa,bb,ab,ba,nDimA1=nA1, &
+          nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+      end select
+      if(hasEList) integral%Energy_List = eList
+      call integral%storageSymm(matrix)
+!
+      contains
+!
+        function nonZero(block) result(isNonZero)
+        type(mqc_matrix),intent(in)::block
+        logical::isNonZero
+        isNonZero = .false.
+        if(MQC_Matrix_isAllocated(block)) isNonZero = .not.block%iszero(thresh)
+        end function nonZero
+!
+      end subroutine mqc_integral_import_matrix
+!
+!
+!     PROCEDURE MQC_Integral_Symmetry_From_Storage
+!
+!>    \brief <b> MQC_Integral_Symmetry_From_Storage sets the symmetry flag of an MQC
+!>    integral built from a packed (or diagonal) full matrix</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    A full (alpha+beta) matrix stored packed has that symmetry by construction,
+!>    and so has the integral built from it: the flag is set without a check and
+!>    the integral is compressed. Nothing is done when the integral already has a
+!>    flag other than 'unknown' (e.g. 'asymmetric' or 'fullsymmetric').
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_integral_symmetry_from_storage(integral,matrix)
+!
+      implicit none
+      class(mqc_scf_integral),intent(inOut)::integral
+      type(mqc_matrix),intent(in)::matrix
+      character(len=16)::storageSymmetry
+!
+      if(integral%symmetry.eq.'unknown') then
+        storageSymmetry = matrix%getSymm()
+        select case (storageSymmetry)
+        case('hermitian','antihermitian','symmetric','antisymmetric')
+          integral%symmetry = storageSymmetry
+          call integral%compressSymm()
+        case('diagonal')
+          if(MQC_Matrix_isAllocated(integral%alphaBeta)) &
+            call mqc_deallocate_matrix(integral%alphaBeta)
+          if(MQC_Matrix_isAllocated(integral%betaAlpha)) &
+            call mqc_deallocate_matrix(integral%betaAlpha)
+          if(MQC_Matrix_isAllocated(integral%alpha)) call toDiagonal(integral%alpha)
+          if(MQC_Matrix_isAllocated(integral%beta)) call toDiagonal(integral%beta)
+          if(MQC_Matrix_isAllocated(integral%alpha).or.MQC_Matrix_isAllocated(integral%beta)) then
+            integral%symmetry = integral%diagLabel()
+          else
+            integral%symmetry = 'fullsymmetric'
+          endIf
+        end select
+      endIf
+!
+      contains
+!
+        subroutine toDiagonal(block)
+        type(mqc_matrix),intent(inOut)::block
+        if(block%getSymm().ne.'diagonal') then
+          if(block%getSymm().ne.'unknown') call MQC_Matrix_Symm2Full(block)
+          call MQC_Matrix_Full2Diag(block)
+        endIf
+        end subroutine toDiagonal
+!
+      end subroutine mqc_integral_symmetry_from_storage
 !
 !
 !     PROCEDURE MQC_Eigenvalues_Allocate
@@ -4030,6 +4320,7 @@
 !
       integral%array_type = ''
       integral%array_name = ''
+      integral%symmetry = 'unknown'
       integral%nARows = 0
       integral%nACols = 0
       integral%nBRows = 0
@@ -4654,6 +4945,13 @@
 !>        Description of the MQC_SCF_Integral contents.
 !>    \endverbatim
 !>
+!>    \param[in] Scalar
+!>    \verbatim
+!>        Scalar is Class(*),Optional
+!>        The value of the diagonal elements (default 1). The flag of the
+!>        integral ('realdiag', 'imagdiag' or 'complexdiag') follows from it.
+!>    \endverbatim
+!>
 !>    \param[in] NAlpha2
 !>    \verbatim
 !>        NAlpha2 is Integer,Optional
@@ -4673,15 +4971,17 @@
 !>    \author L. M. Thompson, M. M. F. Moraes
 !>    \date 2017, 2026
 !
-      subroutine mqc_integral_identity(integral,nAlpha,nBeta,label,nAlpha2,nBeta2) 
+      subroutine mqc_integral_identity(integral,nAlpha,nBeta,label,scalar,nAlpha2,nBeta2) 
 !
       implicit none
       class(mqc_scf_integral),intent(inOut)::integral
       integer,intent(in)::nAlpha,nBeta
       integer,intent(in),optional::nAlpha2,nBeta2
+      Class(*),intent(in),optional::scalar
       character(Len=*),optional,intent(in)::label
       type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta
       Character(Len=64)::myLabel
+      type(mqc_scalar)::myScalar
       integer::my_nAlpha2,my_nBeta2
 !
       if(present(label)) then
@@ -4700,15 +5000,33 @@
         my_nBeta2 = nBeta2
       endIf
 !
-      call tmpMatrixAlpha%identity(nAlpha,my_nAlpha2)
-
+      if(present(scalar)) then 
+        select type(scalar)
+        type is (integer)
+          myScalar = scalar
+        type is (real)
+          myScalar = scalar
+        type is (complex)
+          myScalar = scalar
+        type is (mqc_scalar)
+          myScalar = scalar
+        class default
+          call mqc_error('scalar type not defined in mqc_integral_identity',6)
+        end select
+      else
+        myScalar = 1.0
+      end if
+!
+!     The blocks are created diagonal (StorDiag); allocate sets 'realdiag',
+!     'imagdiag' or 'complexdiag' from the diagonal ('asymmetric' if not square).
+      call tmpMatrixAlpha%identity(nAlpha,my_nAlpha2,myScalar)
       if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2) then
         call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha,&
-                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2,symmetry='diagonal')
       else 
-        call tmpMatrixBeta%identity(nBeta,my_nBeta2)
+        call tmpMatrixBeta%identity(nBeta,my_nBeta2,myScalar)
         call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2,symmetry='diagonal')
       endIf
 !
       end subroutine mqc_integral_identity  
@@ -4751,6 +5069,13 @@
 !>        Description of the MQC_SCF_Integral contents.
 !>    \endverbatim
 !>
+!>    \param[in] Scalar
+!>    \verbatim
+!>        Scalar is Class(*),Optional
+!>        The value of the diagonal elements (default 1). The flag of the
+!>        integral ('realdiag', 'imagdiag' or 'complexdiag') follows from it.
+!>    \endverbatim
+!>
 !>    \param[in] NAlpha2
 !>    \verbatim
 !>        NAlpha2 is Integer,Optional
@@ -4767,16 +5092,17 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2025
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2025, 2026
 !
-      function mqc_integral_identity_func(nAlpha,nBeta,label,nAlpha2,nBeta2) result(integral) 
+      function mqc_integral_identity_func(nAlpha,nBeta,label,scalar,nAlpha2,nBeta2) result(integral) 
 !
       implicit none
       type(mqc_scf_integral)::integral
       integer,intent(in)::nAlpha,nBeta
       integer,intent(in),optional::nAlpha2,nBeta2
       character(Len=*),optional,intent(in)::label
+      Class(*),intent(in),optional::scalar
       Character(Len=64)::myLabel
       integer::my_nAlpha2,my_nBeta2
 !
@@ -4796,7 +5122,11 @@
         my_nBeta2 = nBeta2
       endIf
 !
-      call integral%identity(nAlpha,nBeta,myLabel,my_nAlpha2,my_nBeta2)
+      if(present(scalar)) then
+        call integral%identity(nAlpha,nBeta,myLabel,scalar=scalar,nAlpha2=my_nAlpha2,nBeta2=my_nBeta2)
+      else
+        call integral%identity(nAlpha,nBeta,myLabel,nAlpha2=my_nAlpha2,nBeta2=my_nBeta2)
+      endIf
 !
       end function mqc_integral_identity_func 
 !
@@ -4817,6 +5147,8 @@
 !>    label allows a description to be carried around with the variable. Optional 
 !>    arguments nAlpha2 and nBeta2 allow the columns of spin blocks to be sized 
 !>    differently to the rows.
+!>    !! NOTE: An general Integral filled with non-zero elements cannot be generated
+!>    !!       Use an mqc_matrix instead
 !>
 !>    \endverbatim
 !
@@ -4877,11 +5209,14 @@
       class(mqc_scf_integral),intent(inOut)::integral
       integer,intent(in)::nAlpha,nBeta
       character(Len=*),optional,intent(in)::label
-      class(*),optional,intent(in)::Scalar
+      Class(*),optional,intent(in)::Scalar
       integer,intent(in),optional::nAlpha2,nBeta2
-      type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha
+      type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta
       Character(Len=64)::myLabel
       integer::my_nAlpha2,my_nBeta2
+      character(len=16)::sym,storA,storB
+      type(mqc_scalar)::myScalar
+      real(kind=real64)::thresh
 !
       if(present(label)) then
         call string_change_case(label,'l',myLabel)
@@ -4898,44 +5233,67 @@
       else
         my_nBeta2 = nBeta2
       endIf
-      if(present(scalar)) then
-        call tmpMatrixAlpha%init(nAlpha,my_nAlpha2,scalar)
-        if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2) then
-          call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha,&
-                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
-        else 
-          call tmpMatrixBeta%init(nBeta,my_nBeta2,scalar)
-         !if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
-         !  call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2,scalar)
-         !  call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2,scalar)
-         !  call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
-         !    tmpMatrixBetaAlpha,tmpMatrixAlphaBeta,&
-         !       nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
-         !else
-            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
-         !endIf
-        endIf
+      if(MQC_very_small.gt.0.0) then
+        thresh = MQC_very_small
       else
-        call tmpMatrixAlpha%init(nAlpha,my_nAlpha2)
-        if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2) then
-          call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha,&
-                nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
-        else 
-          call tmpMatrixBeta%init(nBeta,my_nBeta2)
-         !if(my_nBeta2.eq.0.or.nBeta.eq.0.or.my_nAlpha2.eq.0.or.nAlpha.eq.0) then
-         !  call tmpMatrixAlphaBeta%init(nAlpha,my_nBeta2)
-         !  call tmpMatrixBetaAlpha%init(nBeta,my_nAlpha2)
-         !  call mqc_integral_allocate(integral,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta,&
-         !    tmpMatrixBetaAlpha,tmpMatrixAlphaBeta,&
-         !    nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
-         !else
-            call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
-         !endIf
-        endIf
+        thresh = 1e-10
       endIf
 !
+      if(present(scalar)) then
+        select type(scalar)
+        type is (integer)
+          myScalar = scalar
+        type is (real)
+          myScalar = scalar
+        type is (complex)
+          myScalar = scalar
+        type is (mqc_scalar)
+          myScalar = scalar
+        class default
+          call mqc_error('scalar type not defined in mqc_integral_initialize',6)
+        end select
+      else
+        myScalar = 0.0
+      endIf
+!
+      if(abs(myScalar).gt.thresh) then
+!       Every element equals c, so the blocks are c times a real symmetric matrix:
+!       hermitian for a real c, antihermitian for an imaginary c and symmetric
+!       otherwise. Square blocks are created packed in that storage, so the check
+!       in allocate only looks at the diagonal.
+        if(abs(aimag(myScalar)).le.thresh) then
+          sym = 'hermitian'
+          storA = 'StorHerm'
+        else if(abs(real(myScalar)).le.thresh) then
+          sym = 'antihermitian'
+          storA = 'StorAhrm'
+        else
+          sym = 'symmetric'
+          storA = 'StorSymm'
+        end if
+        storB = storA
+        if(nAlpha.ne.my_nAlpha2) storA = 'StorFull'
+        if(nBeta.ne.my_nBeta2) storB = 'StorFull'
+        call tmpMatrixAlpha%init(nAlpha,my_nAlpha2,myScalar,storA)
+        if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2) then
+          call mqc_integral_allocate(integral,myLabel,'space',tmpMatrixAlpha,&
+                 nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2,symmetry=sym)
+        else 
+          call tmpMatrixBeta%init(nBeta,my_nBeta2,myScalar,storB)
+          call mqc_integral_allocate(integral,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+               nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2,symmetry=sym)
+        endIf
+      else
+!       A zero integral: no block is stored ('fullsymmetric', or 'asymmetric' if not
+!       square).
+        if (nAlpha.eq.nBeta.and.my_nAlpha2.eq.my_nBeta2) then
+          call mqc_integral_allocate(integral,myLabel,'space',&
+                nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
+        else 
+          call mqc_integral_allocate(integral,myLabel,'spin',&
+               nDimA1=nAlpha, nDimA2=my_nAlpha2,nDimB1=nBeta,nDimB2=my_nBeta2)
+        endIf
+      endIf
 !
       end subroutine mqc_integral_initialize
 !
@@ -5105,19 +5463,32 @@
 !>        = 'beta-alpha':  outputs the beta-alpha spin block. 
 !>        = 'ba':          outputs the beta-alpha spin block. 
 !>    \endverbatim
+!>
+!>    \param[in] NoSym
+!>    \verbatim
+!>        NoSym is logical,optional
+!>        = .false. (default): an integral with a symmetry flag returns the 'full'
+!>                  matrix and the alpha/beta blocks in the storage of its flag
+!>                  (packed, or StorDiag for diagonal and zero integrals), built from
+!>                  the stored blocks without a full intermediate.
+!>        = .true.: the matrix is always returned in full storage.
+!>        The off-diagonal blocks and unflagged integrals are always full.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author L. M. Thompson, M. M. F. Moraes
 !>    \date 2016, 2024
 !
-      function mqc_integral_output_block(integral,blockName) result(matrixOut)
+      function mqc_integral_output_block(integral,blockName,nosym) result(matrixOut)
 !
       implicit none
       class(mqc_scf_integral)::integral
       character(len=*),optional::blockName
+      logical,optional,intent(in)::nosym
       character(len=64)::myBlockName
-      type(mqc_matrix)::matrixOut
+      logical::myNoSym
+      type(mqc_matrix)::matrixOut,emptyMatrix
       integer(kind=int64)::nDimAlpha1=0,nDimBeta1=0,nDimTotal1=0,nDimAlpha2=0,nDimBeta2=0,nDimTotal2=0,zeroI
       real(kind=real64)::zeroR
       complex(kind=real64)::zeroC
@@ -5135,53 +5506,105 @@
       nDimAlpha2 = integral%blockSize('Alpha',2) 
       nDimBeta2 = integral%blockSize('Beta',2)
       nDimTotal2 = nDimAlpha2 + nDimBeta2
-
-      select case (myBlockName)
-      case('full')
-        call matrixOut%init(nDimTotal1,nDimTotal2,zeroR)
-        if (integral%type().eq.'space') then
-          if(integral%hasAlpha()) then
-            call matrixOut%mput(integral%alpha,[1,nDimAlpha1],[1,nDimAlpha2]) 
-            call matrixOut%mput(integral%alpha,[nDimAlpha1+1,nDimTotal1],[nDimAlpha2+1,nDimTotal2]) 
+      myNoSym = .false.
+      if(present(nosym)) myNoSym = nosym
+!
+!     With the symmetry (default), a flagged integral is returned in the storage of its
+!     flag, assembled from the stored (packed or diagonal) blocks.
+      if(.not.myNoSym.and.nDimTotal1.gt.0.and.(integral%isCompressed().or. &
+        integral%isDiag().or.integral%symmetry.eq.'fullsymmetric').and. &
+        any(trim(myBlockName).eq.[character(len=16)::'full','alpha','alpha-alpha','aa', &
+                                  'beta','beta-beta','bb'])) then
+        select case (myBlockName)
+        case('full')
+          if(integral%isCompressed()) then
+            if(integral%type().eq.'space') then
+              matrixOut = MQC_Matrix_Packed_Block_Join(integral%alpha,emptyMatrix, &
+                integral%alpha,nDimAlpha1,nDimBeta1,integral%symmetry)
+            else
+              matrixOut = MQC_Matrix_Packed_Block_Join(integral%alpha,integral%alphaBeta, &
+                integral%beta,nDimAlpha1,nDimBeta1,integral%symmetry)
+            endIf
+          elseIf(integral%type().eq.'space') then
+            matrixOut = MQC_Matrix_Diag_Join(integral%alpha,integral%alpha,nDimAlpha1,nDimBeta1)
+          else
+            matrixOut = MQC_Matrix_Diag_Join(integral%alpha,integral%beta,nDimAlpha1,nDimBeta1)
           endIf
-        elseIf (integral%type().eq.'spin') then
-          if(integral%hasAlpha()) &
-            call matrixOut%mput(integral%alpha,[1,nDimAlpha1],[1,nDimAlpha2]) 
-          if(integral%hasBeta()) &
-            call matrixOut%mput(integral%beta,[nDimAlpha1+1,nDimTotal1],[nDimAlpha2+1,nDimTotal2]) 
-        elseIf (integral%type().eq.'general') then
-          if(integral%hasAlpha()) &
-            call matrixOut%mput(integral%alpha,[1,nDimAlpha1],[1,nDimAlpha2]) 
-          if(integral%hasBeta()) &
-            call matrixOut%mput(integral%beta,[nDimAlpha1+1,nDimTotal1],[nDimAlpha2+1,nDimTotal2]) 
-          if(integral%hasAlphaBeta()) &
-            call matrixOut%mput(integral%alphaBeta,[nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2]) 
-          if(integral%hasBetaAlpha()) &
-            call matrixOut%mput(integral%betaAlpha,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2]) 
+        case('alpha','alpha-alpha','aa')
+          matrixOut = flagBlock(integral%alpha,nDimAlpha1)
+        case('beta','beta-beta','bb')
+          if(integral%type().eq.'space') then
+            matrixOut = flagBlock(integral%alpha,nDimBeta1)
+          else
+            matrixOut = flagBlock(integral%beta,nDimBeta1)
+          endIf
+        end select
+      else
+        select case (myBlockName)
+        case('full')
+          call matrixOut%init(nDimTotal1,nDimTotal2,zeroR)
+          if (integral%type().eq.'space') then
+            if(integral%hasAlpha()) then
+              call matrixOut%mput(integral%alpha,[1,nDimAlpha1],[1,nDimAlpha2]) 
+              call matrixOut%mput(integral%alpha,[nDimAlpha1+1,nDimTotal1],[nDimAlpha2+1,nDimTotal2]) 
+            endIf
+          elseIf (integral%type().eq.'spin') then
+            if(integral%hasAlpha()) &
+              call matrixOut%mput(integral%alpha,[1,nDimAlpha1],[1,nDimAlpha2]) 
+            if(integral%hasBeta()) &
+              call matrixOut%mput(integral%beta,[nDimAlpha1+1,nDimTotal1],[nDimAlpha2+1,nDimTotal2]) 
+          elseIf (integral%type().eq.'general') then
+            if(integral%hasAlpha()) &
+              call matrixOut%mput(integral%alpha,[1,nDimAlpha1],[1,nDimAlpha2]) 
+            if(integral%hasBeta()) &
+              call matrixOut%mput(integral%beta,[nDimAlpha1+1,nDimTotal1],[nDimAlpha2+1,nDimTotal2]) 
+            if(integral%hasAlphaBeta()) &
+              call matrixOut%mput(integral%alphaBeta,[nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2]) 
+            if(integral%hasBetaAlpha()) &
+              call matrixOut%mput(integral%baBlock(),[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2]) 
+          endIf
+        case('alpha','alpha-alpha','aa')
+          call matrixOut%init(nDimAlpha1,nDimAlpha2,zeroR)
+          if (integral%hasAlpha()) &
+            call matrixOut%mput(integral%alpha,[1,nDimAlpha1],[1,nDimAlpha2])
+        case('beta','beta-beta','bb')
+          call matrixOut%init(nDimBeta1,nDimBeta2,zeroR)
+          if (integral%hasBeta()) then
+            call matrixOut%mput(integral%beta,[1,nDimBeta1],[1,nDimBeta2]) 
+          elseIf (integral%type().eq.'space'.and.integral%hasAlpha()) then
+            call matrixOut%mput(integral%alpha,[1,nDimBeta1],[1,nDimBeta2]) 
+          endIf
+        case('alpha-beta','alphabeta','ab')
+          call matrixOut%init(nDimBeta1,nDimAlpha2,zeroR)
+          if (integral%hasAlphaBeta()) &
+            call matrixOut%mput(integral%alphaBeta,[1,nDimBeta1],[1,nDimAlpha2]) 
+        case('beta-alpha','betaalpha','ba')
+          call matrixOut%init(nDimAlpha1,nDimBeta2,zeroR)
+          if (integral%hasBetaAlpha()) &
+            call matrixOut%mput(integral%baBlock(),[1,nDimAlpha1],[1,nDimBeta2])
+        case default
+          call mqc_error_A('unrecognised block name in mqc_integral_output_block', 6, &
+               'myBlockName', myBlockName )
+        end select
+      end if
+!
+      contains
+!
+!       A diagonal block of a flagged integral: the stored block itself (already in the
+!       storage of the flag), or a zero block in that storage.
+        function flagBlock(block,nDim) result(blockOut)
+        type(mqc_matrix),intent(in)::block
+        integer(kind=int64),intent(in)::nDim
+        type(mqc_matrix)::blockOut
+        if(MQC_Matrix_isAllocated(block)) then
+          blockOut = block
+        elseIf(integral%isCompressed()) then
+          blockOut = MQC_Matrix_Packed_Block_Join(emptyMatrix,emptyMatrix,emptyMatrix, &
+            nDim,0,integral%symmetry)
+        else
+          blockOut = MQC_Matrix_Diag_Join(emptyMatrix,emptyMatrix,nDim,0)
         endIf
-      case('alpha','alpha-alpha','aa')
-        call matrixOut%init(nDimAlpha1,nDimAlpha2,zeroR)
-        if (integral%hasAlpha()) & 
-          call matrixOut%mput(integral%alpha,[1,nDimAlpha1],[1,nDimAlpha2]) 
-      case('beta','beta-beta','bb')
-        call matrixOut%init(nDimBeta1,nDimBeta2,zeroR)
-        if (integral%hasBeta()) then
-          call matrixOut%mput(integral%beta,[1,nDimBeta1],[1,nDimBeta2]) 
-        elseIf (integral%type().eq.'space'.and.integral%hasAlpha()) then
-          call matrixOut%mput(integral%alpha,[1,nDimBeta1],[1,nDimBeta2]) 
-        endIf
-      case('alpha-beta','alphabeta','ab')
-        call matrixOut%init(nDimBeta1,nDimAlpha2,zeroR)
-        if (integral%hasAlphaBeta()) &
-          call matrixOut%mput(integral%alphaBeta,[1,nDimBeta1],[1,nDimAlpha2]) 
-      case('beta-alpha','betaalpha','ba')
-        call matrixOut%init(nDimAlpha1,nDimBeta2,zeroR)
-        if (integral%hasBetaAlpha()) &
-          call matrixOut%mput(integral%betaAlpha,[1,nDimAlpha1],[1,nDimBeta2]) 
-      case default
-        call mqc_error_A('unrecognised block name in mqc_integral_output_block', 6, &
-             'myBlockName', myBlockName )
-      end select
+        end function flagBlock
 !
       end function mqc_integral_output_block  
 !
@@ -5344,8 +5767,8 @@
           betaOrbs = [(i,i=nBeta+1,nDimBeta1)]
         elseIf(my_axis.eq.1) then
           allocate(alphaOrbs(nDimAlpha2-nAlpha),betaOrbs(nDimBeta2-nBeta))
-          alphaOrbs = [(i,i=nAlpha,nDimAlpha2)]
-          betaOrbs = [(i,i=nBeta,nDimBeta2)]
+          alphaOrbs = [(i,i=nAlpha+1,nDimAlpha2)]
+          betaOrbs = [(i,i=nBeta+1,nDimBeta2)]
         else
           call mqc_error_I('Unknown array is in MQC_Integral_Output_Orbitals',6,'my_axis',my_axis)
         endIf
@@ -5383,7 +5806,7 @@
       select case (integral%type())
       case('space')
         if(size(alphaOrbs).eq.size(betaOrbs).and.all(alphaOrbs.eq.betaOrbs)) then
-          tmpMatrixAlpha = integral%getBlock('alpha')
+          tmpMatrixAlpha = integral%getBlock('alpha',nosym=.true.)
           if(myOrbString.eq.'real') tmpMatrixAlpha = real(tmpMatrixAlpha)
           if(myOrbString.eq.'imaginary') tmpMatrixAlpha = aimag(tmpMatrixAlpha)
           if(myOrbString.eq.'complex') tmpMatrixAlpha = MQC_Matrix_Cmplx(real(tmpMatrixAlpha),aimag(tmpMatrixAlpha))
@@ -5416,8 +5839,8 @@
               nDimB1=NDB1,nDimB2=NDB2)
           endIf
         else
-          tmpMatrixAlpha = integral%getBlock('alpha')
-          tmpMatrixBeta = integral%getBlock('beta')
+          tmpMatrixAlpha = integral%getBlock('alpha',nosym=.true.)
+          tmpMatrixBeta = integral%getBlock('beta',nosym=.true.)
           if(myOrbString.eq.'real') then
             tmpMatrixAlpha = real(tmpMatrixAlpha)
             tmpMatrixBeta = real(tmpMatrixBeta)
@@ -5474,8 +5897,8 @@
           endIf
         endIf
       case('spin')
-        tmpMatrixAlpha = integral%getBlock('alpha')
-        tmpMatrixBeta = integral%getBlock('beta')
+        tmpMatrixAlpha = integral%getBlock('alpha',nosym=.true.)
+        tmpMatrixBeta = integral%getBlock('beta',nosym=.true.)
         if(myOrbString.eq.'real') then
           tmpMatrixAlpha = real(tmpMatrixAlpha)
           tmpMatrixBeta = real(tmpMatrixBeta)
@@ -5506,7 +5929,7 @@
             if(betaOrbs(i).ge.0) then
               call outMatrixBeta%vput(tmpMatrixBeta%vat([0],[betaOrbs(i)]),[0],[i])
             else
-              call outMatrixBeta%vput(tmpMatrixAlpha%vat([0],[abs(alphaOrbs(i))]),[0],[i])
+              call outMatrixBeta%vput(tmpMatrixAlpha%vat([0],[abs(betaOrbs(i))]),[0],[i])
             endIf
           endDo
         elseIf(my_axis.eq.1) then
@@ -5527,7 +5950,7 @@
             if(betaOrbs(i).ge.0) then
               call outMatrixBeta%vput(tmpMatrixBeta%vat([betaOrbs(i)],[0]),[i],[0])
             else
-              call outMatrixBeta%vput(tmpMatrixAlpha%vat([abs(alphaOrbs(i))],[0]),[i],[0])
+              call outMatrixBeta%vput(tmpMatrixAlpha%vat([abs(betaOrbs(i))],[0]),[i],[0])
             endIf
           endDo
         else
@@ -5547,10 +5970,10 @@
             nDimB1=NDB1,nDimB2=NDB2)
         endIf
       case('general')
-        tmpMatrixAlpha = integral%getBlock('alpha')
-        tmpMatrixBeta = integral%getBlock('beta')
-        tmpMatrixAlphaBeta = integral%getBlock('alpha-beta')
-        tmpMatrixBetaAlpha = integral%getBlock('beta-alpha')
+        tmpMatrixAlpha = integral%getBlock('alpha',nosym=.true.)
+        tmpMatrixBeta = integral%getBlock('beta',nosym=.true.)
+        tmpMatrixAlphaBeta = integral%getBlock('alpha-beta',nosym=.true.)
+        tmpMatrixBetaAlpha = integral%getBlock('beta-alpha',nosym=.true.)
         if(myOrbString.eq.'real') then
           tmpMatrixAlpha = real(tmpMatrixAlpha)
           tmpMatrixBeta = real(tmpMatrixBeta)
@@ -6314,6 +6737,10 @@
 !>    beta-alpha blocks of an MQC integral type variable. This is required for performing
 !>    the PG(P) contraction with non-symmetric GHF densities (most commonly with complex GHF
 !>    or transition density matrices).
+!>    The blocks are exchanged as they are (not transposed), so the alpha-beta and
+!>    beta-alpha blocks must have the same shape (alpha and beta of the same shape,
+!>    square or rectangular). Every symmetry flag is kept: a compressed integral stores
+!>    only the new alpha-beta block, which is the implied beta-alpha block of the input.
 !>
 !>    \endverbatim
 !
@@ -6327,22 +6754,43 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
-!>    \date 2023
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2023, 2026
 !
       function mqc_integral_swap_offDiagBlocks(integral) result(integralOut)
 !
       implicit none
       class(mqc_scf_integral),intent(in)::integral
       type(mqc_scf_integral)::integralOut
-      type(mqc_matrix)::tmat1,tmat2,tmat3,tmat4
-
+!
       if(integral%array_type.eq.'general') then
-        tmat1 = integral%getBlock('alpha-alpha') 
-        tmat2 = integral%getBlock('beta-beta')
-        tmat3 = integral%getBlock('alpha-beta')
-        tmat4 = integral%getBlock('beta-alpha')
-        call mqc_integral_allocate(integralOut,integral%getLabel(),'general',tmat1,tmat2,tmat4,tmat3)
+        if(integral%nARows.ne.integral%nBRows.or.integral%nACols.ne.integral%nBCols) &
+          call mqc_error_i('The alpha-beta and beta-alpha blocks must have the same shape in &
+          &mqc_integral_swap_offDiagBlocks',6,'integral%nARows',integral%nARows, &
+          'integral%nBRows',integral%nBRows,'integral%nACols',integral%nACols, &
+          'integral%nBCols',integral%nBCols)
+        select case (integral%symmetry)
+        case('hermitian','antihermitian','symmetric','antisymmetric')
+!         The new alpha-beta block is the implied beta-alpha block; the swapped integral
+!         has the same symmetry.
+          call mqc_integral_allocate(integralOut,integral%getLabel(),'general',integral%alpha, &
+            integral%beta,integral%baBlock(),nDimA1=integral%nARows,nDimA2=integral%nACols, &
+            nDimB1=integral%nBRows,nDimB2=integral%nBCols)
+          if(integralOut%symmetry.eq.'unknown') integralOut%symmetry = integral%symmetry
+        case('realdiag','imagdiag','complexdiag','fullsymmetric')
+          integralOut = integral
+        case('unknown','asymmetric')
+!         The swap maps every symmetry to itself, so a square asymmetric integral stays
+!         asymmetric (a non-square one is set 'asymmetric' by allocate).
+          call mqc_integral_allocate(integralOut,integral%getLabel(),'general',integral%alpha, &
+            integral%beta,integral%betaAlpha,integral%alphaBeta,nDimA1=integral%nARows, &
+            nDimA2=integral%nACols,nDimB1=integral%nBRows,nDimB2=integral%nBCols)
+          if(integral%symmetry.eq.'asymmetric'.and.integral%isSquare().and. &
+            integralOut%symmetry.eq.'unknown') integralOut%symmetry = 'asymmetric'
+        case default
+          call mqc_error_a('Unknown symmetry flag in mqc_integral_swap_offDiagBlocks',6, &
+            'integral%symmetry',integral%symmetry)
+        end select
       else
         integralOut = integral
       endIf
@@ -7697,6 +8145,7 @@
 !
       integralOut%Array_Name = integralIn%Array_Name
       integralOut%Array_Type = integralIn%Array_Type
+      integralOut%Symmetry = integralIn%Symmetry
 
       integralOut%nARows = integralIn%nARows
       integralOut%nACols = integralIn%nACols
@@ -7806,7 +8255,7 @@
           call matrixOut%mput(integralIn%alphaBeta,[nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2]) 
         endIf
         if (integralIn%hasBetaAlpha()) then
-          call matrixOut%mput(integralIn%betaAlpha,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2]) 
+          call matrixOut%mput(integralIn%baBlock(),[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2]) 
         endIf
       case default
         call mqc_error_A('unrecognised integer type in mqc_integral_output_array', 6, &
@@ -8069,10 +8518,10 @@
           if(integralA%hasBetaAlpha()) then
             if(allocated(tmpMatrixAlpha)) then
               tmpMatrixAlpha = tmpMatrixAlpha + &
-                (integralA%betaAlpha.dot.matrixB%mat([nBasisAlpha2+1,nBasisTotal2],[1,nBasisAlpha2]))
+                (integralA%baBlock().dot.matrixB%mat([nBasisAlpha2+1,nBasisTotal2],[1,nBasisAlpha2]))
             else
               tmpMatrixAlpha = &
-                (integralA%betaAlpha.dot.matrixB%mat([nBasisAlpha2+1,nBasisTotal2],[1,nBasisAlpha2]))
+                (integralA%baBlock().dot.matrixB%mat([nBasisAlpha2+1,nBasisTotal2],[1,nBasisAlpha2]))
             endIf
           endIf
           if(integralA%hasBeta()) &
@@ -8105,10 +8554,10 @@
           if(integralA%hasBetaAlpha()) then 
             if(allocated(tmpMatrixBetaAlpha)) then
               tmpMatrixBetaAlpha = tmpMatrixBetaAlpha + &
-                (integralA%betaAlpha.dot.matrixB%mat([nBasisAlpha2+1,nBasisTotal2],[nBasisAlpha2+1,nBasisTotal2])) 
+                (integralA%baBlock().dot.matrixB%mat([nBasisAlpha2+1,nBasisTotal2],[nBasisAlpha2+1,nBasisTotal2])) 
             else
               tmpMatrixBetaAlpha = &
-                (integralA%betaAlpha.dot.matrixB%mat([nBasisAlpha2+1,nBasisTotal2],[nBasisAlpha2+1,nBasisTotal2])) 
+                (integralA%baBlock().dot.matrixB%mat([nBasisAlpha2+1,nBasisTotal2],[nBasisAlpha2+1,nBasisTotal2])) 
             endIf
           endIf
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha, &
@@ -8117,7 +8566,7 @@
           if(integralA%hasAlpha()) tmpMatrixAlpha = integralA%alpha.dot.matrixB
           if(integralA%hasBeta()) tmpMatrixBeta = integralA%beta.dot.matrixB
           if(integralA%hasAlphaBeta()) tmpMatrixAlphaBeta = integralA%alphaBeta.dot.matrixB
-          if(integralA%hasBetaAlpha()) tmpMatrixBetaAlpha = integralA%betaAlpha.dot.matrixB
+          if(integralA%hasBetaAlpha()) tmpMatrixBetaAlpha = integralA%baBlock().dot.matrixB
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha, &
             tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
         endIf
@@ -8263,10 +8712,10 @@
           if(integralB%hasBetaAlpha()) then
             if(allocated(tmpMatrixBeta)) then
              tmpMatrixBeta = tmpMatrixBeta + &
-               (matrixA%mat([nBasisAlpha1+1,nBasisTotal1],[1,nBasisAlpha1]).dot.integralB%betaAlpha)
+               (matrixA%mat([nBasisAlpha1+1,nBasisTotal1],[1,nBasisAlpha1]).dot.integralB%baBlock())
            else
              tmpMatrixBeta = &
-               (matrixA%mat([nBasisAlpha1+1,nBasisTotal1],[1,nBasisAlpha1]).dot.integralB%betaAlpha)
+               (matrixA%mat([nBasisAlpha1+1,nBasisTotal1],[1,nBasisAlpha1]).dot.integralB%baBlock())
            endIf
          endIf
           if(integralB%hasAlpha()) tmpMatrixAlphaBeta = &
@@ -8283,7 +8732,7 @@
             endIf
           endIf
           if(integralB%hasBetaAlpha()) &
-            tmpMatrixBetaAlpha = (matrixA%mat([1,nBasisAlpha1],[1,nBasisAlpha1]).dot.integralB%betaAlpha) 
+            tmpMatrixBetaAlpha = (matrixA%mat([1,nBasisAlpha1],[1,nBasisAlpha1]).dot.integralB%baBlock()) 
           if(integralB%hasBeta()) then
             if(allocated(tmpMatrixBetaAlpha)) then
               tmpMatrixBetaAlpha = tmpMatrixBetaAlpha + &
@@ -8299,7 +8748,7 @@
           if(integralB%hasAlpha()) tmpMatrixAlpha = matrixA.dot.integralB%alpha
           if(integralB%hasBeta()) tmpMatrixBeta = matrixA.dot.integralB%beta
           if(integralB%hasAlphaBeta()) tmpMatrixAlphaBeta = matrixA.dot.integralB%alphaBeta
-          if(integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = matrixA.dot.integralB%betaAlpha
+          if(integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = matrixA.dot.integralB%baBlock()
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha, &
             tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
         endIf
@@ -8359,6 +8808,8 @@
 !>    1.  BlockName = 'full' outputs the full MQC_TwoERIs variable.
 !>    2.  BlockName = 'alpha', 'alpha-alpha' or 'aaaa' outputs the alpha-alpha spin block. 
 !>    3.  BlockName = 'beta', 'beta-beta' or 'bbbb' outputs the beta-beta spin block. 
+!>    The symmetry flag is kept when the padded alpha and beta blocks are square (the
+!>    new elements are zero); packed and diagonal blocks are padded in their storage.
 !>    \endverbatim
 !
 !     Authors:
@@ -8378,6 +8829,8 @@
 
       type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha
       Character(Len=64)::myLabel
+      integer(kind=int64)::nAR,nAC,nBR,nBC
+      logical::keepFlag
 !
       if(present(blockname)) then
         call string_change_case(blockname,'l',myLabel)
@@ -8391,6 +8844,36 @@
       else
         ax2 = axis1
       endIf
+!
+!     Padding with zeros keeps the symmetry when the padded blocks are square: the flag
+!     is then kept, packed and diagonal blocks are padded in their own storage and the
+!     implied betaAlpha block is not rebuilt.
+      nAR = integral%nARows
+      nAC = integral%nACols
+      nBR = integral%nBRows
+      nBC = integral%nBCols
+      select case(myLabel)
+      case('full')
+        nAR = max(nAR,ax1)
+        nAC = max(nAC,ax2)
+        if(integral%array_type.eq.'space') then
+          nBR = nAR
+          nBC = nAC
+        else
+          nBR = max(nBR,ax1)
+          nBC = max(nBC,ax2)
+        endIf
+      case('alpha')
+        nAR = max(nAR,ax1)
+        nAC = max(nAC,ax2)
+      case('beta')
+        nBR = max(nBR,ax1)
+        nBC = max(nBC,ax2)
+      case default
+        call mqc_error_A('Unknown label in mqc_integral_pad', 6, &
+          'label', myLabel )
+      end select
+      keepFlag = (integral%isCompressed().or.integral%isDiag()).and.nAR.eq.nAC.and.nBR.eq.nBC
        
       select case(integral%array_type)
       case('space')
@@ -8442,8 +8925,8 @@
           tmpMatrixBeta = tmpMatrixBeta%mpad(ax1,ax2)
           tmpMatrixAlphaBeta = integral%getBlock('alphabeta')
           tmpMatrixAlphaBeta = tmpMatrixAlphaBeta%mpad(ax1,ax2)
-          tmpMatrixBetaAlpha = integral%getBlock('betaalpha')
-          tmpMatrixBetaAlpha = tmpMatrixBetaAlpha%mpad(ax1,ax2)
+          if(.not.keepFlag) tmpMatrixBetaAlpha = integral%getBlock('betaalpha')
+          if(.not.keepFlag) tmpMatrixBetaAlpha = tmpMatrixBetaAlpha%mpad(ax1,ax2)
           call mqc_integral_allocate(integralOut,integral%getLabel(),'general',tmpMatrixAlpha, &
             tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
         case('alpha')
@@ -8452,8 +8935,8 @@
           tmpMatrixBeta = integral%getBlock('beta')
           tmpMatrixAlphaBeta = integral%getBlock('alphabeta')
           tmpMatrixAlphaBeta = tmpMatrixAlphaBeta%mpad(integral%nBRows,ax2)
-          tmpMatrixBetaAlpha = integral%getBlock('betaalpha')
-          tmpMatrixBetaAlpha = tmpMatrixBetaAlpha%mpad(ax1,integral%nBCols)
+          if(.not.keepFlag) tmpMatrixBetaAlpha = integral%getBlock('betaalpha')
+          if(.not.keepFlag) tmpMatrixBetaAlpha = tmpMatrixBetaAlpha%mpad(ax1,integral%nBCols)
           call mqc_integral_allocate(integralOut,integral%getLabel(),'general',tmpMatrixAlpha, &
             tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
         case('beta')
@@ -8462,8 +8945,8 @@
           tmpMatrixBeta = tmpMatrixBeta%mpad(ax1,ax2)
           tmpMatrixAlphaBeta = integral%getBlock('alphabeta')
           tmpMatrixAlphaBeta = tmpMatrixAlphaBeta%mpad(ax1,integral%nACols)
-          tmpMatrixBetaAlpha = integral%getBlock('betaalpha')
-          tmpMatrixBetaAlpha = tmpMatrixBetaAlpha%mpad(integral%nARows,ax2)
+          if(.not.keepFlag) tmpMatrixBetaAlpha = integral%getBlock('betaalpha')
+          if(.not.keepFlag) tmpMatrixBetaAlpha = tmpMatrixBetaAlpha%mpad(integral%nARows,ax2)
           call mqc_integral_allocate(integralOut,integral%getLabel(),'general',tmpMatrixAlpha, &
             tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
         case default
@@ -8474,6 +8957,9 @@
         call mqc_error_A('Unknown integral type in mqc_integral_pad', 6, &
           'integral%array_type', integral%array_type )
       end select     
+!
+!
+      if(keepFlag.and.integralOut%symmetry.eq.'unknown') integralOut%symmetry = integral%symmetry
 !
       end function mqc_integral_pad
 !
@@ -8794,6 +9280,9 @@
       type(mqc_scf_integral)::integralOut
       type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha
       integer(kind=int64)::nA1,nA2,nB1,nB2
+      logical::symmA,asymA,hermA,ahrmA,diagA,symmB,asymB,hermB,ahrmB,diagB
+      character(len=16)::newSymmetry
+      character(len=64)::outType
 !
       if(size(integralA,'alpha',1).ne.size(integralB,'alpha',1).or.size(integralA,'alpha',2).ne.&
         size(integralB,'alpha',2).or.size(integralA,'beta',1).ne.size(integralB,'beta',1).or.&
@@ -8809,207 +9298,278 @@
       nB1 = size(integralA,'beta',1)
       nB2 = size(integralA,'beta',2)
 !
-      select case(integralA%array_type)
-      case('space')
-        select case (integralB%array_type)
+!     Flagged integrals are summed on their stored blocks (betaAlpha is not rebuilt)
+!     and the result keeps the symmetries that both operands have.
+      call integralA%symmSet(symmA,asymA,hermA,ahrmA,diagA)
+      call integralB%symmSet(symmB,asymB,hermB,ahrmB,diagB)
+      newSymmetry = mqc_integral_pick_symmetry(symmA.and.symmB,asymA.and.asymB, &
+        hermA.and.hermB,ahrmA.and.ahrmB,diagA.and.diagB)
+      if(newSymmetry.ne.'unknown') then
+        if(integralA%array_type.eq.'general'.or.integralB%array_type.eq.'general') then
+          outType = 'general'
+        elseIf(integralA%array_type.eq.'spin'.or.integralB%array_type.eq.'spin') then
+          outType = 'spin'
+        else
+          outType = 'space'
+        endIf
+        call sumBlocks(tmpMatrixAlpha,integralA%alpha,integralA%hasAlpha(),integralB%alpha, &
+          integralB%hasAlpha())
+        if(outType.ne.'space') then
+          if(integralA%array_type.eq.'space') then
+            call sumBlocks(tmpMatrixBeta,integralA%alpha,integralA%hasAlpha(),integralB%beta, &
+              integralB%hasBeta())
+          elseIf(integralB%array_type.eq.'space') then
+            call sumBlocks(tmpMatrixBeta,integralA%beta,integralA%hasBeta(),integralB%alpha, &
+              integralB%hasAlpha())
+          else
+            call sumBlocks(tmpMatrixBeta,integralA%beta,integralA%hasBeta(),integralB%beta, &
+              integralB%hasBeta())
+          endIf
+        endIf
+        if(outType.eq.'general') &
+          call sumBlocks(tmpMatrixAlphaBeta,integralA%alphaBeta,MQC_Matrix_isAllocated(integralA%alphaBeta), &
+            integralB%alphaBeta,MQC_Matrix_isAllocated(integralB%alphaBeta))
+        call mqc_integral_allocate(integralOut,'',outType,tmpMatrixAlpha,tmpMatrixBeta, &
+          tmpMatrixAlphaBeta,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+        if(integralOut%symmetry.eq.'unknown') then
+          if(newSymmetry.eq.'diagonal') then
+            integralOut%symmetry = integralOut%diagLabel()
+          else
+            integralOut%symmetry = newSymmetry
+            call integralOut%compressSymm()
+          endIf
+        endIf
+      endIf
+!
+!     Unflagged integrals (and the flagged cases without a common symmetry).
+      if(newSymmetry.eq.'unknown') then
+        select case(integralA%array_type)
         case('space')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) tmpMatrixAlpha = integralA%alpha+integralB%alpha
-          call mqc_integral_allocate(integralOut,'','space',tmpMatrixAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,&
-            nDimB2=nB2)
+          select case (integralB%array_type)
+          case('space')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha+integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            call mqc_integral_allocate(integralOut,'','space',tmpMatrixAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,&
+              nDimB2=nB2)
+          case('spin')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha+integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasAlpha().and.integralB%hasBeta()) then
+               tmpMatrixBeta = integralA%alpha+integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = integralB%beta
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixBeta = integralA%alpha
+            end if
+            call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,&
+              nDimB2=nB2)
+          case('general')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha+integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasAlpha().and.integralB%hasBeta()) then
+               tmpMatrixBeta = integralA%alpha+integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = integralB%beta
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixBeta = integralA%alpha
+            end if
+            if(integralB%hasAlphaBeta()) then 
+              tmpMatrixAlphaBeta = integralB%alphaBeta
+            end if
+            if(integralB%hasBetaAlpha()) then
+              tmpMatrixBetaAlpha = integralB%baBlock()
+            end if
+            call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case default
+            call mqc_error_A('Unknown integral type in mqc_integral_sum', 6, &
+                 'integralB%array_type', integralB%array_type )
+          end select
         case('spin')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha+integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasAlpha().and.integralB%hasBeta()) then
-             tmpMatrixBeta = integralA%alpha+integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = integralB%beta
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixBeta = integralA%alpha
-          end if
-          call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,&
-            nDimB2=nB2)
+          select case (integralB%array_type)
+          case('space')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha+integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasBeta().and.integralB%hasAlpha()) then
+               tmpMatrixBeta = integralB%alpha+integralA%beta
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixBeta = integralB%alpha
+            end if
+            call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case('spin')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha+integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasBeta().and.integralB%hasBeta()) then
+               tmpMatrixBeta = integralA%beta+integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = integralB%beta
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            end if
+            call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case('general')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha+integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasBeta().and.integralB%hasBeta()) then
+               tmpMatrixBeta = integralA%beta+integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = integralB%beta
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            end if
+            if(integralB%hasAlphaBeta()) then 
+              tmpMatrixAlphaBeta = integralB%alphaBeta
+            end if
+            if(integralB%hasBetaAlpha()) then
+              tmpMatrixBetaAlpha = integralB%baBlock()
+            end if
+            call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case default
+            call mqc_error_A('Unknown integral type in mqc_integral_sum', 6, &
+                 'integralB%array_type', integralB%array_type )
+          end select
         case('general')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha+integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasAlpha().and.integralB%hasBeta()) then
-             tmpMatrixBeta = integralA%alpha+integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = integralB%beta
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixBeta = integralA%alpha
-          end if
-          if(integralB%hasAlphaBeta()) then 
-            tmpMatrixAlphaBeta = integralB%alphaBeta
-          end if
-          if(integralB%hasBetaAlpha()) then
-            tmpMatrixBetaAlpha = integralB%betaAlpha
-          end if
-          call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          select case (integralB%array_type)
+          case('space')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha+integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralB%hasAlpha().and.integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta+integralB%alpha
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixBeta = integralB%alpha
+            end if
+            if(integralA%hasAlphaBeta()) then 
+              tmpMatrixAlphaBeta = integralA%alphaBeta
+            end if
+            if(integralA%hasBetaAlpha()) then
+              tmpMatrixBetaAlpha = integralA%baBlock()
+            end if
+            call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case('spin')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha+integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasBeta().and.integralB%hasBeta()) then
+               tmpMatrixBeta = integralA%beta+integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = integralB%beta
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            end if
+            if(integralA%hasAlphaBeta()) then 
+              tmpMatrixAlphaBeta = integralA%alphaBeta
+            end if
+            if(integralA%hasBetaAlpha()) then
+              tmpMatrixBetaAlpha = integralA%baBlock()
+            end if
+            call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case('general')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha+integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasBeta().and.integralB%hasBeta()) then
+               tmpMatrixBeta = integralA%beta+integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = integralB%beta
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            end if
+            if(integralA%hasAlphaBeta().and.integralB%hasAlphaBeta()) then
+              tmpMatrixAlphaBeta = integralA%alphaBeta+integralB%alphaBeta
+            elseif(integralA%hasAlphaBeta()) then
+              tmpMatrixAlphaBeta = integralA%alphaBeta
+            elseif(integralB%hasAlphaBeta()) then
+              tmpMatrixAlphaBeta = integralB%alphaBeta
+            end if
+            if(integralA%hasBetaAlpha().and.integralB%hasBetaAlpha()) then
+              tmpMatrixBetaAlpha = integralA%baBlock()+integralB%baBlock()
+            elseif(integralA%hasBetaAlpha()) then
+              tmpMatrixBetaAlpha = integralA%baBlock()
+            elseif(integralB%hasBetaAlpha()) then
+              tmpMatrixBetaAlpha = integralB%baBlock()
+            endif
+            call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case default
+            call mqc_error_A('Unknown integral type in mqc_integral_sum', 6, &
+                 'integralB%array_type', integralB%array_type )
+          end select
         case default
           call mqc_error_A('Unknown integral type in mqc_integral_sum', 6, &
-               'integralB%array_type', integralB%array_type )
+               'integralA%array_type', integralA%array_type )
         end select
-      case('spin')
-        select case (integralB%array_type)
-        case('space')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha+integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasBeta().and.integralB%hasAlpha()) then
-             tmpMatrixBeta = integralB%alpha+integralA%beta
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixBeta = integralB%alpha
-          end if
-          call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-        case('spin')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha+integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasBeta().and.integralB%hasBeta()) then
-             tmpMatrixBeta = integralA%beta+integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = integralB%beta
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          end if
-          call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-        case('general')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha+integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasBeta().and.integralB%hasBeta()) then
-             tmpMatrixBeta = integralA%beta+integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = integralB%beta
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          end if
-          if(integralB%hasAlphaBeta()) then 
-            tmpMatrixAlphaBeta = integralB%alphaBeta
-          end if
-          if(integralB%hasBetaAlpha()) then
-            tmpMatrixBetaAlpha = integralB%betaAlpha
-          end if
-          call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-        case default
-          call mqc_error_A('Unknown integral type in mqc_integral_sum', 6, &
-               'integralB%array_type', integralB%array_type )
-        end select
-      case('general')
-        select case (integralB%array_type)
-        case('space')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha+integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralB%hasAlpha().and.integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%alpha+integralB%beta
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixBeta = integralB%alpha
-          end if
-          if(integralA%hasAlphaBeta()) then 
-            tmpMatrixAlphaBeta = integralA%alphaBeta
-          end if
-          if(integralA%hasBetaAlpha()) then
-            tmpMatrixBetaAlpha = integralA%betaAlpha
-          end if
-          call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-        case('spin')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha+integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasBeta().and.integralB%hasBeta()) then
-             tmpMatrixBeta = integralA%beta+integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = integralB%beta
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          end if
-          if(integralA%hasAlphaBeta()) then 
-            tmpMatrixAlphaBeta = integralA%alphaBeta
-          end if
-          if(integralA%hasBetaAlpha()) then
-            tmpMatrixBetaAlpha = integralA%betaAlpha
-          end if
-          call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-        case('general')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha+integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasBeta().and.integralB%hasBeta()) then
-             tmpMatrixBeta = integralA%beta+integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = integralB%beta
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          end if
-          if(integralA%hasAlphaBeta().and.integralB%hasAlphaBeta()) then
-            tmpMatrixAlphaBeta = integralA%alphaBeta+integralB%alphaBeta
-          elseif(integralA%hasAlphaBeta()) then
-            tmpMatrixAlphaBeta = integralA%alphaBeta
-          elseif(integralB%hasAlphaBeta()) then
-            tmpMatrixAlphaBeta = integralB%alphaBeta
-          end if
-          if(integralA%hasBetaAlpha().and.integralB%hasBetaAlpha()) then
-            tmpMatrixBetaAlpha = integralA%betaAlpha+integralB%betaAlpha
-          elseif(integralA%hasBetaAlpha()) then
-            tmpMatrixBetaAlpha = integralA%betaAlpha
-          elseif(integralB%hasBetaAlpha()) then
-            tmpMatrixBetaAlpha = integralB%betaAlpha
-          endif
-          call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-        case default
-          call mqc_error_A('Unknown integral type in mqc_integral_sum', 6, &
-               'integralB%array_type', integralB%array_type )
-        end select
-      case default
-        call mqc_error_A('Unknown integral type in mqc_integral_sum', 6, &
-             'integralA%array_type', integralA%array_type )
-      end select
+!       An asymmetric integral plus a zero integral stays asymmetric.
+        if(integralOut%symmetry.eq.'unknown'.and.((integralA%symmetry.eq.'asymmetric'.and. &
+          integralB%symmetry.eq.'fullsymmetric').or.(integralA%symmetry.eq.'fullsymmetric'.and. &
+          integralB%symmetry.eq.'asymmetric'))) integralOut%symmetry = 'asymmetric'
+      endIf
+!
+      contains
+!
+        subroutine sumBlocks(blockOut,blockA,hasA,blockB,hasB)
+        type(mqc_matrix),intent(inOut)::blockOut
+        type(mqc_matrix),intent(in)::blockA,blockB
+        logical,intent(in)::hasA,hasB
+        if(hasA.and.hasB) then
+          blockOut = blockA+blockB
+        elseIf(hasA) then
+          blockOut = blockA
+        elseIf(hasB) then
+          blockOut = blockB
+        endIf
+        end subroutine sumBlocks
 !
       end function mqc_integral_sum
 !
@@ -13208,10 +13768,13 @@
       type(mqc_scf_integral)::integralOut
       type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha
       integer(kind=int64)::nA1,nA2,nB1,nB2
+      logical::symmA,asymA,hermA,ahrmA,diagA,symmB,asymB,hermB,ahrmB,diagB
+      character(len=16)::newSymmetry
+      character(len=64)::outType
 !
       if(size(integralA,'alpha',1).ne.size(integralB,'alpha',1).or.size(integralA,'alpha',2).ne.&
-        size(integralA,'alpha',2).or.size(integralA,'beta',1).ne.size(integralA,'beta',1).or.&
-        size(integralA,'beta',2).ne.size(integralA,'beta',2)) call mqc_error_i('Integral blocks are &
+        size(integralB,'alpha',2).or.size(integralA,'beta',1).ne.size(integralB,'beta',1).or.&
+        size(integralA,'beta',2).ne.size(integralB,'beta',2)) call mqc_error_i('Integral blocks are &
         &not conformable in mqc_integral_difference',6,'size(integralA,alpha,1)-size(integralB,alpha,1)',&
         size(integralA,'alpha',1)-size(integralB,'alpha',1),'size(integralA,alpha,2)-size(integralB,alpha,2)',&
         size(integralA,'alpha',2)-size(integralB,'alpha',2),'size(integralA,beta,1)-size(integralB,beta,1)',&
@@ -13223,192 +13786,263 @@
       nB1 = size(integralA,'beta',1)
       nB2 = size(integralA,'beta',2)
 !
-      select case(integralA%array_type)
-      case('space')
-        select case (integralB%array_type)
-        case('space')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) tmpMatrixAlpha = integralA%alpha-integralB%alpha
-          call mqc_integral_allocate(integralOut,'','space',tmpMatrixAlpha,nDimA1=nA1,nDimA2=nA2,&
-            nDimB1=nB1,nDimB2=nB2)
-        case('spin')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-            tmpMatrixAlpha = integralA%alpha-integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = (-1)*integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasAlpha().and.integralB%hasBeta()) then
-            tmpMatrixBeta = integralA%alpha-integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = (-1)*integralB%beta
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixBeta = integralA%alpha
+!     Flagged integrals are subtracted on their stored blocks (betaAlpha is not rebuilt)
+!     and the result keeps the symmetries that both operands have.
+      call integralA%symmSet(symmA,asymA,hermA,ahrmA,diagA)
+      call integralB%symmSet(symmB,asymB,hermB,ahrmB,diagB)
+      newSymmetry = mqc_integral_pick_symmetry(symmA.and.symmB,asymA.and.asymB, &
+        hermA.and.hermB,ahrmA.and.ahrmB,diagA.and.diagB)
+      if(newSymmetry.ne.'unknown') then
+        if(integralA%array_type.eq.'general'.or.integralB%array_type.eq.'general') then
+          outType = 'general'
+        elseIf(integralA%array_type.eq.'spin'.or.integralB%array_type.eq.'spin') then
+          outType = 'spin'
+        else
+          outType = 'space'
+        endIf
+        call subtractBlocks(tmpMatrixAlpha,integralA%alpha,integralA%hasAlpha(),integralB%alpha, &
+          integralB%hasAlpha())
+        if(outType.ne.'space') then
+          if(integralA%array_type.eq.'space') then
+            call subtractBlocks(tmpMatrixBeta,integralA%alpha,integralA%hasAlpha(),integralB%beta, &
+              integralB%hasBeta())
+          elseIf(integralB%array_type.eq.'space') then
+            call subtractBlocks(tmpMatrixBeta,integralA%beta,integralA%hasBeta(),integralB%alpha, &
+              integralB%hasAlpha())
+          else
+            call subtractBlocks(tmpMatrixBeta,integralA%beta,integralA%hasBeta(),integralB%beta, &
+              integralB%hasBeta())
           endIf
-          call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-        case('general')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-            tmpMatrixAlpha = integralA%alpha-integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = (-1)*integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasAlpha().and.integralB%hasBeta()) then
-            tmpMatrixBeta = integralA%alpha-integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = (-1)*integralB%beta
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixBeta = integralA%alpha
+        endIf
+        if(outType.eq.'general') &
+          call subtractBlocks(tmpMatrixAlphaBeta,integralA%alphaBeta,MQC_Matrix_isAllocated(integralA%alphaBeta), &
+            integralB%alphaBeta,MQC_Matrix_isAllocated(integralB%alphaBeta))
+        call mqc_integral_allocate(integralOut,'',outType,tmpMatrixAlpha,tmpMatrixBeta, &
+          tmpMatrixAlphaBeta,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+        if(integralOut%symmetry.eq.'unknown') then
+          if(newSymmetry.eq.'diagonal') then
+            integralOut%symmetry = integralOut%diagLabel()
+          else
+            integralOut%symmetry = newSymmetry
+            call integralOut%compressSymm()
           endIf
-          if(integralB%hasAlphaBeta()) tmpMatrixAlphaBeta = (-1)*integralB%alphaBeta
-          if(integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = (-1)*integralB%betaAlpha
-          call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-        case default
-          call mqc_error_A('Unknown integral type in mqc_integral_integral_difference', 6, &
-               'integralB%array_type', integralB%array_type )
-        end select
-      case('spin')
-        select case (integralB%array_type)
+        endIf
+      endIf
+!
+!     Unflagged integrals (and the flagged cases without a common symmetry).
+      if(newSymmetry.eq.'unknown') then
+        select case(integralA%array_type)
         case('space')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-            tmpMatrixAlpha = integralA%alpha-integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = (-1)*integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasBeta().and.integralB%hasAlpha()) then
-            tmpMatrixBeta = integralA%beta-integralB%alpha
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixBeta = (-1)*integralB%alpha
-          end if
-          call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          select case (integralB%array_type)
+          case('space')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+              tmpMatrixAlpha = integralA%alpha-integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = (-1)*integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            call mqc_integral_allocate(integralOut,'','space',tmpMatrixAlpha,nDimA1=nA1,nDimA2=nA2,&
+              nDimB1=nB1,nDimB2=nB2)
+          case('spin')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+              tmpMatrixAlpha = integralA%alpha-integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = (-1)*integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasAlpha().and.integralB%hasBeta()) then
+              tmpMatrixBeta = integralA%alpha-integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = (-1)*integralB%beta
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixBeta = integralA%alpha
+            endIf
+            call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case('general')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+              tmpMatrixAlpha = integralA%alpha-integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = (-1)*integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasAlpha().and.integralB%hasBeta()) then
+              tmpMatrixBeta = integralA%alpha-integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = (-1)*integralB%beta
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixBeta = integralA%alpha
+            endIf
+            if(integralB%hasAlphaBeta()) tmpMatrixAlphaBeta = (-1)*integralB%alphaBeta
+            if(integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = (-1)*integralB%baBlock()
+            call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case default
+            call mqc_error_A('Unknown integral type in mqc_integral_integral_difference', 6, &
+                 'integralB%array_type', integralB%array_type )
+          end select
         case('spin')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-            tmpMatrixAlpha = integralA%alpha-integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = (-1)*integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasBeta().and.integralB%hasBeta()) then
-            tmpMatrixBeta = integralA%beta-integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = (-1)*integralB%beta
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          end if
-          call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          select case (integralB%array_type)
+          case('space')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+              tmpMatrixAlpha = integralA%alpha-integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = (-1)*integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasBeta().and.integralB%hasAlpha()) then
+              tmpMatrixBeta = integralA%beta-integralB%alpha
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixBeta = (-1)*integralB%alpha
+            end if
+            call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case('spin')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+              tmpMatrixAlpha = integralA%alpha-integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = (-1)*integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasBeta().and.integralB%hasBeta()) then
+              tmpMatrixBeta = integralA%beta-integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = (-1)*integralB%beta
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            end if
+            call mqc_integral_allocate(integralOut,'','spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case('general')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+              tmpMatrixAlpha = integralA%alpha-integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = (-1)*integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasBeta().and.integralB%hasBeta()) then
+              tmpMatrixBeta = integralA%beta-integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = (-1)*integralB%beta
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            end if
+            if(integralB%hasAlphaBeta()) tmpMatrixAlphaBeta = (-1)*integralB%alphaBeta
+            if(integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = (-1)*integralB%baBlock()
+            call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case default
+            call mqc_error_A('Unknown integral type in mqc_integral_integral_difference', 6, &
+                 'integralB%array_type', integralB%array_type )
+          end select
         case('general')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-            tmpMatrixAlpha = integralA%alpha-integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = (-1)*integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasBeta().and.integralB%hasBeta()) then
-            tmpMatrixBeta = integralA%beta-integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = (-1)*integralB%beta
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          end if
-          if(integralB%hasAlphaBeta()) tmpMatrixAlphaBeta = (-1)*integralB%alphaBeta
-          if(integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = (-1)*integralB%betaAlpha
-          call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          select case (integralB%array_type)
+          case('space')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+              tmpMatrixAlpha = integralA%alpha-integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = (-1)*integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralB%hasAlpha().and.integralA%hasBeta()) then
+              tmpMatrixBeta = integralA%beta-integralB%alpha
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixBeta = (-1)*integralB%alpha
+            end if
+            if(integralA%hasAlphaBeta()) tmpMatrixAlphaBeta = integralA%alphaBeta
+            if(integralA%hasBetaAlpha()) tmpMatrixBetaAlpha = integralA%baBlock()
+            call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case('spin')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+              tmpMatrixAlpha = integralA%alpha-integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = (-1)*integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasBeta().and.integralB%hasBeta()) then
+              tmpMatrixBeta = integralA%beta-integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = (-1)*integralB%beta
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            end if
+            if(integralA%hasAlphaBeta()) tmpMatrixAlphaBeta = integralA%alphaBeta
+            if(integralA%hasBetaAlpha()) tmpMatrixBetaAlpha = integralA%baBlock()
+            call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case('general')
+            if(integralA%hasAlpha().and.integralB%hasAlpha()) then
+              tmpMatrixAlpha = integralA%alpha-integralB%alpha
+            elseif(integralB%hasAlpha()) then
+               tmpMatrixAlpha = (-1)*integralB%alpha
+            elseif(integralA%hasAlpha()) then
+               tmpMatrixAlpha = integralA%alpha
+            end if
+            if(integralA%hasBeta().and.integralB%hasBeta()) then
+              tmpMatrixBeta = integralA%beta-integralB%beta
+            elseif(integralB%hasBeta()) then
+               tmpMatrixBeta = (-1)*integralB%beta
+            elseif(integralA%hasBeta()) then
+               tmpMatrixBeta = integralA%beta
+            end if
+            if(integralA%hasAlphaBeta().and.integralB%hasAlphaBeta()) then
+              tmpMatrixAlphaBeta = integralA%alphaBeta-integralB%alphaBeta
+            elseif(integralA%hasAlphaBeta()) then
+              tmpMatrixAlphaBeta = integralA%alphaBeta
+            elseif(integralB%hasAlphaBeta()) then
+              tmpMatrixAlphaBeta = (-1)*integralB%alphaBeta
+            end if
+            if(integralA%hasBetaAlpha().and.integralB%hasBetaAlpha()) then
+              tmpMatrixBetaAlpha = integralA%baBlock()-integralB%baBlock()
+            elseif(integralA%hasBetaAlpha()) then
+              tmpMatrixBetaAlpha = integralA%baBlock()
+            elseif(integralB%hasBetaAlpha()) then
+              tmpMatrixBetaAlpha = (-1)*integralB%baBlock()
+            endif
+            call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          case default
+            call mqc_error_A('Unknown integral type in mqc_integral_integral_difference', 6, &
+                 'integralB%array_type', integralB%array_type )
+          end select
         case default
           call mqc_error_A('Unknown integral type in mqc_integral_integral_difference', 6, &
-               'integralB%array_type', integralB%array_type )
+               'integralA%array_type', integralA%array_type )
         end select
-      case('general')
-        select case (integralB%array_type)
-        case('space')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-            tmpMatrixAlpha = integralA%alpha-integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = (-1)*integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralB%hasAlpha().and.integralA%hasBeta()) then
-            tmpMatrixBeta = integralA%beta-integralB%alpha
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixBeta = (-1)*integralB%alpha
-          end if
-          if(integralA%hasAlphaBeta()) tmpMatrixAlphaBeta = integralA%alphaBeta
-          if(integralA%hasBetaAlpha()) tmpMatrixBetaAlpha = integralA%betaAlpha
-          call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-        case('spin')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-            tmpMatrixAlpha = integralA%alpha-integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = (-1)*integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasBeta().and.integralB%hasBeta()) then
-            tmpMatrixBeta = integralA%beta-integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = (-1)*integralB%beta
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          end if
-          if(integralA%hasAlphaBeta()) tmpMatrixAlphaBeta = integralA%alphaBeta
-          if(integralA%hasBetaAlpha()) tmpMatrixBetaAlpha = integralA%betaAlpha
-          call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-        case('general')
-          if(integralA%hasAlpha().and.integralB%hasAlpha()) then
-            tmpMatrixAlpha = integralA%alpha-integralB%alpha
-          elseif(integralB%hasAlpha()) then
-             tmpMatrixAlpha = (-1)*integralB%alpha
-          elseif(integralA%hasAlpha()) then
-             tmpMatrixAlpha = integralA%alpha
-          end if
-          if(integralA%hasBeta().and.integralB%hasBeta()) then
-            tmpMatrixBeta = integralA%beta-integralB%beta
-          elseif(integralB%hasBeta()) then
-             tmpMatrixBeta = (-1)*integralB%beta
-          elseif(integralA%hasBeta()) then
-             tmpMatrixBeta = integralA%beta
-          end if
-          if(integralA%hasAlphaBeta().and.integralB%hasAlphaBeta()) then
-            tmpMatrixAlphaBeta = integralA%alphaBeta-integralB%alphaBeta
-          elseif(integralA%hasAlphaBeta()) then
-            tmpMatrixAlphaBeta = integralA%alphaBeta
-          elseif(integralB%hasAlphaBeta()) then
-            tmpMatrixAlphaBeta = (-1)*integralB%alphaBeta
-          end if
-          if(integralA%hasBetaAlpha().and.integralB%hasBetaAlpha()) then
-            tmpMatrixBetaAlpha = integralA%betaAlpha-integralB%betaAlpha
-          elseif(integralA%hasBetaAlpha()) then
-            tmpMatrixBetaAlpha = integralA%betaAlpha
-          elseif(integralB%hasBetaAlpha()) then
-            tmpMatrixBetaAlpha = (-1)*integralB%betaAlpha
-          endif
-          call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-        case default
-          call mqc_error_A('Unknown integral type in mqc_integral_integral_difference', 6, &
-               'integralB%array_type', integralB%array_type )
-        end select
-      case default
-        call mqc_error_A('Unknown integral type in mqc_integral_integral_difference', 6, &
-             'integralA%array_type', integralA%array_type )
-      end select
-
+!       An asymmetric integral minus a zero integral stays asymmetric.
+        if(integralOut%symmetry.eq.'unknown'.and.((integralA%symmetry.eq.'asymmetric'.and. &
+          integralB%symmetry.eq.'fullsymmetric').or.(integralA%symmetry.eq.'fullsymmetric'.and. &
+          integralB%symmetry.eq.'asymmetric'))) integralOut%symmetry = 'asymmetric'
+      endIf
+!
+      contains
+!
+        subroutine subtractBlocks(blockOut,blockA,hasA,blockB,hasB)
+        type(mqc_matrix),intent(inOut)::blockOut
+        type(mqc_matrix),intent(in)::blockA,blockB
+        logical,intent(in)::hasA,hasB
+        if(hasA.and.hasB) then
+          blockOut = blockA-blockB
+        elseIf(hasA) then
+          blockOut = blockA
+        elseIf(hasB) then
+          blockOut = (-1)*blockB
+        endIf
+        end subroutine subtractBlocks
+!
       end function mqc_integral_difference
 !
 !
@@ -13509,7 +14143,7 @@
           tmpMatrixBeta = matrixA
           if(integralB%hasBeta()) tmpMatrixBeta = tmpMatrixBeta-integralB%beta
           if(integralB%hasAlphaBeta()) tmpMatrixAlphaBeta = (-1)*integralB%alphaBeta
-          if(integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = (-1)*integralB%betaAlpha
+          if(integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = (-1)*integralB%baBlock()
           call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
             tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
         elseIf(size(matrixA,1).eq.integralB%blockSize('alpha',1)+integralB%blockSize('beta',1).and.&
@@ -13521,7 +14155,7 @@
           tmpMatrixAlphaBeta = matrixA%mat([integralB%blockSize('alpha',1)+1,-1],[1,integralB%blockSize('alpha',2)])
           if(integralB%hasAlphaBeta()) tmpMatrixAlphaBeta = tmpMatrixAlphaBeta-integralB%alphaBeta
           tmpMatrixBetaAlpha = matrixA%mat([1,integralB%blockSize('alpha',1)],[integralB%blockSize('alpha',2)+1,-1])
-          if(integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = tmpMatrixBetaAlpha-integralB%betaAlpha
+          if(integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = tmpMatrixBetaAlpha-integralB%baBlock()
           call mqc_integral_allocate(integralOut,'','general',tmpMatrixAlpha,tmpMatrixBeta, &
             tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
         else
@@ -13696,7 +14330,7 @@
           if(integralA%hasAlpha().and.integralB%hasAlphaBeta()) &
             tmpMatrixAlphaBeta = integralA%alpha.dot.integralB%alphaBeta
           if(integralA%hasAlpha().and.integralB%hasBetaAlpha()) &
-            tmpMatrixBetaAlpha = integralA%alpha.dot.integralB%betaAlpha
+            tmpMatrixBetaAlpha = integralA%alpha.dot.integralB%baBlock()
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
             tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
         case default
@@ -13727,7 +14361,7 @@
           if(integralA%hasBeta().and.integralB%hasAlphaBeta()) &
             tmpMatrixAlphaBeta = integralA%beta.dot.integralB%alphaBeta
           if(integralA%hasAlpha().and.integralB%hasBetaAlpha()) &
-            tmpMatrixBetaAlpha = integralA%alpha.dot.integralB%betaAlpha
+            tmpMatrixBetaAlpha = integralA%alpha.dot.integralB%baBlock()
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
             tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
         case default
@@ -13744,7 +14378,7 @@
           if(integralA%hasAlphaBeta().and.integralB%hasAlpha()) &
             tmpMatrixAlphaBeta = integralA%alphaBeta.dot.integralB%alpha
           if(integralA%hasBetaAlpha().and.integralB%hasAlpha()) &
-            tmpMatrixBetaAlpha = integralA%betaAlpha.dot.integralB%alpha
+            tmpMatrixBetaAlpha = integralA%baBlock().dot.integralB%alpha
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
             tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
         case('spin')
@@ -13755,19 +14389,19 @@
           if(integralA%hasAlphaBeta().and.integralB%hasAlpha()) &
             tmpMatrixAlphaBeta = integralA%alphaBeta.dot.integralB%alpha
           if(integralA%hasBetaAlpha().and.integralB%hasBeta()) &
-            tmpMatrixBetaAlpha = integralA%betaAlpha.dot.integralB%beta
+            tmpMatrixBetaAlpha = integralA%baBlock().dot.integralB%beta
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
             tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
         case('general')
           if(integralA%hasAlpha().and.integralB%hasAlpha()) tmpMatrixAlpha = (integralA%alpha.dot.integralB%alpha)
           if(integralA%hasBetaAlpha().and.integralB%hasAlphaBeta()) then
             if(allocated(tmpMatrixAlpha)) then
-              tmpMatrixAlpha = tmpMatrixAlpha + (integralA%betaAlpha.dot.integralB%alphaBeta)
+              tmpMatrixAlpha = tmpMatrixAlpha + (integralA%baBlock().dot.integralB%alphaBeta)
             else
-              tmpMatrixAlpha = integralA%betaAlpha.dot.integralB%alphaBeta
+              tmpMatrixAlpha = integralA%baBlock().dot.integralB%alphaBeta
             endIf
           endIf
-          if(integralA%hasAlphaBeta().and.integralB%hasBetaAlpha()) tmpMatrixBeta = integralA%alphaBeta.dot.integralB%betaAlpha
+          if(integralA%hasAlphaBeta().and.integralB%hasBetaAlpha()) tmpMatrixBeta = integralA%alphaBeta.dot.integralB%baBlock()
           if(integralA%hasBeta().and.integralB%hasBeta()) then
             if(allocated(tmpMatrixBeta)) then
               tmpMatrixBeta = tmpMatrixBeta + (integralA%beta.dot.integralB%beta)
@@ -13783,12 +14417,12 @@
               tmpMatrixAlphaBeta = integralA%beta.dot.integralB%alphaBeta
             endIf
           endIf
-          if(integralA%hasAlpha().and.integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = integralA%alpha.dot.integralB%betaAlpha
+          if(integralA%hasAlpha().and.integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = integralA%alpha.dot.integralB%baBlock()
           if(integralA%hasBetaAlpha().and.integralB%hasBeta()) then
             if(allocated(tmpMatrixBetaAlpha)) then
-              tmpMatrixBetaAlpha = tmpMatrixBetaAlpha + (integralA%betaAlpha.dot.integralB%beta)
+              tmpMatrixBetaAlpha = tmpMatrixBetaAlpha + (integralA%baBlock().dot.integralB%beta)
             else
-              tmpMatrixBetaAlpha = integralA%betaAlpha.dot.integralB%beta
+              tmpMatrixBetaAlpha = integralA%baBlock().dot.integralB%beta
             endIf
           endIf
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
@@ -13821,6 +14455,11 @@
 !>    otherwise spin. A block missing in A or B gives a missing block in the result.
 !>    When A or B is general, the full matrices of A and B are passed to
 !>    MQC_Matrix_Hermitian_Sandwich and the result is split into a general integral.
+!>    A 'hermitian'/'realdiag' ('antihermitian'/'imagdiag') flag on A is passed as
+!>    ForceSym, so A is not tested again; without a flag the structure found by the
+!>    sandwich is used. The result then has that flag: its alpha and beta blocks are
+!>    packed and, for general integrals, the packed result is split directly
+!>    (MQC_Matrix_Packed_Block_Split) without forming betaAlpha.
 !>
 !>    \endverbatim
 !
@@ -13859,6 +14498,7 @@
       type(mqc_matrix)::fullA,fullB,fullC
       Character(Len=64)::myLabel
       integer(kind=int64)::nAA1,nAA2,nAB1,nAB2,nBA1,nBB1,nOA,nOB,nOT
+      character(len=16)::newSymmetry,blockSymmetry
 !
       if(present(label)) then
         call string_change_case(label,'l',myLabel)
@@ -13882,40 +14522,977 @@
           &not conformable in mqc_integral_hermitian_sandwich',6,'nAA2',nAA2,'nBA1',nBA1,&
           'nAB2',nAB2,'nBB1',nBB1)
 
+!     dagger(B) A B is Hermitian (anti-Hermitian) when A is. The structure of A is
+!     taken from its flag and passed to MQC_Matrix_Hermitian_Sandwich (A is not
+!     tested again); without a flag the sandwich tests A and the storage it returns
+!     gives the flag of the result.
+      select case (integralA%symmetry)
+      case('hermitian','realdiag')
+        newSymmetry = 'hermitian'
+      case('antihermitian','imagdiag')
+        newSymmetry = 'antihermitian'
+      case('unknown','asymmetric','fullsymmetric','symmetric','antisymmetric','complexdiag')
+        newSymmetry = 'unknown'
+      case default
+        call mqc_error_a('Unknown symmetry flag in mqc_integral_hermitian_sandwich',6, &
+          'integralA%symmetry',integralA%symmetry)
+      end select
+!
       if(integralA%array_type.ne.'general'.and.integralB%array_type.ne.'general') then
         if(integralA%hasAlpha().and.integralB%hasAlpha()) &
-          tmpMatrixAlpha = HermMatMul(integralA%alpha,integralB%alpha)
+          tmpMatrixAlpha = sandwich(integralA%alpha,integralB%alpha)
+        if(integralA%array_type.ne.'space'.or.integralB%array_type.ne.'space') then
+          if(integralA%array_type.eq.'space') then
+            if(integralA%hasAlpha().and.integralB%hasBeta()) &
+              tmpMatrixBeta = sandwich(integralA%alpha,integralB%beta)
+          elseIf(integralB%array_type.eq.'space') then
+            if(integralA%hasBeta().and.integralB%hasAlpha()) &
+              tmpMatrixBeta = sandwich(integralA%beta,integralB%alpha)
+          else
+            if(integralA%hasBeta().and.integralB%hasBeta()) &
+              tmpMatrixBeta = sandwich(integralA%beta,integralB%beta)
+          endIf
+        endIf
+        if(newSymmetry.eq.'unknown') then
+          blockSymmetry = 'unknown'
+          if(MQC_Matrix_isAllocated(tmpMatrixAlpha)) blockSymmetry = tmpMatrixAlpha%getSymm()
+          if(MQC_Matrix_isAllocated(tmpMatrixBeta)) then
+            if(.not.MQC_Matrix_isAllocated(tmpMatrixAlpha)) then
+              blockSymmetry = tmpMatrixBeta%getSymm()
+            elseIf(tmpMatrixBeta%getSymm().ne.blockSymmetry) then
+              blockSymmetry = 'unknown'
+            endIf
+          endIf
+          if(blockSymmetry.eq.'hermitian'.or.blockSymmetry.eq.'antihermitian') &
+            newSymmetry = blockSymmetry
+        endIf
         if(integralA%array_type.eq.'space'.and.integralB%array_type.eq.'space') then
           call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,nDimA1=nOA,nDimA2=nOA,&
             nDimB1=nOB,nDimB2=nOB)
-          return
-        elseIf(integralA%array_type.eq.'space') then
-          if(integralA%hasAlpha().and.integralB%hasBeta()) &
-            tmpMatrixBeta = HermMatMul(integralA%alpha,integralB%beta)
-        elseIf(integralB%array_type.eq.'space') then
-          if(integralA%hasBeta().and.integralB%hasAlpha()) &
-            tmpMatrixBeta = HermMatMul(integralA%beta,integralB%alpha)
         else
-          if(integralA%hasBeta().and.integralB%hasBeta()) &
-            tmpMatrixBeta = HermMatMul(integralA%beta,integralB%beta)
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+            nDimA1=nOA,nDimA2=nOA,nDimB1=nOB,nDimB2=nOB)
         endIf
-        call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-          nDimA1=nOA,nDimA2=nOA,nDimB1=nOB,nDimB2=nOB)
       else
         fullA = integralA%getBlock('full')
         fullB = integralB%getBlock('full')
-        fullC = HermMatMul(fullA,fullB)
-        if(nOA.gt.0) tmpMatrixAlpha = fullC%mat([1,nOA],[1,nOA])
-        if(nOB.gt.0) tmpMatrixBeta = fullC%mat([nOA+1,nOT],[nOA+1,nOT])
-        if(nOA.gt.0.and.nOB.gt.0) then
-          tmpMatrixAlphaBeta = fullC%mat([nOA+1,nOT],[1,nOA])
-          tmpMatrixBetaAlpha = fullC%mat([1,nOA],[nOA+1,nOT])
+        fullC = sandwich(fullA,fullB)
+        if(newSymmetry.eq.'unknown') then
+          blockSymmetry = fullC%getSymm()
+          if(blockSymmetry.eq.'hermitian'.or.blockSymmetry.eq.'antihermitian') &
+            newSymmetry = blockSymmetry
+        endIf
+        if(newSymmetry.ne.'unknown') then
+!         The packed result is split without unpacking; betaAlpha is implied by the flag.
+          call MQC_Matrix_Packed_Block_Split(fullC,nOA,nOB,tmpMatrixAlpha,tmpMatrixAlphaBeta, &
+            tmpMatrixBeta)
+        else
+          if(nOA.gt.0) tmpMatrixAlpha = fullC%mat([1,nOA],[1,nOA])
+          if(nOB.gt.0) tmpMatrixBeta = fullC%mat([nOA+1,nOT],[nOA+1,nOT])
+          if(nOA.gt.0.and.nOB.gt.0) then
+            tmpMatrixAlphaBeta = fullC%mat([nOA+1,nOT],[1,nOA])
+            tmpMatrixBetaAlpha = fullC%mat([1,nOA],[nOA+1,nOT])
+          endIf
         endIf
         call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
           tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nOA,nDimA2=nOA,nDimB1=nOB,nDimB2=nOB)
       endIf
 !
+!     The alpha and beta blocks are already packed in the storage of the flag.
+      if(integralOut%symmetry.eq.'unknown'.and.newSymmetry.ne.'unknown') &
+        integralOut%symmetry = newSymmetry
+!
+      contains
+!
+        function sandwich(matA,matB) result(matC)
+        type(mqc_matrix),intent(in)::matA,matB
+        type(mqc_matrix)::matC
+        if(newSymmetry.eq.'unknown') then
+          matC = MQC_Matrix_Hermitian_Sandwich(matA,matB)
+        else
+          matC = MQC_Matrix_Hermitian_Sandwich(matA,matB,forceSym=newSymmetry)
+        endIf
+        end function sandwich
+!
       end function mqc_integral_hermitian_sandwich
+!
+!
+!     PROCEDURE MQC_Integral_Test_Symmetric
+!
+!>    \brief <b> MQC_Integral_Test_Symmetric tests an MQC integral for symmetry</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Integral_Test_Symmetric tests the symmetry of the full (alpha+beta) matrix
+!>    held by an MQC integral, looking only at the stored blocks and returning at the
+!>    first failure:
+!>      space:   alpha
+!>      spin:    alpha and beta
+!>      general: alpha, beta, and alphaBeta against betaAlpha
+!>    The alpha and beta blocks use MQC_Matrix_Test_Symmetric and the alphaBeta/betaAlpha
+!>    pair uses MQC_Matrix_Test_Pair_Symmetric. Blocks that are not stored are zero.
+!>    The following options are available:
+!>
+!>    1. Option = 'any' tests all symmetries (default).
+!>    2. Option = 'symmetric' tests for a symmetric integral.
+!>    3. Option = 'antisymmetric' tests for an antisymmetric integral.
+!>    4. Option = 'hermitian' tests for a hermitian integral.
+!>    5. Option = 'antihermitian' tests for an antihermitian integral.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Integral
+!>    \verbatim
+!>        Integral is Class(mqc_scf_integral)
+!>        The MQC integral to be tested for symmetry.
+!>    \endverbatim
+!>
+!>    \param[in] Option
+!>    \verbatim
+!>        Option is Character(len=*),Optional
+!>        = 'any':           test all symmetries
+!>        = 'symmetric':     symmetric test
+!>        = 'antisymmetric': antisymmetric test
+!>        = 'hermitian':     hermitian test
+!>        = 'antihermitian': antihermitian test
+!>    \endverbatim
+!>
+!>    \param[in] Math
+!>    \verbatim
+!>        Math is Logical,Optional
+!>        Passed to MQC_Matrix_Test_Symmetric for the alpha and beta blocks.
+!>        The default is false.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      recursive function mqc_integral_test_symmetric(integral,option,math) result(symmetric)
+!
+      implicit none
+      class(mqc_scf_integral),intent(in)::integral
+      character(len=*),optional,intent(in)::option
+      logical,optional,intent(in)::math
+      logical::symmetric,myMath
+      character(len=64)::myOption
+!
+      if(present(option)) then
+        call string_change_case(option,'l',myOption)
+      else
+        myOption = 'any'
+      endIf
+      if(present(math)) then
+        myMath = math
+      else
+        myMath = .false.
+      endIf
+      symmetric = .true.
+      select case (integral%symmetry)
+      case('asymmetric')
+        symmetric = .false.
+      case('fullsymmetric')
+        symmetric = .true.
+      case('unknown','hermitian','antihermitian','symmetric','antisymmetric','realdiag', &
+        'imagdiag','complexdiag')
+        select case (myOption)
+        case('symmetric','antisymmetric','hermitian','antihermitian')
+          if(integral%symmetry.eq.myOption) then
+            symmetric = .true.
+          elseIf(integral%isDiag()) then
+!           A diagonal integral is symmetric; the other symmetries follow from the label
+!           in the mathematical sense, and always hold for the packing test (no Math).
+            if(myMath) then
+              select case (myOption)
+              case('symmetric')
+                symmetric = .true.
+              case('hermitian')
+                symmetric = integral%symmetry.eq.'realdiag'
+              case('antihermitian')
+                symmetric = integral%symmetry.eq.'imagdiag'
+              case('antisymmetric')
+                symmetric = .false.
+              end select
+            else
+              symmetric = .true.
+            endIf
+          elseIf(.not.integral%isSquare()) then
+            symmetric = .false.
+          else
+            if(integral%hasAlpha()) &
+              symmetric = mqc_matrix_test_symmetric(integral%alpha,myOption,myMath)
+            if(symmetric.and.integral%array_type.ne.'space'.and.integral%hasBeta()) &
+              symmetric = mqc_matrix_test_symmetric(integral%beta,myOption,myMath)
+            if(symmetric.and.integral%array_type.eq.'general') &
+              symmetric = mqc_matrix_test_pair_symmetric(integral%alphaBeta,integral%baBlock(),myOption)
+          endIf
+        case('any')
+          if(integral%isCompressed().or.integral%isDiag()) then
+            symmetric = .true.
+          else
+            symmetric = mqc_integral_test_symmetric(integral,'symmetric',myMath).or. &
+              mqc_integral_test_symmetric(integral,'antisymmetric',myMath).or. &
+              mqc_integral_test_symmetric(integral,'hermitian',myMath).or. &
+              mqc_integral_test_symmetric(integral,'antihermitian',myMath)
+          endIf
+        case default
+          call mqc_error_a('Invalid option sent to mqc_integral_test_symmetric',6, &
+            'myOption',myOption)
+        end select
+      case default
+        call mqc_error_a('Unknown symmetry flag in mqc_integral_test_symmetric',6, &
+          'integral%symmetry',integral%symmetry)
+      end select
+!
+      end function mqc_integral_test_symmetric
+!
+!
+!     PROCEDURE MQC_Integral_Get_Symmetry
+!
+!>    \brief <b> MQC_Integral_Get_Symmetry returns the symmetry flag of an MQC
+!>    integral</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Integral_Get_Symmetry returns the symmetry flag of an MQC integral:
+!>    'unknown' (default), 'asymmetric' (tested, no symmetry; always for a
+!>    non-square integral), 'fullsymmetric' (square, no block stored, i.e. zero),
+!>    'realdiag', 'imagdiag', 'complexdiag' (diagonal with a real, imaginary or
+!>    general diagonal), 'hermitian', 'antihermitian', 'symmetric' or
+!>    'antisymmetric', in the mathematical sense.
+!>    MQC_Integral_Allocate sets 'asymmetric', 'fullsymmetric' or 'unknown' from the
+!>    dimensions and the stored blocks; the other flags are set by
+!>    MQC_Integral_Set_Symmetry, which checks them.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Integral
+!>    \verbatim
+!>        Integral is Class(mqc_scf_integral)
+!>        The MQC integral to be queried.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_get_symmetry(integral) result(symmetry)
+!
+      implicit none
+      class(mqc_scf_integral),intent(in)::integral
+      character(len=16)::symmetry
+!
+      symmetry = integral%symmetry
+!
+      end function mqc_integral_get_symmetry
+!
+!
+!     PROCEDURE MQC_Integral_Set_Symmetry
+!
+!>    \brief <b> MQC_Integral_Set_Symmetry checks and sets the symmetry flag of an
+!>    MQC integral</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Integral_Set_Symmetry checks the requested symmetry with
+!>    MQC_Integral_Test_Symmetric (in the mathematical sense, Math = .true.) and
+!>    sets the flag; it stops with an error when the integral does not have it.
+!>    The following labels are available:
+!>
+!>    1. 'hermitian', 'antihermitian', 'symmetric', 'antisymmetric': the integral
+!>       is compressed: betaAlpha is not stored (it is implied by alphaBeta) and
+!>       alpha and beta are packed in the storage of that symmetry.
+!>    2. 'diagonal': alpha and beta are diagonal (stored as StorDiag) and the
+!>       off-diagonal blocks are zero (not stored); the flag becomes 'realdiag',
+!>       'imagdiag' or 'complexdiag' from the diagonal. These three labels can also
+!>       be requested directly.
+!>    3. 'fullsymmetric': the integral is zero (no block stored).
+!>    4. 'asymmetric': the integral has no symmetry (checked with option 'any').
+!>    5. 'unknown': the flag is cleared and the integral is expanded.
+!>    A non-square integral is always 'asymmetric': only 'asymmetric' and
+!>    'unknown' are accepted for it, and both leave it 'asymmetric'.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] Integral
+!>    \verbatim
+!>        Integral is Class(mqc_scf_integral)
+!>        The MQC integral to be flagged.
+!>    \endverbatim
+!>
+!>    \param[in] Label
+!>    \verbatim
+!>        Label is Character(len=*)
+!>        The symmetry flag to be set.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_integral_set_symmetry(integral,label)
+!
+      implicit none
+      class(mqc_scf_integral),intent(inOut)::integral
+      character(len=*),intent(in)::label
+      character(len=64)::myLabel
+!
+      call string_change_case(label,'l',myLabel)
+      if(.not.mqc_integral_try_symmetry(integral,myLabel)) &
+        call mqc_error_a('Integral does not have the requested symmetry in &
+        &mqc_integral_set_symmetry',6,'myLabel',myLabel)
+!
+      end subroutine mqc_integral_set_symmetry
+!
+!
+!     PROCEDURE MQC_Integral_Try_Symmetry
+!
+!>    \brief <b> MQC_Integral_Try_Symmetry checks a symmetry flag of an MQC integral
+!>    and sets it when the check passes</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Integral_Try_Symmetry does the work of MQC_Integral_Set_Symmetry but
+!>    returns .false. instead of stopping when the integral does not have the
+!>    requested symmetry; the integral is then left expanded with the flag
+!>    'unknown' ('asymmetric' if it is not square). It is used by
+!>    MQC_Integral_Allocate for the optional Symmetry argument.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_try_symmetry(integral,label) result(ok)
+!
+      implicit none
+      class(mqc_scf_integral),intent(inOut)::integral
+      character(len=*),intent(in)::label
+      logical::ok
+      character(len=64)::myLabel
+!
+      call string_change_case(label,'l',myLabel)
+      ok = .true.
+      if(.not.integral%isSquare()) then
+        select case (myLabel)
+        case('unknown','asymmetric')
+          integral%symmetry = 'asymmetric'
+        case('hermitian','antihermitian','symmetric','antisymmetric','diagonal', &
+          'realdiag','imagdiag','complexdiag','fullsymmetric')
+          ok = .false.
+        case default
+          call mqc_error_a('Invalid label sent to mqc_integral_try_symmetry',6, &
+            'myLabel',myLabel)
+        end select
+      else
+        select case (myLabel)
+        case('unknown')
+          call integral%expandSymm()
+        case('hermitian','antihermitian','symmetric','antisymmetric')
+          if(integral%symmetry.ne.myLabel) then
+            call integral%expandSymm()
+            ok = mqc_integral_test_symmetric(integral,myLabel,.true.)
+            if(ok) then
+              integral%symmetry = myLabel
+              call integral%compressSymm()
+            endIf
+          endIf
+        case('asymmetric')
+          if(integral%symmetry.ne.myLabel) then
+            call integral%expandSymm()
+            ok = .not.mqc_integral_test_symmetric(integral,'any')
+            if(ok) integral%symmetry = 'asymmetric'
+          endIf
+        case('fullsymmetric')
+          if(integral%symmetry.ne.myLabel) then
+            call integral%expandSymm()
+            call integral%dropZeroBlocks()
+            ok = .not.(integral%hasAlpha().or.integral%hasBeta().or.integral%hasAlphaBeta().or. &
+              integral%hasBetaAlpha())
+            if(ok) integral%symmetry = 'fullsymmetric'
+          endIf
+        case('diagonal','realdiag','imagdiag','complexdiag')
+          if(integral%symmetry.ne.myLabel.and..not.(myLabel.eq.'diagonal'.and.integral%isDiag())) then
+            call integral%expandSymm()
+            call integral%dropZeroBlocks()
+            ok = .not.(integral%hasAlphaBeta().or.integral%hasBetaAlpha())
+            if(ok.and.integral%hasAlpha()) ok = MQC_Matrix_Test_Diagonal(integral%alpha)
+            if(ok.and.integral%hasBeta()) ok = MQC_Matrix_Test_Diagonal(integral%beta)
+            if(ok) then
+              if(integral%hasAlpha()) call toDiagonal(integral%alpha)
+              if(integral%hasBeta()) call toDiagonal(integral%beta)
+              if(integral%hasAlpha().or.integral%hasBeta()) then
+                integral%symmetry = integral%diagLabel()
+                if(myLabel.ne.'diagonal'.and.myLabel.ne.integral%symmetry) then
+                  integral%symmetry = 'unknown'
+                  ok = .false.
+                endIf
+              else
+                integral%symmetry = 'fullsymmetric'
+              endIf
+            endIf
+          endIf
+        case default
+          call mqc_error_a('Invalid label sent to mqc_integral_try_symmetry',6, &
+            'myLabel',myLabel)
+        end select
+      endIf
+!
+      contains
+!
+        subroutine toDiagonal(matrix)
+        type(mqc_matrix),intent(inOut)::matrix
+        if(matrix%getSymm().ne.'diagonal') then
+          if(matrix%getSymm().ne.'unknown') call MQC_Matrix_Symm2Full(matrix)
+          call MQC_Matrix_Full2Diag(matrix)
+        endIf
+        end subroutine toDiagonal
+!
+      end function mqc_integral_try_symmetry
+!
+!
+!     PROCEDURE MQC_Integral_Is_Compressed
+!
+!>    \brief <b> MQC_Integral_Is_Compressed returns true if the symmetry flag of an
+!>    MQC integral implies that betaAlpha is not stored</b>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_is_compressed(integral) result(isCompressed)
+!
+      implicit none
+      class(mqc_scf_integral),intent(in)::integral
+      logical::isCompressed
+!
+      select case (integral%symmetry)
+      case('hermitian','antihermitian','symmetric','antisymmetric')
+        isCompressed = .true.
+      case default
+        isCompressed = .false.
+      end select
+!
+      end function mqc_integral_is_compressed
+!
+!
+!     PROCEDURE MQC_Integral_BA_Block
+!
+!>    \brief <b> MQC_Integral_BA_Block returns the betaAlpha block of an MQC integral,
+!>    rebuilding it from alphaBeta when it is not stored</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Integral_BA_Block returns the stored betaAlpha block. For a compressed
+!>    integral it returns sgn*op(alphaBeta): dagger(alphaBeta) for 'hermitian',
+!>    -dagger(alphaBeta) for 'antihermitian', transpose(alphaBeta) for 'symmetric'
+!>    and -transpose(alphaBeta) for 'antisymmetric'. If neither block is stored
+!>    the result is unallocated.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_ba_block(integral) result(betaAlpha)
+!
+      implicit none
+      class(mqc_scf_integral),intent(in)::integral
+      type(mqc_matrix)::betaAlpha
+!
+      if(MQC_Matrix_isAllocated(integral%betaAlpha)) then
+        betaAlpha = integral%betaAlpha
+      elseIf(integral%isCompressed().and.MQC_Matrix_isAllocated(integral%alphaBeta)) then
+        select case (integral%symmetry)
+        case('hermitian')
+          betaAlpha = dagger(integral%alphaBeta)
+        case('antihermitian')
+          betaAlpha = (-1)*dagger(integral%alphaBeta)
+        case('symmetric')
+          betaAlpha = transpose(integral%alphaBeta)
+        case('antisymmetric')
+          betaAlpha = (-1)*transpose(integral%alphaBeta)
+        end select
+      endIf
+!
+      end function mqc_integral_ba_block
+!
+!
+!     PROCEDURE MQC_Integral_BA_Element
+!
+!>    \brief <b> MQC_Integral_BA_Element returns an element of the betaAlpha block of
+!>    an MQC integral, reading alphaBeta when betaAlpha is not stored</b>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_ba_element(integral,i,j) result(element)
+!
+      implicit none
+      class(mqc_scf_integral),intent(in)::integral
+      integer(kind=int64),intent(in)::i,j
+      type(mqc_scalar)::element
+!
+      if(MQC_Matrix_isAllocated(integral%betaAlpha)) then
+        element = integral%betaAlpha%at(i,j)
+      elseIf(integral%isCompressed().and.MQC_Matrix_isAllocated(integral%alphaBeta)) then
+        element = integral%alphaBeta%at(j,i)
+        select case (integral%symmetry)
+        case('hermitian')
+          element = conjg(element)
+        case('antihermitian')
+          element = (-1)*conjg(element)
+        case('antisymmetric')
+          element = (-1)*element
+        end select
+      else
+        element = 0.0
+      endIf
+!
+      end function mqc_integral_ba_element
+!
+!
+!     PROCEDURE MQC_Integral_Expand_Symmetry
+!
+!>    \brief <b> MQC_Integral_Expand_Symmetry stores the implied betaAlpha block of a
+!>    compressed MQC integral and clears the symmetry flag</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Integral_Expand_Symmetry is called before an MQC integral is modified in a
+!>    way that may break its symmetry. The packed alpha and beta blocks are left as
+!>    they are, since their storage is consistent on its own.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_integral_expand_symmetry(integral)
+!
+      implicit none
+      class(mqc_scf_integral),intent(inOut)::integral
+!
+      if(integral%isCompressed().and.integral%array_type.eq.'general') then
+        if(MQC_Matrix_isAllocated(integral%alphaBeta).and. &
+          .not.MQC_Matrix_isAllocated(integral%betaAlpha)) &
+          integral%betaAlpha = integral%baBlock()
+      endIf
+      if(integral%isSquare()) then
+        integral%symmetry = 'unknown'
+      else
+        integral%symmetry = 'asymmetric'
+      endIf
+!
+      end subroutine mqc_integral_expand_symmetry
+!
+!
+!     PROCEDURE MQC_Integral_Compress_Symmetry
+!
+!>    \brief <b> MQC_Integral_Compress_Symmetry drops the betaAlpha block and packs the
+!>    alpha and beta blocks of an MQC integral with a symmetry flag</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Integral_Compress_Symmetry packs alpha and beta with the same storage, the
+!>    one of the symmetry flag, and drops the betaAlpha block, which is implied by
+!>    alphaBeta. The flag must have been checked before; then a betaAlpha stored
+!>    without alphaBeta is zero.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_integral_compress_symmetry(integral)
+!
+      implicit none
+      class(mqc_scf_integral),intent(inOut)::integral
+!
+      if(integral%isCompressed()) then
+        if(MQC_Matrix_isAllocated(integral%alpha)) &
+          call mqc_matrix_pack(integral%alpha,integral%symmetry)
+        if(MQC_Matrix_isAllocated(integral%beta)) &
+          call mqc_matrix_pack(integral%beta,integral%symmetry)
+        if(MQC_Matrix_isAllocated(integral%betaAlpha)) &
+          call mqc_deallocate_matrix(integral%betaAlpha)
+      endIf
+!
+      end subroutine mqc_integral_compress_symmetry
+!
+!
+!     PROCEDURE MQC_Integral_Is_Square
+!
+!>    \brief <b> MQC_Integral_Is_Square returns true if the alpha and beta blocks of
+!>    an MQC integral are square</b>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_is_square(integral) result(isSquare)
+!
+      implicit none
+      class(mqc_scf_integral),intent(in)::integral
+      logical::isSquare
+!
+      isSquare = integral%nARows.eq.integral%nACols.and.integral%nBRows.eq.integral%nBCols
+!
+      end function mqc_integral_is_square
+!
+!
+!     PROCEDURE MQC_Integral_Drop_Zero_Blocks
+!
+!>    \brief <b> MQC_Integral_Drop_Zero_Blocks deallocates the blocks of an MQC
+!>    integral whose elements are all zero</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    A block is dropped when no element is larger than MQC_very_small in absolute
+!>    value. The dimensions of the integral are kept. Nothing is dropped when
+!>    MQC_very_small is negative.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_integral_drop_zero_blocks(integral)
+!
+      implicit none
+      class(mqc_scf_integral),intent(inOut)::integral
+      real(kind=real64)::thresh
+!
+      if(MQC_very_small.ge.0.0) then
+        thresh = MQC_very_small
+        if(MQC_Matrix_isAllocated(integral%alpha)) then
+          if(integral%alpha%iszero(thresh)) call mqc_deallocate_matrix(integral%alpha)
+        endIf
+        if(MQC_Matrix_isAllocated(integral%beta)) then
+          if(integral%beta%iszero(thresh)) call mqc_deallocate_matrix(integral%beta)
+        endIf
+        if(MQC_Matrix_isAllocated(integral%alphaBeta)) then
+          if(integral%alphaBeta%iszero(thresh)) call mqc_deallocate_matrix(integral%alphaBeta)
+        endIf
+        if(MQC_Matrix_isAllocated(integral%betaAlpha)) then
+          if(integral%betaAlpha%iszero(thresh)) call mqc_deallocate_matrix(integral%betaAlpha)
+        endIf
+      endIf
+!
+      end subroutine mqc_integral_drop_zero_blocks
+!
+!
+!     PROCEDURE MQC_Integral_Default_Symmetry
+!
+!>    \brief <b> MQC_Integral_Default_Symmetry sets the symmetry flag that follows
+!>    from the dimensions and the stored blocks of an MQC integral</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    A non-square integral is 'asymmetric', a square integral without stored
+!>    blocks is 'fullsymmetric' (zero) and any other integral is 'unknown'.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_integral_default_symmetry(integral)
+!
+      implicit none
+      class(mqc_scf_integral),intent(inOut)::integral
+!
+      if(.not.integral%isSquare()) then
+        integral%symmetry = 'asymmetric'
+      elseIf(.not.(MQC_Matrix_isAllocated(integral%alpha).or. &
+        MQC_Matrix_isAllocated(integral%beta).or. &
+        MQC_Matrix_isAllocated(integral%alphaBeta).or. &
+        MQC_Matrix_isAllocated(integral%betaAlpha))) then
+        integral%symmetry = 'fullsymmetric'
+      else
+        integral%symmetry = 'unknown'
+      endIf
+!
+      end subroutine mqc_integral_default_symmetry
+!
+!
+!     PROCEDURE MQC_Integral_Is_Diagonal
+!
+!>    \brief <b> MQC_Integral_Is_Diagonal returns true if the symmetry flag of an MQC
+!>    integral is 'realdiag', 'imagdiag' or 'complexdiag'</b>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_is_diagonal(integral) result(isDiagonal)
+!
+      implicit none
+      class(mqc_scf_integral),intent(in)::integral
+      logical::isDiagonal
+!
+      select case (integral%symmetry)
+      case('realdiag','imagdiag','complexdiag')
+        isDiagonal = .true.
+      case default
+        isDiagonal = .false.
+      end select
+!
+      end function mqc_integral_is_diagonal
+!
+!
+!     PROCEDURE MQC_Integral_Diagonal_Label
+!
+!>    \brief <b> MQC_Integral_Diagonal_Label classifies the diagonal of an MQC
+!>    integral whose alpha and beta blocks are diagonal</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Returns 'realdiag' when every diagonal element of alpha and beta is real,
+!>    'imagdiag' when every one is imaginary and 'complexdiag' otherwise. The
+!>    threshold is MQC_very_small when it is positive, and 1e-10 otherwise.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_diagonal_label(integral) result(label)
+!
+      implicit none
+      class(mqc_scf_integral),intent(in)::integral
+      character(len=16)::label
+      logical::realOK,imagOK
+      real(kind=real64)::thresh
+!
+      if(MQC_very_small.gt.0.0) then
+        thresh = MQC_very_small
+      else
+        thresh = 1e-10
+      endIf
+      realOK = .true.
+      imagOK = .true.
+      if(MQC_Matrix_isAllocated(integral%alpha)) call scanDiagonal(integral%alpha)
+      if(MQC_Matrix_isAllocated(integral%beta)) call scanDiagonal(integral%beta)
+      if(realOK) then
+        label = 'realdiag'
+      elseIf(imagOK) then
+        label = 'imagdiag'
+      else
+        label = 'complexdiag'
+      endIf
+!
+      contains
+!
+        subroutine scanDiagonal(block)
+        type(mqc_matrix),intent(in)::block
+        type(mqc_scalar)::element
+        complex(kind=real64)::z
+        integer(kind=int64)::i
+        do i = 1, min(size(block,1),size(block,2))
+          element = block%at(i,i)
+          z = element%cval()
+          if(abs(aimag(z)).gt.thresh) realOK = .false.
+          if(abs(real(z)).gt.thresh) imagOK = .false.
+        end do
+        end subroutine scanDiagonal
+!
+      end function mqc_integral_diagonal_label
+!
+!
+!     PROCEDURE MQC_Integral_Symmetry_Set
+!
+!>    \brief <b> MQC_Integral_Symmetry_Set returns the symmetries that the flag of an
+!>    MQC integral implies, in the mathematical sense</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The symmetries follow from the flag and from the data type of the stored
+!>    blocks (real data are symmetric when Hermitian and antisymmetric when
+!>    anti-Hermitian):
+!>      'hermitian'      hermitian (and symmetric for real data)
+!>      'antihermitian'  antihermitian (and antisymmetric for real data)
+!>      'symmetric'      symmetric (and hermitian for real data)
+!>      'antisymmetric'  antisymmetric (and antihermitian for real data)
+!>      'realdiag'       diagonal, symmetric and hermitian
+!>      'imagdiag'       diagonal, symmetric and antihermitian
+!>      'complexdiag'    diagonal and symmetric
+!>      'fullsymmetric'  all of them (the integral is zero)
+!>      'unknown', 'asymmetric' none of them
+!>    It is used to set the flag of the result of a binary operation without
+!>    testing the elements.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_integral_symmetry_set(integral,symm,asym,herm,ahrm,diag)
+!
+      implicit none
+      class(mqc_scf_integral),intent(in)::integral
+      logical,intent(out)::symm,asym,herm,ahrm,diag
+      logical::realData
+!
+      realData = .true.
+      if(integral%hasAlpha()) realData = realData.and..not.MQC_Matrix_HaveComplex(integral%alpha)
+      if(integral%hasBeta()) realData = realData.and..not.MQC_Matrix_HaveComplex(integral%beta)
+      if(MQC_Matrix_isAllocated(integral%alphaBeta)) &
+        realData = realData.and..not.MQC_Matrix_HaveComplex(integral%alphaBeta)
+      if(MQC_Matrix_isAllocated(integral%betaAlpha)) &
+        realData = realData.and..not.MQC_Matrix_HaveComplex(integral%betaAlpha)
+      symm = .false.
+      asym = .false.
+      herm = .false.
+      ahrm = .false.
+      diag = .false.
+      select case (integral%symmetry)
+      case('unknown','asymmetric')
+        continue
+      case('fullsymmetric')
+        symm = .true.
+        asym = .true.
+        herm = .true.
+        ahrm = .true.
+        diag = .true.
+      case('hermitian')
+        herm = .true.
+        symm = realData
+      case('antihermitian')
+        ahrm = .true.
+        asym = realData
+      case('symmetric')
+        symm = .true.
+        herm = realData
+      case('antisymmetric')
+        asym = .true.
+        ahrm = realData
+      case('realdiag')
+        diag = .true.
+        symm = .true.
+        herm = .true.
+      case('imagdiag')
+        diag = .true.
+        symm = .true.
+        ahrm = .true.
+      case('complexdiag')
+        diag = .true.
+        symm = .true.
+      case default
+        call mqc_error_a('Unknown symmetry flag in mqc_integral_symmetry_set',6, &
+          'integral%symmetry',integral%symmetry)
+      end select
+!
+      end subroutine mqc_integral_symmetry_set
+!
+!
+!     PROCEDURE MQC_Integral_Pick_Symmetry
+!
+!>    \brief <b> MQC_Integral_Pick_Symmetry chooses the symmetry flag of an MQC
+!>    integral from the symmetries it is known to have</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Returns 'diagonal' when the integral is diagonal (the caller sets 'realdiag',
+!>    'imagdiag' or 'complexdiag' from the elements), otherwise the first of
+!>    'hermitian', 'antihermitian', 'symmetric' and 'antisymmetric' that holds, and
+!>    'unknown' when none holds. Hermitian comes first, so that real data are
+!>    labelled Hermitian or anti-Hermitian.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_pick_symmetry(symm,asym,herm,ahrm,diag) result(label)
+!
+      implicit none
+      logical,intent(in)::symm,asym,herm,ahrm,diag
+      character(len=16)::label
+!
+      if(diag) then
+        label = 'diagonal'
+      elseIf(herm) then
+        label = 'hermitian'
+      elseIf(ahrm) then
+        label = 'antihermitian'
+      elseIf(symm) then
+        label = 'symmetric'
+      elseIf(asym) then
+        label = 'antisymmetric'
+      else
+        label = 'unknown'
+      endIf
+!
+      end function mqc_integral_pick_symmetry
 !
 !
 !     PROCEDURE MQC_Scalar_Integral_Multiply
@@ -13963,6 +15540,9 @@
       type(mqc_scalar)::scalar
       Character(Len=64)::myLabel
       integer(kind=int64)::nA1,nA2,nB1,nB2
+      complex(kind=real64)::c
+      character(len=16)::newSymmetry
+      logical::isReal,isImag,realData,isElement
 !
 !      if(present(label)) then
 !        call string_change_case(label,'l',myLabel)
@@ -13975,6 +15555,7 @@
       nB1 = size(integral,'beta',1)
       nB2 = size(integral,'beta',2)
 
+      isElement = .false.
       select type(scalarIn)
       type is (integer)
         scalar = scalarIn
@@ -13986,39 +15567,105 @@
         scalar = scalarIn
       type is (mqc_scf_integral)
         integralOut =  MQC_Element_Integral_Multiply(scalarIn,integral)
-        return
+        isElement = .true.
       class default
         call mqc_error_I('scalarIn type not defined in mqc_scalar_integral_multiply',6)
       end select
-
-      select case (integral%array_type)
-      case('space')
-          if(integral%hasAlpha()) &
-            tmpMatrixAlpha = scalar*integral%alpha
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,nDimA1=nA1,nDimA2=nA2,&
-            nDimB1=nB1,nDimB2=nB2)
-      case('spin')
-          if(integral%hasAlpha()) &
-            tmpMatrixAlpha = scalar*integral%alpha
-          if(integral%hasBeta()) &
-            tmpMatrixBeta = scalar*integral%beta
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-      case('general')
-          if(integral%hasAlpha()) &
-            tmpMatrixAlpha = scalar*integral%alpha
-          if(integral%hasBeta()) &
-            tmpMatrixBeta = scalar*integral%beta
-          if(integral%hasAlphaBeta()) &
-            tmpMatrixAlphaBeta = scalar*integral%alphaBeta
-          if(integral%hasBetaAlpha()) &
-            tmpMatrixBetaAlpha = scalar*integral%betaAlpha
-          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-      case default
-        call mqc_error_A('Unknown integral type in mqc_scalar_integral_multiply', 6, &
-             'integralA%array_type', integral%array_type )
-      end select
+!
+!     A flagged integral is scaled on its stored blocks (betaAlpha is not rebuilt) and
+!     the flag of the result follows from the flag and from the scalar.
+      newSymmetry = 'unknown'
+      if(.not.isElement.and.(integral%isCompressed().or.integral%isDiag().or. &
+        integral%symmetry.eq.'fullsymmetric')) then
+        c = scalar%cval()
+        isReal = aimag(c).eq.0.0
+        isImag = real(c).eq.0.0.and.aimag(c).ne.0.0
+        realData = .true.
+        if(integral%hasAlpha()) realData = realData.and..not.MQC_Matrix_HaveComplex(integral%alpha)
+        if(integral%hasBeta()) realData = realData.and..not.MQC_Matrix_HaveComplex(integral%beta)
+        if(MQC_Matrix_isAllocated(integral%alphaBeta)) &
+          realData = realData.and..not.MQC_Matrix_HaveComplex(integral%alphaBeta)
+        newSymmetry = integral%symmetry
+        if(.not.isReal) then
+          select case (integral%symmetry)
+          case('hermitian')
+            if(isImag) then
+              newSymmetry = 'antihermitian'
+            elseIf(realData) then
+              newSymmetry = 'symmetric'
+            else
+              newSymmetry = 'unknown'
+            endIf
+          case('antihermitian')
+            if(isImag) then
+              newSymmetry = 'hermitian'
+            elseIf(realData) then
+              newSymmetry = 'antisymmetric'
+            else
+              newSymmetry = 'unknown'
+            endIf
+          case('realdiag')
+            if(isImag) then
+              newSymmetry = 'imagdiag'
+            else
+              newSymmetry = 'complexdiag'
+            endIf
+          case('imagdiag')
+            if(isImag) then
+              newSymmetry = 'realdiag'
+            else
+              newSymmetry = 'complexdiag'
+            endIf
+          end select
+        endIf
+        if(newSymmetry.ne.'unknown') then
+          if(integral%hasAlpha()) tmpMatrixAlpha = scalar*integral%alpha
+          if(integral%hasBeta()) tmpMatrixBeta = scalar*integral%beta
+          if(MQC_Matrix_isAllocated(integral%alphaBeta)) tmpMatrixAlphaBeta = scalar*integral%alphaBeta
+          call mqc_integral_allocate(integralOut,myLabel,integral%array_type,tmpMatrixAlpha, &
+            tmpMatrixBeta,tmpMatrixAlphaBeta,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+          if(integralOut%symmetry.eq.'unknown') then
+            integralOut%symmetry = newSymmetry
+            if(integralOut%isCompressed()) call integralOut%compressSymm()
+            if(integral%symmetry.eq.'complexdiag'.and..not.isReal.and..not.isImag) &
+              integralOut%symmetry = integralOut%diagLabel()
+          endIf
+        endIf
+      endIf
+!
+!     Unflagged integrals (and the flagged cases without a known result flag).
+      if(.not.isElement.and.newSymmetry.eq.'unknown') then
+        select case (integral%array_type)
+        case('space')
+            if(integral%hasAlpha()) &
+              tmpMatrixAlpha = scalar*integral%alpha
+            call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,nDimA1=nA1,nDimA2=nA2,&
+              nDimB1=nB1,nDimB2=nB2)
+        case('spin')
+            if(integral%hasAlpha()) &
+              tmpMatrixAlpha = scalar*integral%alpha
+            if(integral%hasBeta()) &
+              tmpMatrixBeta = scalar*integral%beta
+            call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+        case('general')
+            if(integral%hasAlpha()) &
+              tmpMatrixAlpha = scalar*integral%alpha
+            if(integral%hasBeta()) &
+              tmpMatrixBeta = scalar*integral%beta
+            if(integral%hasAlphaBeta()) &
+              tmpMatrixAlphaBeta = scalar*integral%alphaBeta
+            if(integral%hasBetaAlpha()) &
+              tmpMatrixBetaAlpha = scalar*integral%baBlock()
+            call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
+        case default
+          call mqc_error_A('Unknown integral type in mqc_scalar_integral_multiply', 6, &
+               'integralA%array_type', integral%array_type )
+        end select
+        if(integral%symmetry.eq.'asymmetric'.and.integralOut%symmetry.eq.'unknown') &
+          integralOut%symmetry = 'asymmetric'
+      endIf
 !
       end function mqc_scalar_integral_multiply
 !
@@ -14259,38 +15906,20 @@
         scalar = scalarIn
       type is (mqc_scf_integral)
         integralOut = mqc_element_integral_multiply(integral,scalarIn)
-        return
       class default
         call mqc_error_I('scalarIn type not defined in mqc_integral_scalar_multiply',6)
       end select
-
-      select case (integral%array_type)
-      case('space')
-          if(integral%hasAlpha()) &
-            tmpMatrixAlpha = scalar*integral%alpha
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,nDimA1=nA1,nDimA2=nA2,&
-            nDimB1=nB1,nDimB2=nB2)
-      case('spin')
-          if(integral%hasAlpha()) &
-            tmpMatrixAlpha = scalar*integral%alpha
-          if(integral%hasBeta()) &
-            tmpMatrixBeta = scalar*integral%beta
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-      case('general')
-          if(integral%hasAlpha()) &
-            tmpMatrixAlpha = scalar*integral%alpha
-          if(integral%hasBeta()) &
-            tmpMatrixBeta = scalar*integral%beta
-          if(integral%hasAlphaBeta()) &
-            tmpMatrixAlphaBeta = scalar*integral%alphaBeta
-          if(integral%hasBetaAlpha()) &
-            tmpMatrixBetaAlpha = scalar*integral%betaAlpha
-          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nA1,nDimA2=nA2,nDimB1=nB1,nDimB2=nB2)
-      case default
-        call mqc_error_A('Unknown integral type in mqc_integral_scalar_multiply', 6, &
-             'integral%array_type', integral%array_type )
+!
+!     The product with a scalar commutes; the flag handling is in mqc_scalar_integral_multiply.
+      select type(scalarIn)
+      type is (integer)
+        integralOut = mqc_scalar_integral_multiply(scalar,integral)
+      type is (real)
+        integralOut = mqc_scalar_integral_multiply(scalar,integral)
+      type is (complex)
+        integralOut = mqc_scalar_integral_multiply(scalar,integral)
+      type is (mqc_scalar)
+        integralOut = mqc_scalar_integral_multiply(scalar,integral)
       end select
 !
       end function mqc_integral_scalar_multiply
@@ -14694,6 +16323,9 @@
       type(mqc_scalar)::scalar
       Character(Len=64)::myLabel
       integer(kind=int64)::n1A1,n1A2,n1B1,n1B2,n2A1,n2A2,n2B1,n2B2
+      logical::symm1,asym1,herm1,ahrm1,diag1,symm2,asym2,herm2,ahrm2,diag2
+      character(len=16)::newSymmetry
+      character(len=64)::outType
 !
 !      if(present(label)) then
 !        call string_change_case(label,'l',myLabel)
@@ -14711,83 +16343,155 @@
       n2B2 = size(integral2,'beta',2)
 
       if(n1A1.ne.n2A1.or.n1A2.ne.n2A2.or.n1B1.ne.n2B1.or.n1B2.ne.n2B2) &
-        call mqc_error_i('Integral blocks are not conformable in mqc_integral_difference',6,&
+        call mqc_error_i('Integral blocks are not conformable in mqc_element_integral_multiply',6,&
         'n1A1-n2A1',n1A1-n2A1,'n1A2-n2A2',n1A2-n2A2,'n1B1-n2B1',n1B1-n2B1,'n1B2-n2B2',n1B2-n2B2)
-
-      select case (integral1%array_type)
-      case('space')
-        select case (integral2%array_type)
+!
+!     Flagged integrals are multiplied on their stored blocks (betaAlpha is not
+!     rebuilt). The symmetries of the result follow from those of the operands:
+!     sym.sym and asym.asym are symmetric, sym.asym is antisymmetric, herm.herm and
+!     ahrm.ahrm are hermitian, herm.ahrm is antihermitian, and the product with a
+!     diagonal (or zero) integral is diagonal (or zero).
+      call integral1%symmSet(symm1,asym1,herm1,ahrm1,diag1)
+      call integral2%symmSet(symm2,asym2,herm2,ahrm2,diag2)
+      newSymmetry = mqc_integral_pick_symmetry((symm1.and.symm2).or.(asym1.and.asym2), &
+        (symm1.and.asym2).or.(asym1.and.symm2),(herm1.and.herm2).or.(ahrm1.and.ahrm2), &
+        (herm1.and.ahrm2).or.(ahrm1.and.herm2),diag1.or.diag2)
+      if(newSymmetry.ne.'unknown') then
+        if(integral1%array_type.eq.'general'.or.integral2%array_type.eq.'general') then
+          outType = 'general'
+        elseIf(integral1%array_type.eq.'spin'.or.integral2%array_type.eq.'spin') then
+          outType = 'spin'
+        else
+          outType = 'space'
+        endIf
+        call multiplyBlocks(tmpMatrixAlpha,integral1%alpha,integral1%hasAlpha(),integral2%alpha, &
+          integral2%hasAlpha())
+        if(outType.ne.'space') then
+          if(integral1%array_type.eq.'space') then
+            call multiplyBlocks(tmpMatrixBeta,integral1%alpha,integral1%hasAlpha(),integral2%beta, &
+              integral2%hasBeta())
+          elseIf(integral2%array_type.eq.'space') then
+            call multiplyBlocks(tmpMatrixBeta,integral1%beta,integral1%hasBeta(),integral2%alpha, &
+              integral2%hasAlpha())
+          else
+            call multiplyBlocks(tmpMatrixBeta,integral1%beta,integral1%hasBeta(),integral2%beta, &
+              integral2%hasBeta())
+          endIf
+        endIf
+        if(newSymmetry.eq.'diagonal') then
+          if(MQC_Matrix_isAllocated(tmpMatrixAlpha)) call toDiagonal(tmpMatrixAlpha)
+          if(MQC_Matrix_isAllocated(tmpMatrixBeta)) call toDiagonal(tmpMatrixBeta)
+        elseIf(outType.eq.'general') then
+          call multiplyBlocks(tmpMatrixAlphaBeta,integral1%alphaBeta, &
+            MQC_Matrix_isAllocated(integral1%alphaBeta),integral2%alphaBeta, &
+            MQC_Matrix_isAllocated(integral2%alphaBeta))
+        endIf
+        call mqc_integral_allocate(integralOut,myLabel,outType,tmpMatrixAlpha,tmpMatrixBeta, &
+          tmpMatrixAlphaBeta,nDimA1=n1A1,nDimA2=n1A2,nDimB1=n1B1,nDimB2=n1B2)
+        if(integralOut%symmetry.eq.'unknown') then
+          if(newSymmetry.eq.'diagonal') then
+            integralOut%symmetry = integralOut%diagLabel()
+          else
+            integralOut%symmetry = newSymmetry
+            call integralOut%compressSymm()
+          endIf
+        endIf
+      endIf
+!
+!     Unflagged integrals (and the flagged cases without a known result flag).
+      if(newSymmetry.eq.'unknown') then
+        select case (integral1%array_type)
         case('space')
-          if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
-            tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,nDimA1=n1A1,nDimA2=n1A2,&
-            nDimB1=n1B1,nDimB2=n1B2)
-        case('spin','general')
-          if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
-            tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
-          if(integral1%hasAlpha().and.integral2%hasBeta()) & 
-            tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('beta'))
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=n1A1,nDimA2=n1A2,nDimB1=n1B1,nDimB2=n1B2)
-        case default
-          call mqc_error_A('Unknown integral type in mqc_element_integral_multiply', 6, &
-             'integral2%array_type', integral2%array_type )
-        end select
-      case('spin')
-        select case (integral2%array_type)
-        case('space')
-          if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
-            tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
-          if(integral1%hasBeta().and.integral2%hasAlpha()) & 
-            tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('beta'),integral2%getBlock('alpha'))
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,nDimA1=n1A1,nDimA2=n1A2,&
-            nDimB1=n1B1,nDimB2=n1B2)
-        case('spin','general')
-          if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
-            tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
-          if(integral1%hasBeta().and.integral2%hasBeta()) & 
-            tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('beta'),integral2%getBlock('beta'))
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=n1A1,nDimA2=n1A2,nDimB1=n1B1,nDimB2=n1B2)
-        case default
-          call mqc_error_A('Unknown integral type in mqc_element_integral_multiply', 6, &
-             'integral2%array_type', integral2%array_type )
-        end select
-      case('general')
-        select case (integral2%array_type)
-        case('space')
-          if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
-            tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
-          if(integral1%hasBeta().and.integral2%hasAlpha()) & 
-            tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('beta'),integral2%getBlock('alpha'))
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,nDimA1=n1A1,nDimA2=n1A2,&
-            nDimB1=n1B1,nDimB2=n1B2)
+          select case (integral2%array_type)
+          case('space')
+            if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
+              tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
+            call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,nDimA1=n1A1,nDimA2=n1A2,&
+              nDimB1=n1B1,nDimB2=n1B2)
+          case('spin','general')
+            if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
+              tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
+            if(integral1%hasAlpha().and.integral2%hasBeta()) & 
+              tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('beta'))
+            call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=n1A1,nDimA2=n1A2,nDimB1=n1B1,nDimB2=n1B2)
+          case default
+            call mqc_error_A('Unknown integral type in mqc_element_integral_multiply', 6, &
+               'integral2%array_type', integral2%array_type )
+          end select
         case('spin')
-          if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
-            tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
-          if(integral1%hasBeta().and.integral2%hasBeta()) & 
-            tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('beta'),integral2%getBlock('beta'))
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=n1A1,nDimA2=n1A2,nDimB1=n1B1,nDimB2=n1B2)
+          select case (integral2%array_type)
+          case('space')
+            if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
+              tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
+            if(integral1%hasBeta().and.integral2%hasAlpha()) & 
+              tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('beta'),integral2%getBlock('alpha'))
+            call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=n1A1,nDimA2=n1A2,nDimB1=n1B1,nDimB2=n1B2)
+          case('spin','general')
+            if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
+              tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
+            if(integral1%hasBeta().and.integral2%hasBeta()) & 
+              tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('beta'),integral2%getBlock('beta'))
+            call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=n1A1,nDimA2=n1A2,nDimB1=n1B1,nDimB2=n1B2)
+          case default
+            call mqc_error_A('Unknown integral type in mqc_element_integral_multiply', 6, &
+               'integral2%array_type', integral2%array_type )
+          end select
         case('general')
-          if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
-            tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
-          if(integral1%hasBeta().and.integral2%hasBeta()) & 
-            tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('beta'),integral2%getBlock('beta'))
-          if(integral1%hasAlphaBeta().and.integral2%hasAlphaBeta()) & 
-            tmpMatrixAlphaBeta=MQC_ElementMatrixProduct(integral1%getBlock('ab'),integral2%getBlock('ab'))
-          if(integral1%hasBetaAlpha().and.integral2%hasBetaAlpha()) & 
-            tmpMatrixBetaAlpha=MQC_ElementMatrixProduct(integral1%getBlock('ba'),integral2%getBlock('ba'))
-          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=n1A1,nDimA2=n1A2,nDimB1=n1B1,nDimB2=n1B2)
+          select case (integral2%array_type)
+          case('space')
+            if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
+              tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
+            if(integral1%hasBeta().and.integral2%hasAlpha()) & 
+              tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('beta'),integral2%getBlock('alpha'))
+            call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=n1A1,nDimA2=n1A2,nDimB1=n1B1,nDimB2=n1B2)
+          case('spin')
+            if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
+              tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
+            if(integral1%hasBeta().and.integral2%hasBeta()) & 
+              tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('beta'),integral2%getBlock('beta'))
+            call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=n1A1,nDimA2=n1A2,nDimB1=n1B1,nDimB2=n1B2)
+          case('general')
+            if(integral1%hasAlpha().and.integral2%hasAlpha()) & 
+              tmpMatrixAlpha=MQC_ElementMatrixProduct(integral1%getBlock('alpha'),integral2%getBlock('alpha'))
+            if(integral1%hasBeta().and.integral2%hasBeta()) & 
+              tmpMatrixBeta=MQC_ElementMatrixProduct(integral1%getBlock('beta'),integral2%getBlock('beta'))
+            if(integral1%hasAlphaBeta().and.integral2%hasAlphaBeta()) & 
+              tmpMatrixAlphaBeta=MQC_ElementMatrixProduct(integral1%getBlock('ab'),integral2%getBlock('ab'))
+            if(integral1%hasBetaAlpha().and.integral2%hasBetaAlpha()) & 
+              tmpMatrixBetaAlpha=MQC_ElementMatrixProduct(integral1%getBlock('ba'),integral2%getBlock('ba'))
+            call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=n1A1,nDimA2=n1A2,nDimB1=n1B1,nDimB2=n1B2)
+          case default
+            call mqc_error_A('Unknown integral type in mqc_element_integral_multiply', 6, &
+               'integral2%array_type', integral2%array_type )
+          end select
         case default
           call mqc_error_A('Unknown integral type in mqc_element_integral_multiply', 6, &
-             'integral2%array_type', integral2%array_type )
+               'integral1%array_type', integral1%array_type )
         end select
-      case default
-        call mqc_error_A('Unknown integral type in mqc_element_integral_multiply', 6, &
-             'integral1%array_type', integral1%array_type )
-      end select
+      endIf
+!
+      contains
+!
+        subroutine multiplyBlocks(blockOut,block1,has1,block2,has2)
+        type(mqc_matrix),intent(inOut)::blockOut
+        type(mqc_matrix),intent(in)::block1,block2
+        logical,intent(in)::has1,has2
+        if(has1.and.has2) blockOut = MQC_ElementMatrixProduct(block1,block2)
+        end subroutine multiplyBlocks
+!
+        subroutine toDiagonal(matrix)
+        type(mqc_matrix),intent(inOut)::matrix
+        if(matrix%getSymm().ne.'diagonal') then
+          if(matrix%getSymm().ne.'unknown') call MQC_Matrix_Symm2Full(matrix)
+          call MQC_Matrix_Full2Diag(matrix)
+        endIf
+        end subroutine toDiagonal
 !
       end function mqc_element_integral_multiply
 !     
@@ -15263,7 +16967,7 @@
           call tmpVector1%diag(tmpMatrix1)
           tmpMatrix2 = matmul(integralA%beta,tmpMatrix1)
           tmpMatrix3 = matmul(integralA%alphaBeta,tmpMatrix1)
-          tmpMatrix4 = matmul(integralA%betaAlpha,tmpMatrix1)
+          tmpMatrix4 = matmul(integralA%baBlock(),tmpMatrix1)
           tmpMatrix1 = matmul(integralA%alpha,tmpMatrix1)
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4)
         case('spin','general')
@@ -15272,7 +16976,7 @@
           call tmpVector1%diag(tmpMatrix1)
           call tmpVector2%diag(tmpMatrix2)
           tmpMatrix3 = matmul(integralA%alphaBeta,tmpMatrix1)
-          tmpMatrix4 = matmul(integralA%betaAlpha,tmpMatrix2)
+          tmpMatrix4 = matmul(integralA%baBlock(),tmpMatrix2)
           tmpMatrix1 = matmul(integralA%alpha,tmpMatrix1)
           tmpMatrix2 = matmul(integralA%beta,tmpMatrix2)
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4)
@@ -15395,7 +17099,7 @@
           call tmpVector1%diag(tmpMatrix1)
           tmpMatrix2 = matmul(tmpMatrix1,integralB%beta)
           tmpMatrix3 = matmul(tmpMatrix1,integralB%alphaBeta)
-          tmpMatrix4 = matmul(tmpMatrix1,integralB%betaAlpha)
+          tmpMatrix4 = matmul(tmpMatrix1,integralB%baBlock())
           tmpMatrix1 = matmul(tmpMatrix1,integralB%alpha)
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4)
         case('spin','general')
@@ -15404,7 +17108,7 @@
           call tmpVector1%diag(tmpMatrix1)
           call tmpVector2%diag(tmpMatrix2)
           tmpMatrix3 = matmul(tmpMatrix2,integralB%alphaBeta)
-          tmpMatrix4 = matmul(tmpMatrix1,integralB%betaAlpha)
+          tmpMatrix4 = matmul(tmpMatrix1,integralB%baBlock())
           tmpMatrix1 = matmul(tmpMatrix1,integralB%alpha)
           tmpMatrix2 = matmul(tmpMatrix2,integralB%beta)
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4)
@@ -15710,9 +17414,9 @@
         if(eigenvaluesB%type().eq.'space') then
           if(integralA%hasBetaAlpha().and.eigenvaluesB%hasAlpha()) then
             if(allocated(tmpVectorAlpha)) then
-              tmpVectorAlpha = tmpVectorAlpha + (integralA%betaAlpha.dot.eigenvaluesB%alpha)
+              tmpVectorAlpha = tmpVectorAlpha + (integralA%baBlock().dot.eigenvaluesB%alpha)
             else
-              tmpVectorAlpha = integralA%betaAlpha.dot.eigenvaluesB%alpha
+              tmpVectorAlpha = integralA%baBlock().dot.eigenvaluesB%alpha
             endIf
           endIf
           if(integralA%hasBeta().and.eigenvaluesB%hasAlpha()) &
@@ -15727,9 +17431,9 @@
         else
           if(integralA%hasBetaAlpha().and.eigenvaluesB%hasBeta()) then
             if(allocated(tmpVectorAlpha)) then
-              tmpVectorAlpha = tmpVectorAlpha + (integralA%betaAlpha.dot.eigenvaluesB%beta)
+              tmpVectorAlpha = tmpVectorAlpha + (integralA%baBlock().dot.eigenvaluesB%beta)
             else
-              tmpVectorAlpha = integralA%betaAlpha.dot.eigenvaluesB%beta
+              tmpVectorAlpha = integralA%baBlock().dot.eigenvaluesB%beta
             endIf
           endIf
           if(integralA%hasBeta().and.eigenvaluesB%hasBeta()) &
@@ -15800,31 +17504,51 @@
       else
         myLabel = ''
       endIf
-     
-      select case (integral%array_type)
-      case('space')
-          tmpMatrixAlpha = transpose(integral%alpha)
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,&
-                       nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
-                       nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
-      case('spin')
-          tmpMatrixAlpha = transpose(integral%alpha)
-          tmpMatrixBeta = transpose(integral%beta)
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-                       nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
-                       nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
-      case('general')
-          tmpMatrixAlpha = transpose(integral%alpha)
-          tmpMatrixBeta = transpose(integral%beta)
-          tmpMatrixAlphaBeta = transpose(integral%betaAlpha)
-          tmpMatrixBetaAlpha = transpose(integral%alphaBeta)
-          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-                tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,&
-                nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
-                nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
+!
+!     For a flagged integral, A^T is A, -A, conjg(A) or -conjg(A).
+      select case (integral%symmetry)
+      case('symmetric','realdiag','imagdiag','complexdiag','fullsymmetric')
+        integralOut = integral
+        integralOut%array_name = myLabel
+      case('antisymmetric')
+        integralOut = mqc_scalar_integral_multiply(-1,integral)
+        integralOut%array_name = myLabel
+      case('hermitian')
+        integralOut = mqc_scf_integral_conjg(integral,myLabel)
+      case('antihermitian')
+        integralOut = mqc_scalar_integral_multiply(-1,mqc_scf_integral_conjg(integral))
+        integralOut%array_name = myLabel
+      case('unknown','asymmetric')
+        select case (integral%array_type)
+        case('space')
+            tmpMatrixAlpha = transpose(integral%alpha)
+            call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,&
+                         nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
+                         nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
+        case('spin')
+            tmpMatrixAlpha = transpose(integral%alpha)
+            tmpMatrixBeta = transpose(integral%beta)
+            call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+                         nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
+                         nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
+        case('general')
+            tmpMatrixAlpha = transpose(integral%alpha)
+            tmpMatrixBeta = transpose(integral%beta)
+            tmpMatrixAlphaBeta = transpose(integral%baBlock())
+            tmpMatrixBetaAlpha = transpose(integral%alphaBeta)
+            call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
+                  tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,&
+                  nDimA1=Integral%nACols,nDimA2=Integral%nARows,&
+                  nDimB1=Integral%nBCols,nDimB2=Integral%nBRows)
+        case default
+          call mqc_error_A('Unknown integral type in mqc_integral_transpose', 6, &
+               'integral%array_type', integral%array_type )
+        end select
+        if(integral%symmetry.eq.'asymmetric'.and.integralOut%symmetry.eq.'unknown') &
+          integralOut%symmetry = 'asymmetric'
       case default
-        call mqc_error_A('Unknown integral type in mqc_integral_transpose', 6, &
-             'integral%array_type', integral%array_type )
+        call mqc_error_A('Unknown symmetry flag in mqc_integral_transpose', 6, &
+             'integral%symmetry', integral%symmetry )
       end select
 !
       end function mqc_integral_transpose
@@ -15879,31 +17603,51 @@
       else
         myLabel = ''
       endIf
-
-      select case (integral%array_type)
-      case('space')
-          tmpMatrixAlpha = dagger(integral%alpha)
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha, &
-            nDimA1=size(integral,'alpha',2),nDimA2=size(integral,'alpha',1),&
-            nDimB1=size(integral,'beta',2),nDimB2=size(integral,'beta',1))
-      case('spin')
-          tmpMatrixAlpha = dagger(integral%alpha)
-          tmpMatrixBeta = dagger(integral%beta)
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=size(integral,'alpha',2),nDimA2=size(integral,'alpha',1),&
-            nDimB1=size(integral,'beta',2),nDimB2=size(integral,'beta',1))
-      case('general')
-          tmpMatrixAlpha = dagger(integral%alpha)
-          tmpMatrixBeta = dagger(integral%beta)
-          tmpMatrixAlphaBeta = dagger(integral%betaAlpha)
-          tmpMatrixBetaAlpha = dagger(integral%alphaBeta)
-          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=size(integral,'alpha',2),&
-            nDimA2=size(integral,'alpha',1),nDimB1=size(integral,'beta',2),&
-            nDimB2=size(integral,'beta',1))
+!
+!     For a flagged integral, dagger(A) is A, -A, conjg(A) or -conjg(A).
+      select case (integral%symmetry)
+      case('hermitian','realdiag','fullsymmetric')
+        integralOut = integral
+        integralOut%array_name = myLabel
+      case('antihermitian','imagdiag')
+        integralOut = mqc_scalar_integral_multiply(-1,integral)
+        integralOut%array_name = myLabel
+      case('symmetric','complexdiag')
+        integralOut = mqc_scf_integral_conjg(integral,myLabel)
+      case('antisymmetric')
+        integralOut = mqc_scalar_integral_multiply(-1,mqc_scf_integral_conjg(integral))
+        integralOut%array_name = myLabel
+      case('unknown','asymmetric')
+        select case (integral%array_type)
+        case('space')
+            tmpMatrixAlpha = dagger(integral%alpha)
+            call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha, &
+              nDimA1=size(integral,'alpha',2),nDimA2=size(integral,'alpha',1),&
+              nDimB1=size(integral,'beta',2),nDimB2=size(integral,'beta',1))
+        case('spin')
+            tmpMatrixAlpha = dagger(integral%alpha)
+            tmpMatrixBeta = dagger(integral%beta)
+            call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
+              nDimA1=size(integral,'alpha',2),nDimA2=size(integral,'alpha',1),&
+              nDimB1=size(integral,'beta',2),nDimB2=size(integral,'beta',1))
+        case('general')
+            tmpMatrixAlpha = dagger(integral%alpha)
+            tmpMatrixBeta = dagger(integral%beta)
+            tmpMatrixAlphaBeta = dagger(integral%baBlock())
+            tmpMatrixBetaAlpha = dagger(integral%alphaBeta)
+            call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
+              tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=size(integral,'alpha',2),&
+              nDimA2=size(integral,'alpha',1),nDimB1=size(integral,'beta',2),&
+              nDimB2=size(integral,'beta',1))
+        case default
+          call mqc_error_A('Unknown integral type in mqc_integral_conjugate_transpose', 6, &
+               'integral%array_type', integral%array_type )
+        end select
+        if(integral%symmetry.eq.'asymmetric'.and.integralOut%symmetry.eq.'unknown') &
+          integralOut%symmetry = 'asymmetric'
       case default
-        call mqc_error_A('Unknown integral type in mqc_integral_conjugate_transpose', 6, &
-             'integral%array_type', integral%array_type )
+        call mqc_error_A('Unknown symmetry flag in mqc_integral_conjugate_transpose', 6, &
+             'integral%symmetry', integral%symmetry )
       end select
 !
       end function mqc_integral_conjugate_transpose
@@ -16308,7 +18052,7 @@
         nDimAlpha2 = integral%blockSize('alpha',2) 
         nDimBeta1 = integral%blockSize('beta',1) 
         nDimBeta2 = integral%blockSize('beta',2) 
-        tmpMat = integral%getBlock('full')
+        tmpMat = integral%getBlock('full',nosym=.true.)
         call mqc_matrix_spinBlockGHF(tmpMat,nelec,multi,elist,.false.)
         tmpMat2 = tmpMat%mat([1,NDimAlpha1],[1,NDimAlpha1])
         tmpMat3 = tmpMat%mat([NDimAlpha1+1,-1],[1,NDimAlpha1])
@@ -16560,7 +18304,7 @@
       endIf
       if(integral1%type().eq.'general'.and.integral2%type().eq.'general') then
         output = output + contraction(integral1%alphaBeta,integral2%alphaBeta)
-        output = output + contraction(integral1%betaAlpha,integral2%betaAlpha)
+        output = output + contraction(integral1%baBlock(),integral2%baBlock())
       endIf
 !
       end function mqc_scf_integral_contraction
@@ -24606,29 +26350,36 @@
       implicit none
       class(mqc_scf_integral),intent(in)::integral
       type(mqc_scf_integral)::inverse
-      type(mqc_matrix)::tmpMat1,tmpMat2,tmpMat3,tmpMat4
-      integer(kind=int64)::nDimAlpha=0
+      type(mqc_matrix)::tmpMat1,tmpMat2,tmpMat3,tmpMat4,fullMat
+      integer(kind=int64)::nDimAlpha,nDimBeta
 !
-      if(integral%type().eq.'space') then
+!     MQC_Matrix_Inverse keeps the packed or diagonal storage of each block, so the
+!     flag of the result is set from the storage of the inverted blocks.
+      select case (integral%type())
+      case('space')
         tmpMat1 = integral%getblock('alpha')
         tmpMat1 = tmpMat1%inv()
         call mqc_integral_allocate(inverse,'integral inverse','space',tmpMat1)
-      elseIf(integral%type().eq.'spin') then
+        call inverse%storageSymm(tmpMat1)
+      case('spin')
         tmpMat1 = integral%getblock('alpha')
         tmpMat2 = integral%getblock('beta')
         tmpMat1 = tmpMat1%inv()
         tmpMat2 = tmpMat2%inv()
         call mqc_integral_allocate(inverse,'integral inverse','spin',tmpMat1,tmpMat2)
-      elseIf(integral%type().eq.'general') then
+        if(tmpMat1%getSymm().eq.tmpMat2%getSymm()) call inverse%storageSymm(tmpMat1)
+      case('general')
         nDimAlpha = integral%blockSize('alpha') 
-        tmpMat1 = integral%getblock('full')
-        tmpMat1 = tmpMat1%inv()
-        tmpMat2 = tmpMat1%mat([NDimAlpha+1,-1],[NDimAlpha+1,-1])
-        tmpMat3 = tmpMat1%mat([NDimAlpha+1,-1],[1,NDimAlpha])
-        tmpMat4 = tmpMat1%mat([1,NDimAlpha],[NDimAlpha+1,-1])
-        tmpMat1 = tmpMat1%mat([1,NDimAlpha],[1,NDimAlpha])
+        nDimBeta = integral%blockSize('beta') 
+        fullMat = integral%getblock('full')
+        fullMat = fullMat%inv()
+        call mqc_integral_split_full(fullMat,nDimAlpha,nDimBeta,tmpMat1,tmpMat2,tmpMat3,tmpMat4)
         call mqc_integral_allocate(inverse,'integral inverse','general',tmpMat1,tmpMat2,tmpMat3,tmpMat4)
-      endIf
+        call inverse%storageSymm(fullMat)
+      case default
+        call mqc_error_a('Unknown integral type in mqc_scf_integral_inverse',6, &
+          'integral%type()',integral%type())
+      end select
 !
       end function mqc_scf_integral_inverse
 !
@@ -24832,21 +26583,38 @@
       else
         myLabel = ''
       endIf
-
-      if(integral%type().eq.'space') then
-        tmpMat1 = conjg(integral%getblock('alpha'))
-        call mqc_integral_allocate(integralOut,myLabel,'space',tmpMat1)
-      elseIf(integral%type().eq.'spin') then
-        tmpMat1 = conjg(integral%getblock('alpha'))
-        tmpMat2 = conjg(integral%getblock('beta'))
-        call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMat1,tmpMat2)
-      elseIf(integral%type().eq.'general') then
-        tmpMat1 = conjg(integral%getblock('alpha'))
-        tmpMat2 = conjg(integral%getblock('beta'))
-        tmpMat3 = conjg(integral%getblock('alpha-beta'))
-        tmpMat4 = conjg(integral%getblock('beta-alpha'))
-        call mqc_integral_allocate(integralOut,myLabel,'general',tmpMat1,tmpMat2,tmpMat3,tmpMat4)
+!
+!     conjg keeps every symmetry: a flagged integral is conjugated on its stored blocks.
+      if(integral%isCompressed().or.integral%isDiag().or.integral%symmetry.eq.'fullsymmetric') then
+        if(integral%hasAlpha()) tmpMat1 = conjg(integral%alpha)
+        if(integral%hasBeta()) tmpMat2 = conjg(integral%beta)
+        if(MQC_Matrix_isAllocated(integral%alphaBeta)) tmpMat3 = conjg(integral%alphaBeta)
+        call mqc_integral_allocate(integralOut,myLabel,integral%array_type,tmpMat1,tmpMat2, &
+          tmpMat3,nDimA1=integral%nARows,nDimA2=integral%nACols,nDimB1=integral%nBRows, &
+          nDimB2=integral%nBCols)
+        if(integralOut%symmetry.eq.'unknown') then
+          integralOut%symmetry = integral%symmetry
+          if(integralOut%isCompressed()) call integralOut%compressSymm()
+        endIf
+      else
+        if(integral%type().eq.'space') then
+          tmpMat1 = conjg(integral%getblock('alpha'))
+          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMat1)
+        elseIf(integral%type().eq.'spin') then
+          tmpMat1 = conjg(integral%getblock('alpha'))
+          tmpMat2 = conjg(integral%getblock('beta'))
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMat1,tmpMat2)
+        elseIf(integral%type().eq.'general') then
+          tmpMat1 = conjg(integral%getblock('alpha'))
+          tmpMat2 = conjg(integral%getblock('beta'))
+          tmpMat3 = conjg(integral%getblock('alpha-beta'))
+          tmpMat4 = conjg(integral%getblock('beta-alpha'))
+          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMat1,tmpMat2,tmpMat3,tmpMat4)
+        endIf
+        if(integral%symmetry.eq.'asymmetric'.and.integralOut%symmetry.eq.'unknown') &
+          integralOut%symmetry = 'asymmetric'
       endIf
+!
 !
       end function mqc_scf_integral_conjg
 !
@@ -25273,72 +27041,9 @@
       Implicit None
       type(mqc_scf_integral),intent(in)::A,B
       type(mqc_scf_integral)::integralOut
-
-      type(mqc_matrix)::Aaa,Abb,Oaa,Obb,Oab,Oba
-      Character(Len=64)::OutType
-  
-      select case(A%array_type)
-      case('space') 
-        Aaa = A%getBlock('aa')
-        select case(B%array_type)
-        case('space') 
-          Oaa = B%getBlock('aa')*Aaa
-          OutType = 'space'
-        case('spin','general') 
-          Oaa = B%getBlock('aa')*Aaa
-          Obb = B%getBlock('bb')*Aaa
-          OutType = 'spin'
-        case default
-          call mqc_error_a('Unrecognized data type  in MQC_Integral_Multiply',6,&
-            'integralB%array_type',B%array_type)
-        end select
-      case('spin') 
-        Aaa = A%getBlock('aa')
-        Abb = A%getBlock('bb')
-        select case(B%array_type)
-        case('space','spin','general') 
-          Oaa = B%getBlock('aa')*Aaa
-          Obb = B%getBlock('bb')*Abb
-          OutType = 'spin'
-        case default
-          call mqc_error_a('Unrecognized data type  in MQC_Integral_Multiply',6,&
-            'integralB%array_type',B%array_type)
-        end select
-      case('general') 
-        Aaa = A%getBlock('aa')
-        Abb = A%getBlock('bb')
-        select case(B%array_type)
-        case('space','spin') 
-          Oaa = B%getBlock('aa')*Aaa
-          Obb = B%getBlock('bb')*Abb
-          OutType = 'spin'
-        case('general')
-          Oaa = B%getBlock('aa')*Aaa
-          Obb = B%getBlock('bb')*Abb
-          Oab = B%getBlock('ab')*A%getBlock('ab')
-          Oba = B%getBlock('ba')*A%getBlock('ba')
-          OutType = 'general'
-        case default
-          call mqc_error_a('Unrecognized data type  in MQC_Integral_Multiply',6,&
-            'integralB%array_type',B%array_type)
-        end select
-      case default
-        call mqc_error_a('Unrecognized data type  in MQC_Integral_Multiply',6,&
-          'integralA%array_type',A%array_type)
-      end select
-
-      select case(OutType)
-      case('space')
-       call mqc_integral_allocate(integralOut,'','space',Oaa)
-      case('spin')
-       call mqc_integral_allocate(integralOut,'','spin',Oaa,Obb)
-      case('general')
-       call mqc_integral_allocate(integralOut,'','general',Oaa,Obb,Oab,Oba)
-      case default
-        call mqc_error_a('Unrecognized data type in MQC_Integral_Multiply',6,&
-          'OuType',OutType)
-      end select
-
+!
+      integralOut = mqc_element_integral_multiply(A,B)
+!
       end function mqc_integral_multiply
 !
 !
@@ -25458,8 +27163,8 @@
       class(mqc_scf_integral),intent(inOut)::integral
       class(*)::power
       type(mqc_scalar)::scalar
-      type(mqc_matrix)::tmpMat1,tmpMat2,tmpMat3,tmpMat4
-      integer(kind=int64)::nDimAlpha=0
+      type(mqc_matrix)::tmpMat1,tmpMat2,tmpMat3,tmpMat4,fullMat
+      integer(kind=int64)::nDimAlpha,nDimBeta
       Character(Len=*),optional,intent(in)::label
       Character(Len=64)::myLabel
 !
@@ -25481,27 +27186,34 @@
       else
         myLabel = ''
       endIf
-
-      if(integral%type().eq.'space') then
+!
+!     MQC_Matrix_Power returns diagonal or packed (StorHerm/StorAhrm) blocks when the
+!     result has that structure, so the flag is set from the storage of the result.
+      select case (integral%type())
+      case('space')
         tmpMat1 = integral%getblock('alpha')
         call tmpMat1%power(scalar)
         call mqc_integral_allocate(integral,myLabel,'space',tmpMat1)
-      elseIf(integral%type().eq.'spin') then
+        call integral%storageSymm(tmpMat1)
+      case('spin')
         tmpMat1 = integral%getblock('alpha')
         tmpMat2 = integral%getblock('beta')
         call tmpMat1%power(scalar)
         call tmpMat2%power(scalar)
         call mqc_integral_allocate(integral,myLabel,'spin',tmpMat1,tmpMat2)
-      elseIf(integral%type().eq.'general') then
+        if(tmpMat1%getSymm().eq.tmpMat2%getSymm()) call integral%storageSymm(tmpMat1)
+      case('general')
         nDimAlpha = integral%blockSize('alpha') 
-        tmpMat1 = integral%getblock('full')
-        call tmpMat1%power(scalar)
-        tmpMat2 = tmpMat1%mat([NDimAlpha+1,-1],[NDimAlpha+1,-1])
-        tmpMat3 = tmpMat1%mat([NDimAlpha+1,-1],[1,NDimAlpha])
-        tmpMat4 = tmpMat1%mat([1,NDimAlpha],[NDimAlpha+1,-1])
-        tmpMat1 = tmpMat1%mat([1,NDimAlpha],[1,NDimAlpha])
+        nDimBeta = integral%blockSize('beta') 
+        fullMat = integral%getblock('full')
+        call fullMat%power(scalar)
+        call mqc_integral_split_full(fullMat,nDimAlpha,nDimBeta,tmpMat1,tmpMat2,tmpMat3,tmpMat4)
         call mqc_integral_allocate(integral,myLabel,'general',tmpMat1,tmpMat2,tmpMat3,tmpMat4)
-      endIf
+        call integral%storageSymm(fullMat)
+      case default
+        call mqc_error_a('Unknown integral type in mqc_scf_integral_power',6, &
+          'integral%type()',integral%type())
+      end select
 !
       end subroutine mqc_scf_integral_power   
 !
@@ -25613,13 +27325,16 @@
       Integer(kind=int64),optional::spaceDim
       type(mqc_scf_integral)::inverse
       Integer(kind=int64)::mySpaceDim1,mySpaceDim2
-
-      type(mqc_matrix)::tmpMat1,tmpMat2,tmpMat3,tmpMat4
+!
+      type(mqc_matrix)::tmpMat1,tmpMat2,tmpMat3,tmpMat4,fullMat
       integer(kind=int64)::nDimAlpha,nDimBeta
 !
+!     MQC_Matrix_MPInv returns diagonal or packed (StorHerm/StorAhrm) blocks when the
+!     result has that structure, so the flag is set from the storage of the result.
       nDimAlpha=0
       nDimBeta=0
-      if(integral%type().eq.'space') then
+      select case (integral%type())
+      case('space')
         tmpMat1 = integral%getblock('alpha')
         nDimAlpha = integral%blockSize('alpha') 
         if(present(tol)) then
@@ -25632,8 +27347,9 @@
           call inverse%init(NDimAlpha,NDimAlpha,nAlpha2=NDimAlpha,nBeta2=NDimAlpha)
         else 
           call mqc_integral_allocate(inverse,'integral psuedo inverse','space',tmpMat1)
+          call inverse%storageSymm(tmpMat1)
         end if
-      elseIf(integral%type().eq.'spin') then
+      case('spin')
         tmpMat1 = integral%getblock('alpha')
         tmpMat2 = integral%getblock('beta')
         nDimAlpha = integral%blockSize('alpha') 
@@ -25650,29 +27366,79 @@
           call inverse%init(NDimAlpha,NDimBeta,nAlpha2=NDimAlpha,nBeta2=NDimBeta)
         else
           call mqc_integral_allocate(inverse,'integral psuedo inverse','spin',tmpMat1,tmpMat2)
+          if(tmpMat1%getSymm().eq.tmpMat2%getSymm()) call inverse%storageSymm(tmpMat1)
         end if
-      elseIf(integral%type().eq.'general') then
+      case('general')
         nDimAlpha = integral%blockSize('alpha') 
         nDimBeta = integral%blockSize('beta') 
-        tmpMat1 = integral%getblock('full')
+        fullMat = integral%getblock('full')
         if(present(tol)) then
-          tmpMat1 = tmpMat1%pinv(tol,SpaceDim=mySpaceDim1)
+          fullMat = fullMat%pinv(tol,SpaceDim=mySpaceDim1)
         else
-          tmpMat1 = tmpMat1%pinv(SpaceDim=mySpaceDim1)
+          fullMat = fullMat%pinv(SpaceDim=mySpaceDim1)
         endIf
         if(present(spaceDim)) spaceDim = mySpaceDim1
         if (mySpaceDim1.eq.0) then
           call inverse%init(NDimAlpha,NDimBeta,nAlpha2=NDimAlpha,nBeta2=NDimBeta)
         else
-          tmpMat2 = tmpMat1%mat([NDimAlpha+1,-1],[NDimAlpha+1,-1])
-          tmpMat3 = tmpMat1%mat([NDimAlpha+1,-1],[1,NDimAlpha])
-          tmpMat4 = tmpMat1%mat([1,NDimAlpha],[NDimAlpha+1,-1])
-          tmpMat1 = tmpMat1%mat([1,NDimAlpha],[1,NDimAlpha])
-          call mqc_integral_allocate(inverse,'integral psuedo inverse','general',tmpMat1,tmpMat2,tmpMat3,tmpMat4)
+          call mqc_integral_split_full(fullMat,nDimAlpha,nDimBeta,tmpMat1,tmpMat2,tmpMat3,tmpMat4)
+          call mqc_integral_allocate(inverse,'integral psuedo inverse','general',tmpMat1,tmpMat2, &
+            tmpMat3,tmpMat4)
+          call inverse%storageSymm(fullMat)
         end if
-      endIf
+      case default
+        call mqc_error_a('Unknown integral type in mqc_scf_integral_pinv',6, &
+          'integral%type()',integral%type())
+      end select
 !
       end function mqc_scf_integral_pinv
+!
+!
+!     PROCEDURE MQC_Integral_Split_Full
+!
+!>    \brief <b> MQC_Integral_Split_Full splits a full (alpha+beta) matrix into the
+!>    blocks of a general MQC integral</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    A packed (StorHerm/StorAhrm/StorSymm/StorAsym) or diagonal matrix is split by
+!>    MQC_Matrix_Packed_Block_Split without unpacking: betaAlpha is implied by the
+!>    symmetry and is not formed (the caller sets the flag from the storage of the
+!>    matrix). A StorFull matrix is split into the four blocks.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_integral_split_full(fullMat,nA,nB,alpha,beta,alphaBeta,betaAlpha)
+!
+      implicit none
+      type(mqc_matrix),intent(in)::fullMat
+      integer(kind=int64),intent(in)::nA,nB
+      type(mqc_matrix),intent(out)::alpha,beta,alphaBeta,betaAlpha
+!
+      select case (fullMat%getSymm())
+      case('hermitian','antihermitian','symmetric','antisymmetric','diagonal')
+        call MQC_Matrix_Packed_Block_Split(fullMat,nA,nB,alpha,alphaBeta,beta)
+      case('unknown')
+        if(nA.gt.0) alpha = fullMat%mat([1,nA],[1,nA])
+        if(nB.gt.0) beta = fullMat%mat([nA+1,nA+nB],[nA+1,nA+nB])
+        if(nA.gt.0.and.nB.gt.0) then
+          alphaBeta = fullMat%mat([nA+1,nA+nB],[1,nA])
+          betaAlpha = fullMat%mat([1,nA],[nA+1,nA+nB])
+        endIf
+      case default
+        call mqc_error_a('Unknown storage in mqc_integral_split_full',6, &
+          'fullMat%getSymm()',fullMat%getSymm())
+      end select
+!
+      end subroutine mqc_integral_split_full
 !
 !
 !     PROCEDURE MQC_twoERIs_At
@@ -27429,13 +29195,319 @@
 !>        = 'alphaBeta': alpha-beta spin block
 !>        = 'betaAlpha': beta-alpha spin block.
 !>    \endverbatim
+!>
+!>    \param[in] Symm
+!>    \verbatim
+!>        Symm is character(len=*),optional
+!>        Writes the element at (I,J) and its mirror at (J,I), so the symmetry is
+!>        kept:
+!>        = 'hermitian' or 'herm':         mirror = conjg(element)
+!>        = 'antihermitian' or 'antiherm': mirror = -conjg(element)
+!>        = 'symmetric' or 'sym':          mirror = element
+!>        = 'antisymmetric' or 'antisym':  mirror = -element
+!>    \endverbatim
+!>
+!>    Symmetry flag of the integral (see MQC_Integral_Set_Symmetry):
+!>    1. Without Symm, the flag is cleared, except for an element on the diagonal
+!>       of alpha or beta that is compatible with it (real for 'hermitian',
+!>       imaginary for 'antihermitian', any for 'symmetric', zero for
+!>       'antisymmetric').
+!>    2. With Symm equal to the flag, the pair is written and the flag is kept
+!>       (a diagonal element must be compatible with it).
+!>    3. On a zero integral ('fullsymmetric'), a zero element keeps it zero, a
+!>       write on the diagonal without Symm makes it diagonal (blocks stored as
+!>       StorDiag; flag 'realdiag', 'imagdiag' or 'complexdiag' from the diagonal)
+!>       and a write with Symm gives it that symmetry.
+!>    4. On a diagonal integral, a write on the diagonal keeps it diagonal (the
+!>       flag follows the new diagonal); an off-diagonal write with Symm gives it
+!>       that symmetry when the diagonal allows it ('symmetric' always,
+!>       'hermitian' for realdiag, 'antihermitian' for imagdiag).
+!>    5. Otherwise the integral is expanded and the flag becomes 'unknown'
+!>       ('asymmetric' for a non-square integral).
 !
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
 !>    \date 2024
 !
-      subroutine mqc_integral_put(integral,element,i,j,spinBlockIn)
+      subroutine mqc_integral_put(integral,element,i,j,spinBlockIn,symm)
+!
+      implicit none
+      class(mqc_scf_integral)::integral
+      class(*),intent(in)::i,j
+      type(mqc_scalar)::element
+      character(len=*),optional,intent(in)::spinBlockIn,symm
+      integer(kind=int64)::myI,myJ,locI,locJ,nA1,nA2
+      character(len=64)::mySymm,block,mirrorBlock
+      character(len=16)::oldSymmetry
+      type(mqc_scalar)::mirrorEl,zeroEl
+      real(kind=real64)::thresh
+      logical::diag,keep,done
+!
+      select type (i)
+      type is (integer)
+        myI = i
+      type is (mqc_scalar)
+        myI = i
+      class default
+        call mqc_error('index type not defined in MQC_integral_put')
+      end select
+      select type (j)
+      type is (integer)
+        myJ = j
+      type is (mqc_scalar)
+        myJ = j
+      class default
+        call mqc_error('index type not defined in MQC_integral_put')
+      end select
+      if(MQC_very_small.gt.0.0) then
+        thresh = MQC_very_small
+      else
+        thresh = 1e-10
+      endIf
+      zeroEl = 0
+!
+      mySymm = ''
+      if(present(symm)) then
+        call string_change_case(symm,'l',mySymm)
+        select case (mySymm)
+        case('herm','hermitian')
+          mySymm = 'hermitian'
+        case('antiherm','antihermitian')
+          mySymm = 'antihermitian'
+        case('sym','symmetric')
+          mySymm = 'symmetric'
+        case('antisym','antisymmetric')
+          mySymm = 'antisymmetric'
+        case default
+          call mqc_error_a('Invalid symm option sent to mqc_integral_put',6,'mySymm',mySymm)
+        end select
+      endIf
+!
+!     Block and local indices of the element.
+!
+      if(present(spinBlockIn)) then
+        call string_change_case(spinBlockIn,'l',block)
+        locI = myI
+        locJ = myJ
+      else
+        nA1 = integral%blockSize('alpha',1)
+        nA2 = integral%blockSize('alpha',2)
+        if(myI.le.nA1.and.myJ.le.nA2) then
+          block = 'alpha'
+          locI = myI
+          locJ = myJ
+        elseIf(myI.gt.nA1.and.myJ.gt.nA2) then
+          block = 'beta'
+          locI = myI - nA1
+          locJ = myJ - nA2
+        elseIf(myI.gt.nA1) then
+          block = 'alphabeta'
+          locI = myI - nA1
+          locJ = myJ
+        else
+          block = 'betaalpha'
+          locI = myI
+          locJ = myJ - nA2
+        endIf
+      endIf
+      diag = (block.eq.'alpha'.or.block.eq.'beta').and.locI.eq.locJ
+!
+!     done becomes .true. once a stage has written the element (or there is nothing to
+!     write, e.g. a zero into a block that is not stored).
+      done = .false.
+!
+!     A zero integral ('fullsymmetric'): writing zero keeps it zero, a write on the
+!     diagonal makes it diagonal (realdiag, imagdiag or complexdiag) and a write
+!     with Symm gives it that symmetry (written by the stages below).
+!
+      if(integral%symmetry.eq.'fullsymmetric') then
+        if(abs(element).le.thresh) then
+          done = .true.
+        elseIf(mySymm.eq.''.and.diag.and.(block.eq.'alpha'.or.integral%array_type.ne.'space')) then
+          if(block.eq.'alpha') then
+            call integral%alpha%init(integral%blockSize('alpha',1),integral%blockSize('alpha',2),zeroEl)
+            call MQC_Matrix_Full2Diag(integral%alpha)
+            call integral%alpha%put(element,locI,locJ)
+          else
+            call integral%beta%init(integral%blockSize('beta',1),integral%blockSize('beta',2),zeroEl)
+            call MQC_Matrix_Full2Diag(integral%beta)
+            call integral%beta%put(element,locI,locJ)
+          endIf
+          integral%symmetry = integral%diagLabel()
+          done = .true.
+        elseIf(mySymm.ne.'') then
+          if(.not.diag.or.diagCompatible(mySymm,element)) integral%symmetry = mySymm
+        endIf
+      endIf
+!
+!     A diagonal integral: a write on the diagonal keeps it diagonal; an off-diagonal
+!     write with Symm gives it that symmetry when the diagonal allows it.
+!
+      if(.not.done.and.integral%isDiag()) then
+        if(diag.and.(block.eq.'alpha'.or.integral%array_type.ne.'space')) then
+          if(block.eq.'alpha') then
+            if(integral%hasAlpha().or.abs(element).gt.thresh) then
+              if(.not.integral%hasAlpha()) then
+                call integral%alpha%init(integral%blockSize('alpha',1),integral%blockSize('alpha',2),zeroEl)
+                call MQC_Matrix_Full2Diag(integral%alpha)
+              endIf
+              call integral%alpha%put(element,locI,locJ)
+            endIf
+          else
+            if(integral%hasBeta().or.abs(element).gt.thresh) then
+              if(.not.integral%hasBeta()) then
+                call integral%beta%init(integral%blockSize('beta',1),integral%blockSize('beta',2),zeroEl)
+                call MQC_Matrix_Full2Diag(integral%beta)
+              endIf
+              call integral%beta%put(element,locI,locJ)
+            endIf
+          endIf
+          integral%symmetry = integral%diagLabel()
+          done = .true.
+        elseIf(mySymm.ne.'') then
+          if(mqc_integral_test_symmetric(integral,mySymm,.true.)) then
+            integral%symmetry = mySymm
+            call integral%compressSymm()
+          endIf
+        endIf
+      endIf
+!
+!     Writes that keep the symmetry flag.
+!
+      if(.not.done.and.integral%isCompressed()) then
+        keep = .false.
+        if(mySymm.eq.'') then
+          keep = diag.and.diagCompatible(integral%symmetry,element)
+        elseIf(mySymm.eq.integral%symmetry) then
+          keep = .not.diag.or.diagCompatible(integral%symmetry,element)
+        endIf
+        if(keep) then
+          select case (block)
+          case('alpha')
+            if(integral%hasAlpha().or.abs(element).gt.thresh) then
+              if(.not.integral%hasAlpha()) then
+                call integral%alpha%init(integral%blockSize('alpha',1),integral%blockSize('alpha',2),zeroEl)
+                call mqc_matrix_pack(integral%alpha,integral%symmetry)
+              endIf
+              if(diag) then
+                call integral%alpha%put(element,locI,locJ)
+              else
+                call integral%alpha%put(element,locI,locJ,integral%symmetry)
+              endIf
+            endIf
+            done = .true.
+          case('beta')
+            if(integral%array_type.ne.'space') then
+              if(integral%hasBeta().or.abs(element).gt.thresh) then
+                if(.not.integral%hasBeta()) then
+                  call integral%beta%init(integral%blockSize('beta',1),integral%blockSize('beta',2),zeroEl)
+                  call mqc_matrix_pack(integral%beta,integral%symmetry)
+                endIf
+                if(diag) then
+                  call integral%beta%put(element,locI,locJ)
+                else
+                  call integral%beta%put(element,locI,locJ,integral%symmetry)
+                endIf
+              endIf
+              done = .true.
+            endIf
+          case('alphabeta','betaalpha')
+            if(abs(element).le.thresh.and.(integral%array_type.ne.'general'.or. &
+              .not.MQC_Matrix_isAllocated(integral%alphaBeta))) then
+              done = .true.
+            else
+              if(integral%array_type.ne.'general') then
+                oldSymmetry = integral%symmetry
+                integral = integral%changeType('general')
+                integral%symmetry = oldSymmetry
+                call integral%compressSymm()
+              endIf
+              if(.not.MQC_Matrix_isAllocated(integral%alphaBeta)) &
+                call integral%alphaBeta%init(integral%blockSize('beta',1),integral%blockSize('alpha',2),zeroEl)
+              if(block.eq.'alphabeta') then
+                call integral%alphaBeta%put(element,locI,locJ)
+              else
+                call integral%alphaBeta%put(mirror(integral%symmetry,element),locJ,locI)
+              endIf
+              done = .true.
+            endIf
+          case default
+            call mqc_error_A('Unknown spin block in mqc_integral_put',6,'block',block)
+          end select
+        endIf
+      endIf
+!
+!     The symmetry is not kept: expand, write the element and, with Symm, its mirror.
+!
+      if(.not.done) then
+        call integral%expandSymm()
+        call mqc_integral_put_raw(integral,element,myI,myJ,spinBlockIn)
+        if(mySymm.ne.''.and..not.diag) then
+          mirrorEl = mirror(mySymm,element)
+          if(present(spinBlockIn)) then
+            select case (block)
+            case('alphabeta')
+              mirrorBlock = 'betaalpha'
+            case('betaalpha')
+              mirrorBlock = 'alphabeta'
+            case('alpha','beta')
+              mirrorBlock = block
+            case default
+              call mqc_error_A('Unknown spin block in mqc_integral_put',6,'block',block)
+            end select
+            call mqc_integral_put_raw(integral,mirrorEl,myJ,myI,mirrorBlock)
+          else
+            call mqc_integral_put_raw(integral,mirrorEl,myJ,myI)
+          endIf
+        endIf
+      endIf
+!
+      contains
+!
+        function diagCompatible(symmetry,scalar) result(ok)
+        character(len=*),intent(in)::symmetry
+        type(mqc_scalar),intent(in)::scalar
+        logical::ok
+        complex(kind=real64)::z
+        z = scalar%cval()
+        select case (symmetry)
+        case('hermitian')
+          ok = abs(aimag(z)).le.thresh
+        case('antihermitian')
+          ok = abs(real(z)).le.thresh
+        case('antisymmetric')
+          ok = abs(real(z)).le.thresh.and.abs(aimag(z)).le.thresh
+        case default
+          ok = .true.
+        end select
+        end function diagCompatible
+!
+        function mirror(symmetry,scalar) result(mirrorScalar)
+        character(len=*),intent(in)::symmetry
+        type(mqc_scalar),intent(in)::scalar
+        type(mqc_scalar)::mirrorScalar
+        select case (symmetry)
+        case('hermitian')
+          mirrorScalar = conjg(scalar)
+        case('antihermitian')
+          mirrorScalar = (-1)*conjg(scalar)
+        case('antisymmetric')
+          mirrorScalar = (-1)*scalar
+        case default
+          mirrorScalar = scalar
+        end select
+        end function mirror
+!
+      end subroutine mqc_integral_put
+!
+!
+!     PROCEDURE MQC_Integral_Put_Raw
+!
+!>    \brief <b> MQC_Integral_Put_Raw writes one element of an MQC integral without
+!>    looking at its symmetry flag (called by MQC_Integral_Put)</b>
+!
+      subroutine mqc_integral_put_raw(integral,element,i,j,spinBlockIn)
 !
       implicit none
       class(mqc_scf_integral)::integral
@@ -27465,6 +29537,7 @@
         call mqc_error('index type not defined in MQC_integral_put')
       end select
 
+      call integral%expandSymm()
       myZeroThresh = MQC_very_small
       nonZero = abs(element).gt.myZeroThresh
       zeroEl = 0
@@ -27638,7 +29711,7 @@
         endIf
       endIf
 
-      end subroutine mqc_integral_put
+      end subroutine mqc_integral_put_raw
 !
 !
 !     PROCEDURE MQC_Integral_At
@@ -27762,7 +29835,7 @@
           elseif(spinblock.eq.'alphabeta') then
             if(integral%hasAlphaBeta()) element = integral%alphaBeta%at(myI,myJ)
           elseif(spinblock.eq.'betaalpha') then
-            if(integral%hasBetaAlpha()) element = integral%betaAlpha%at(myI,myJ)
+            if(integral%hasBetaAlpha()) element = integral%baElement(myI,myJ)
           else
             call mqc_error_A('SpinBlock type not valid in MQC_Integral_At',6,'SpinBlock',SpinBlock)
           endIf
@@ -27794,7 +29867,7 @@
             if(integral%hasAlphaBeta()) element = integral%alphaBeta%at(myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
-            if(integral%hasBetaAlpha()) element = integral%betaAlpha%at(myI,myJ)
+            if(integral%hasBetaAlpha()) element = integral%baElement(myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
             myJ = myJ - integral%blockSize('alpha',2)
@@ -28806,7 +30879,9 @@
 !>
 !>    MQC_Eigenvalues_to_integral is a function that returns an 
 !>    MQC_SCF_Integral object with the MQC_SCF_Eigenvalues values
-!>    on the diagonal.
+!>    on the diagonal. The blocks are stored diagonal (StorDiag) and the flag
+!>    is 'realdiag', 'imagdiag' or 'complexdiag' from the eigenvalues
+!>    ('fullsymmetric' if they are all zero).
 !>
 !>    \endverbatim
 !
@@ -28820,7 +30895,7 @@
 !
 !     Authors:
 !     ========
-!>    \author L. M. Thompson
+!>    \author L. M. Thompson, M. M. F. Moraes
 !>    \date 2026
 !
       function mqc_eigenvalues_to_integral(eigenvalues) result(output)
@@ -28832,11 +30907,11 @@
       select case(eigenvalues%array_type)
       case('space')
         call mqc_integral_allocate(output,'','space',&
-          MQC_Matrix_DiagMatrix_Put_Vector_Func(eigenvalues%getBlock('alpha')))
+          MQC_Matrix_DiagMatrix_Put_Vector_Func(eigenvalues%getBlock('alpha')),symmetry='diagonal')
       case('spin','general')
         call mqc_integral_allocate(output,'','spin',&
           MQC_Matrix_DiagMatrix_Put_Vector_Func(eigenvalues%getBlock('alpha')),&
-          MQC_Matrix_DiagMatrix_Put_Vector_Func(eigenvalues%getBlock('beta')))
+          MQC_Matrix_DiagMatrix_Put_Vector_Func(eigenvalues%getBlock('beta')),symmetry='diagonal')
       case default
         call mqc_error_a('Unrecognized data type in &
           &mqc_eigenvalues_to_integral',6,'eigenvalues%array_type',&
@@ -31041,7 +33116,7 @@
             MatEl = MatEl + Sgn*OnePartInts%AlphaBeta%at(Orbs(1),Orbs(2))
           ElseIf(Spin(1).eq.1.and.Spin(2).eq.0) then
 !            Call MQC_Print(Sgn*OnePartInts%BetaAlpha%at(Orbs(1),Orbs(2)),iOut,'1 beta and 2 alpha, adding core:')
-            MatEl = MatEl + Sgn*OnePartInts%BetaAlpha%at(Orbs(1),Orbs(2))
+            MatEl = MatEl + Sgn*OnePartInts%baElement(Orbs(1),Orbs(2))
           EndIf
         EndIf
 

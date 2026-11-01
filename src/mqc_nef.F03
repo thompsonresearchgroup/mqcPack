@@ -10388,39 +10388,26 @@
         end subroutine setAxisMap
 !
         function rawAxisTransform(rawIn,axisRow,axisCol,coeffRowDense,coeffColDense) result(rawOut)
+!       Transforms the axes (axisRow,axisCol) = (3,4), otherwise (1,2), of rawIn:
+!       out(..p..q..) = sum conjg(coeffRow(x,p)) coeffCol(y,q) in(..x..y..), with
+!       R4_Trans_Full (identity on the two other axes, which keeps their symmetry).
         implicit none
         type(mqc_r4tensor),intent(in)::rawIn
         integer(kind=int64),intent(in)::axisRow,axisCol
         type(mqc_matrix),intent(in)::coeffRowDense,coeffColDense
         type(mqc_r4tensor)::rawOut
-        type(mqc_matrix)::X
-        integer(kind=int64)::i,j,nOther1,nOther2,nRowOutLocal,nColOutLocal
-!
-        nRowOutLocal = size(coeffRowDense,2)
-        nColOutLocal = size(coeffColDense,2)
+        type(mqc_matrix)::Id1,Id2
 !
         if(axisRow.eq.3.and.axisCol.eq.4) then
-          nOther1 = size(rawIn,1)
-          nOther2 = size(rawIn,2)
-          call rawOut%init(nOther1,nOther2,nRowOutLocal,nColOutLocal)
-          do i=1,nOther1
-            do j=1,nOther2
-              X = rawIn%mat([i],[j],[0],[0])
-              X = Dagger(coeffRowDense).dot.X.dot.coeffColDense
-              call rawOut%mput(X,[i],[j],[0],[0])
-            end do
-          end do
+          Id1 = identity(size(rawIn,1),size(rawIn,1))
+          Id2 = identity(size(rawIn,2),size(rawIn,2))
+          rawOut = R4_Trans_Full(rawIn,coeffRowDense,coeffColDense,Id1,Id2,Map=[3,4,1,2], &
+            Conj=[.false.,.false.,.true.,.false.])
         else
-          nOther1 = size(rawIn,3)
-          nOther2 = size(rawIn,4)
-          call rawOut%init(nRowOutLocal,nColOutLocal,nOther1,nOther2)
-          do i=1,nOther1
-            do j=1,nOther2
-              X = rawIn%mat([0],[0],[i],[j])
-              X = Dagger(coeffRowDense).dot.X.dot.coeffColDense
-              call rawOut%mput(X,[0],[0],[i],[j])
-            end do
-          end do
+          Id1 = identity(size(rawIn,3),size(rawIn,3))
+          Id2 = identity(size(rawIn,4),size(rawIn,4))
+          rawOut = R4_Trans_Full(rawIn,coeffRowDense,coeffColDense,Id1,Id2,Map=[1,2,3,4], &
+            Conj=[.true.,.false.,.false.,.false.])
         end if
         end function rawAxisTransform
 !

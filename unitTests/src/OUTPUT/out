@@ -435,15 +435,15 @@
  PASS  real-general transform block bbab
  PASS  real-general transform block bbba
  PASS  real-general transform block bbbb
- real-general symmetry aabb -> bbaa partial=  5.551115E-17 TwoERI_Trans=  0.000000E+00
- real-general symmetry aaab -> aaba partial=  1.040834E-17 TwoERI_Trans=  0.000000E+00
- real-general symmetry aaab -> abaa partial=  9.540979E-18 TwoERI_Trans=  0.000000E+00
- real-general symmetry aaab -> baaa partial=  1.214306E-17 TwoERI_Trans=  0.000000E+00
- real-general symmetry abba -> baab partial=  2.602085E-18 TwoERI_Trans=  0.000000E+00
- real-general symmetry abab -> baba partial=  8.673617E-19 TwoERI_Trans=  0.000000E+00
- real-general symmetry abbb -> bbba partial=  2.081668E-17 TwoERI_Trans=  0.000000E+00
- real-general symmetry abbb -> bbab partial=  1.387779E-17 TwoERI_Trans=  0.000000E+00
- real-general symmetry abbb -> babb partial=  1.040834E-17 TwoERI_Trans=  0.000000E+00
+ PASS  real-general symmetry aabb -> bbaa
+ PASS  real-general symmetry aaab -> aaba
+ PASS  real-general symmetry aaab -> abaa
+ PASS  real-general symmetry aaab -> baaa
+ PASS  real-general symmetry abba -> baab
+ PASS  real-general symmetry abab -> baba
+ PASS  real-general symmetry abbb -> bbba
+ PASS  real-general symmetry abbb -> bbab
+ PASS  real-general symmetry abbb -> babb
  real-general full tensor oracle error=  1.387779E-16
  PASS  asymmetric four-coefficient transform block aaaa
  PASS  asymmetric four-coefficient transform block aaab

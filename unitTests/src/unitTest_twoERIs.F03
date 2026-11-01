@@ -35,7 +35,7 @@
       type(mqc_scf_integral)::generalMO,generalMO2
       type(mqc_scf_integral),dimension(4)::coeffFull
       real(kind=real64)::got,expected
-      real(kind=real64)::partialError,transError,partialPairError,transPairError,fullError,atError
+      real(kind=real64)::partialError,transError,fullError,atError
       real(kind=real64)::v1,v2,v3,v4,v5,v6,v7
       real(kind=real64)::v8,v9,v10,v11,v12
       complex(kind=real64)::directValue,partialValue,transValue
@@ -3900,15 +3900,15 @@
         end if
       end do
 
-      call report_partner('aabb','bbaa',[3,4,1,2],.false.)
-      call report_partner('aaab','aaba',[2,1,4,3],.true.)
-      call report_partner('aaab','abaa',[3,4,1,2],.false.)
-      call report_partner('aaab','baaa',[4,3,2,1],.true.)
-      call report_partner('abba','baab',[3,4,1,2],.false.)
-      call report_partner('abab','baba',[2,1,4,3],.true.)
-      call report_partner('abbb','bbba',[4,3,2,1],.true.)
-      call report_partner('abbb','bbab',[3,4,1,2],.false.)
-      call report_partner('abbb','babb',[2,1,4,3],.true.)
+      call report_partner('aabb','bbaa',[3,4,1,2],.false.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('aaab','aaba',[2,1,4,3],.true.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('aaab','abaa',[3,4,1,2],.false.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('aaab','baaa',[4,3,2,1],.true.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('abba','baab',[3,4,1,2],.false.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('abab','baba',[2,1,4,3],.true.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('abbb','bbba',[4,3,2,1],.true.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('abbb','bbab',[3,4,1,2],.false.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('abbb','babb',[2,1,4,3],.true.,eriPartial,eriTrans,tol,nfail)
 
       tD=eriTrans%getBlock('full')
       fullError=0.0_real64
@@ -4050,19 +4050,25 @@
 
       contains
 
-      subroutine report_partner(storedLabel,partnerLabel,order,doConjg)
+      subroutine report_partner(storedLabel,partnerLabel,order,doConjg,ePartial,eTrans,tolIn,nFailIO)
+!       Compares a stored spin block with its symmetry partner in the partial-contraction
+!       and TwoERI_Trans results; PASS when both differences are within tolIn.
         character(len=4),intent(in)::storedLabel,partnerLabel
         integer,dimension(4),intent(in)::order
         logical,intent(in)::doConjg
+        type(mqc_twoERIs),intent(in)::ePartial,eTrans
+        real(kind=real64),intent(in)::tolIn
+        integer,intent(inout)::nFailIO
         type(mqc_r4tensor)::storedBlock,partnerBlock
         type(mqc_scalar)::storedScalar,partnerScalar
         integer::i1,i2,i3,i4
         integer,dimension(4)::idx
         complex(kind=real64)::storedValue,partnerValue
+        real(kind=real64)::pairPartial,pairTrans
 
-        storedBlock=eriPartial%getBlock(storedLabel)
-        partnerBlock=eriPartial%getBlock(partnerLabel)
-        partialPairError=0.0_real64
+        storedBlock=ePartial%getBlock(storedLabel)
+        partnerBlock=ePartial%getBlock(partnerLabel)
+        pairPartial=0.0
         do i1=1,size(partnerBlock,1); do i2=1,size(partnerBlock,2)
           do i3=1,size(partnerBlock,3); do i4=1,size(partnerBlock,4)
             idx=[i1,i2,i3,i4]
@@ -4072,13 +4078,13 @@
             storedValue=storedScalar%cval()
             if(doConjg) storedValue=conjg(storedValue)
             partnerValue=partnerScalar%cval()
-            partialPairError=max(partialPairError,abs(storedValue-partnerValue))
+            pairPartial=max(pairPartial,abs(storedValue-partnerValue))
           end do; end do
         end do; end do
 
-        storedBlock=eriTrans%getBlock(storedLabel)
-        partnerBlock=eriTrans%getBlock(partnerLabel)
-        transPairError=0.0_real64
+        storedBlock=eTrans%getBlock(storedLabel)
+        partnerBlock=eTrans%getBlock(partnerLabel)
+        pairTrans=0.0
         do i1=1,size(partnerBlock,1); do i2=1,size(partnerBlock,2)
           do i3=1,size(partnerBlock,3); do i4=1,size(partnerBlock,4)
             idx=[i1,i2,i3,i4]
@@ -4088,12 +4094,16 @@
             storedValue=storedScalar%cval()
             if(doConjg) storedValue=conjg(storedValue)
             partnerValue=partnerScalar%cval()
-            transPairError=max(transPairError,abs(storedValue-partnerValue))
+            pairTrans=max(pairTrans,abs(storedValue-partnerValue))
           end do; end do
         end do; end do
-        write(*,'(1X,A,1X,A4,A,A4,2(A,ES14.6))') 'real-general symmetry',&
-          storedLabel,' -> ',partnerLabel,' partial=',partialPairError,&
-          ' TwoERI_Trans=',transPairError
+        if(pairPartial.le.tolIn.and.pairTrans.le.tolIn) then
+          write(*,'(1X,A,1X,A4,A,A4)') 'PASS  real-general symmetry',storedLabel,' -> ',partnerLabel
+        else
+          write(*,'(1X,A,1X,A4,A,A4,2(A,ES14.6))') 'FAIL  real-general symmetry',&
+            storedLabel,' -> ',partnerLabel,' partial=',pairPartial,' TwoERI_Trans=',pairTrans
+          nFailIO=nFailIO+1
+        end if
       end subroutine report_partner
 !
       end program unitTest_twoERIs

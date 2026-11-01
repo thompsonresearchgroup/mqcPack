@@ -5827,7 +5827,11 @@
       select case (mylabel)
       case('regular')
         tmpR4Tensor = ERIs(1)
-        if(.not.MQC_R4Tensor_HaveSymmetric(tmpR4Tensor)) call MQC_R4Tensor_Full2Symm(tmpR4Tensor)
+!       the file format is chemist-order 8-fold packing
+        if(tmpR4Tensor%getSymm().ne.'R_8_1234') then
+          if(MQC_R4Tensor_HaveSymmetric(tmpR4Tensor)) call MQC_R4Tensor_Symm2Full(tmpR4Tensor)
+          call MQC_R4Tensor_Full2Symm(tmpR4Tensor,'R_8_1234')
+        endIf
         Rr4TenOut = tmpR4Tensor
           if(.not.allocated(RvectorOut)) allocate(RvectorOut(size(Rr4TenOut,1)))
         RvectorOut(:) = Rr4TenOut(:,1,1,1)
@@ -5836,7 +5840,11 @@
       case('raffenetti')
         do i = 1,size(ERIs)
           tmpR4Tensor = ERIs(i)
-          if(.not.MQC_R4Tensor_HaveSymmetric(tmpR4Tensor)) call MQC_R4Tensor_Full2Symm(tmpR4Tensor)
+!         the file format is chemist-order 8-fold packing
+          if(tmpR4Tensor%getSymm().ne.'R_8_1234') then
+            if(MQC_R4Tensor_HaveSymmetric(tmpR4Tensor)) call MQC_R4Tensor_Symm2Full(tmpR4Tensor)
+            call MQC_R4Tensor_Full2Symm(tmpR4Tensor,'R_8_1234')
+          endIf
           Rr4TenOut = tmpR4Tensor
           if(.not.allocated(RvectorOut)) allocate(RvectorOut(size(Rr4TenOut,1)*size(ERIs)))
           RvectorOut((i-1)*size(Rr4TenOut,1)+1:) = Rr4TenOut(:,1,1,1)

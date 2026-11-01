@@ -313,10 +313,100 @@
       End Type MQC_Explicit_Matrix_Operator
 !     
 !>    \brief <b> Rank 4 array variable</b>
+!>
+!>    \verbatim
+!>
+!>    Storage (symmetry class) of an MQC_R4Tensor, set at allocation by
+!>    MQC_Allocate_R4Tensor (names accepted: see MQC_R4Symm_Label).
+!>    Chemist notation (ij|kl) = int phi_i*(1) phi_j(1) phi_k*(2) phi_l(2);
+!>    positions 1,2,3,4 = i,j,k,l; A, B, C, D are distinct orbital bases;
+!>    * = complex conjugate. Label: short name / systematic name
+!>    <R|C|S|Z>_<fold>_<position groups> (S = same for real and complex,
+!>    Z = zero tensor).
+!>
+!>    The label stores the general symmetry (a canonical class); IndexOrder
+!>    stores the specifics. Packed classes: IndexOrder is a data view, element
+!>    y = (y1,y2,y3,y4) of the tensor is the stored (chemist-ordered) element x
+!>    with x(IndexOrder(q)) = y(q); 1324 is the physicist notation
+!>    <ij|kl> = (ik|jl). Zero and S_1 classes: IndexOrder only places the
+!>    basis groups (layout), view position q belongs to the group of canonical
+!>    position IndexOrder(q); data, if any, stays in physical order. getSymm
+!>    returns <class>, <class>_Phys (IndexOrder 1324) or <class>_Ord<4 digits>.
+!>    DoConjg: a pending complex conjugation of the stored data (packed only).
+!>
+!>    Packed classes (canonical, chemist positions):
+!>    | layout (chemist positions)         | label                  | equalities                              | fold |
+!>    |------------------------------------+------------------------+-----------------------------------------+------|
+!>    | i,j,k,l in A                       | R8        /  R_8_1234  | (ij|kl) = (ji|kl) = (ij|lk) = (ji|lk) = | 8    |
+!>    |                                    |                        |   (kl|ij) = (lk|ij) = (kl|ji) = (lk|ji) |      |
+!>    | i,j,k,l in A                       | S4        /  S_4_1234  | (ij|kl) = (kl|ij) = (ji|lk)* = (lk|ji)* | 4    |
+!>    | i,j,k,l in A (complex data)        | Klein / S_4_1234_plain | (ij|kl) = (kl|ij) = (ji|lk) = (lk|ji)   | 4    |
+!>    | i,j in A; k,l in B                 | R4        /  R_4_12_34 | (ij|kl) = (ji|kl) = (ij|lk) = (ji|lk)   | 4    |
+!>    | i,j in A; k,l in B                 | S2Pair    /  S_2_12_34 | (ij|kl) = (ji|lk)*                      | 2    |
+!>    | i,k in A; j,l in B                 | S2Exchange/  S_2_13_24 | (ij|kl) = (kl|ij)                       | 2    |
+!>    | i,j in A; k in B; l in C           | R2BPair   / R_2_12_3_4 | (ij|kl) = (ji|kl)                       | 2    |
+!>
+!>    Zero tensors (canonical; no stored data, class and IndexOrder follow from
+!>    the dimensions, see MQC_R4Symm_Zero_Class):
+!>    | dims (canonical)                   | label                  | equalities                              | fold |
+!>    |------------------------------------+------------------------+-----------------------------------------+------|
+!>    | I=J=K=L                            | Z_24_1234              | (ij|kl) = 0                             | 24   |
+!>    | I=J=K                              | Z_6_123_4              | (ij|kl) = 0                             | 6    |
+!>    | I=J; K=L                           | Z_4_12_34              | (ij|kl) = 0                             | 4    |
+!>    | I=J                                | Z_2_12_3_4             | (ij|kl) = 0                             | 2    |
+!>    | all different                      | Z_1_1_2_3_4            | (ij|kl) = 0                             | 1    |
+!>
+!>    Full-stored (canonical; data in physical order):
+!>    | layout (canonical)                 | label                  | equalities                              | fold |
+!>    |------------------------------------+------------------------+-----------------------------------------+------|
+!>    | i,j,k,l in A                       | S_1_1234               | -                                       | 1    |
+!>    | i,j,k in A; l in B                 | S_1_123_4              | -                                       | 1    |
+!>    | i,j in A; k,l in B                 | S_1_12_34              | -                                       | 1    |
+!>    | i,j in A; k in B; l in C           | S_1_12_3_4             | -                                       | 1    |
+!>    | i in A; j in B; k in C; l in D     | S_1_1_2_3_4            | -                                       | 1    |
+!>    | any (no symmetry assumed)          | StorFull               | -                                       | 1    |
+!>
+!>    Views, accepted as storage labels (class + IndexOrder):
+!>    | layout                             | label                  | equalities                 | class, IndexOrder |
+!>    |------------------------------------+------------------------+----------------------------+-------------------|
+!>    | i,k in A; j,l in B                 | R2Exchange/ R_2_13_24  | (ij|kl) = (kl|ij)          | S_2_13_24,  1234  |
+!>    | i,l in A; j,k in B                 | R2Extremes/ R_2_14_23  | (ij|kl) = (lk|ji)          | S_2_13_24,  1243  |
+!>    | i,l in A; j,k in B                 | S2Extremes/ S_2_14_23  | (ij|kl) = (lk|ji)*         | S_2_12_34,  1342  |
+!>    | i,j in A; k,l in B                 |        S_2_12_34_plain | (ij|kl) = (ji|lk)          | S_2_13_24,  1324  |
+!>    | k,l in A; i in B; j in C           | R2KPair   / R_2_34_1_2 | (ij|kl) = (ij|lk)          | R_2_12_3_4, 3412  |
+!>    | i,k in A; j in B; l in C           |             S_1_13_2_4 | -                          | S_1_12_3_4, 1324  |
+!>    | i,l in A; j in B; k in C           |             S_1_14_2_3 | -                          | S_1_12_3_4, 1342  |
+!>    | j,k in A; i in B; l in C           |             S_1_23_1_4 | -                          | S_1_12_3_4, 3124  |
+!>    | j,l in A; i in B; k in C           |             S_1_24_1_3 | -                          | S_1_12_3_4, 3142  |
+!>    | I=J=L (zero)                       |             Z_6_124_3  | (ij|kl) = 0                | Z_6_123_4,  1243  |
+!>    | I=K=L (zero)                       |             Z_6_134_2  | (ij|kl) = 0                | Z_6_123_4,  1423  |
+!>    | J=K=L (zero)                       |             Z_6_234_1  | (ij|kl) = 0                | Z_6_123_4,  4123  |
+!>    | I=K; J=L (zero)                    |             Z_4_13_24  | (ij|kl) = 0                | Z_4_12_34,  1324  |
+!>    | I=L; J=K (zero)                    |             Z_4_14_23  | (ij|kl) = 0                | Z_4_12_34,  1342  |
+!>    | I=K (zero)                         |             Z_2_13_2_4 | (ij|kl) = 0                | Z_2_12_3_4, 1324  |
+!>    | I=L (zero)                         |             Z_2_14_2_3 | (ij|kl) = 0                | Z_2_12_3_4, 1342  |
+!>    | J=K (zero)                         |             Z_2_23_1_4 | (ij|kl) = 0                | Z_2_12_3_4, 3124  |
+!>    | J=L (zero)                         |             Z_2_24_1_3 | (ij|kl) = 0                | Z_2_12_3_4, 3142  |
+!>    | K=L (zero)                         |             Z_2_34_1_2 | (ij|kl) = 0                | Z_2_12_3_4, 3412  |
+!>    A label followed by '_Phys' (IndexOrder 1324) or '_Ord<4 digits>' is
+!>    also accepted; getSymm returns these forms. '_plain' (S_4_1234 only; it
+!>    comes before the order suffix, e.g. S_4_1234_plain_Ord1432) marks a
+!>    complex tensor whose S_4_1234 equalities hold without conjugation; for
+!>    real or integer data it is dropped.
+!>
+!>    Fold-1 and zero labels store a full I x J x K x L array (fold 1) or no
+!>    data (zero); the packed classes store one element per set of equal
+!>    elements (length from symIndexSize).
+!>
+!>    \endverbatim
       Type MQC_R4Tensor
         Integer(kind=int64),Private::I=0,J=0,K=0,L=0
-        Character(Len=64),Private::Data_Type ! Real,Integer,Complex
-        Character(Len=64),Private::Storage ! StorFull,StorSymm
+        Character(Len=64),Private::Data_Type='unallocated' ! Real,Integer,Complex
+        Character(Len=64),Private::Storage='unallocated' ! a label of the tables above
+        Integer(kind=int64),Dimension(4),Private::IndexOrder=[1,2,3,4] ! view order (packed only)
+        Logical,Private::DoConjg=.False. ! lazy complex conjugation (packed only)
+        Logical,Private::PlainSymm=.False. ! S_4_1234_plain: equalities without conjugation (complex only)
+        Integer(kind=int64),Private::SymCode=-1 ! hash code of Storage (MQC_R4Symm_Code), set with Storage
         Real(kind=real64),Allocatable,Private::RTen(:,:,:,:)
         Integer(kind=int64),Allocatable,Private::ITen(:,:,:,:)
         Complex(Kind=real64),Allocatable,Private::CTen(:,:,:,:)
@@ -339,6 +429,8 @@
         Procedure, Public::dagger => MQC_R4Tensor_Conjugate_Transpose
 !>      \brief <b> Permutes the dimensions of the MQC R4Tensor</b>
         Procedure, Public::permute => MQC_R4Tensor_Permute
+!>      \brief <b> Transforms the four indexes with up to four matrices (R4_Trans_Full)</b>
+        Procedure, Public::transFull => MQC_R4Tensor_Trans_Full
 !>      \brief <b> Update the specified element in the MQC R4Tensor with the
 !>      specified value</b>
         Generic, Public::put => put_sca, put_int 
@@ -353,7 +445,23 @@
         Procedure, Public::tput => MQC_R4Tensor_R4Tensor_Put
 !>      \brief <b> Initialize the MQC R4Tensor</b>
         Procedure, Public::init => MQC_R4Tensor_Initialize
+!>      \brief <b> Return the storage label of the MQC R4Tensor</b>
+        Procedure, Public::getSymm => MQC_R4Tensor_Get_Symmetry
+        Procedure, Private::get_arr_r => MQC_R4Tensor_Get_Array_Real
+        Procedure, Private::get_arr_c => MQC_R4Tensor_Get_Array_Complex
+        Procedure, Private::get_arr_i => MQC_R4Tensor_Get_Array_Integer
+!>      \brief <b> Return the data of the MQC R4Tensor as an array (stored array, or
+!>      the full view array with FullView)</b>
+        Generic, Public::getArray => get_arr_r, get_arr_c, get_arr_i
       End Type MQC_R4Tensor
+!
+!     Transform of one index in MQC_R4Tensor_Trans_Full: the array of the data type
+!     (integer, real or complex) is allocated.
+      Type,Private::MQC_R4Trans_T
+        Integer(kind=int64),Dimension(:,:),Allocatable::I
+        Real(kind=real64),Dimension(:,:),Allocatable::R
+        Complex(kind=real64),Dimension(:,:),Allocatable::Z
+      End Type MQC_R4Trans_T
 !
 !
       logical::MQC_Algebra_DEBUG=.false.
@@ -1014,11 +1122,16 @@
       End Interface
 !
       Interface Operator (.outer.)
-        Module Procedure MQC_Matrix_Matrix_Outer
+        Module Procedure MQC_Matrix_Matrix_Outer_Op
+      End Interface
+!
+!>    \brief <b> Transforms the four indexes of a rank-4 tensor with up to four matrices</b>
+      Interface R4_Trans_Full
+        Module Procedure MQC_R4Tensor_Trans_Full
       End Interface
 !
       Interface Operator (.crossouter.)
-        Module Procedure MQC_Matrix_Matrix_Cross_Outer
+        Module Procedure MQC_Matrix_Matrix_Cross_Outer_Op
       End Interface
 !
       Interface Operator (.kron.)
@@ -1160,6 +1273,23 @@
 !                                                               |
 !----------------------------------------------------------------
 !
+!
+      Private::MQC_Tri_Index,MQC_R4Symm_PairIndex,MQC_R4Symm_TwoPairHash, &
+        MQC_R4Symm_Hash,MQC_R4Tensor_Slot,MQC_R4Symm_Element_Type,MQC_R4Tensor_Put_Raw, &
+        MQC_R4Symm_ToChem,MQC_R4Symm_Is_Order,MQC_R4Tensor_Resolve_Conjg, &
+        MQC_R4Symm_Constant_Storage,MQC_R4Tensor_Zero2Storage,MQC_R4Tensor_Build_Packed, &
+        MQC_R4Symm_Has_Order,MQC_R4Symm_Canon_Groups,MQC_R4Symm_Layout_Order, &
+        MQC_R4Symm_Zero_Class,MQC_R4Symm_With_Order,MQC_R4Symm_Packed_Order, &
+        MQC_R4Symm_View_Group,MQC_R4Symm_In_Group,MQC_R4Symm_Best_Class,MQC_R4Symm_Layout_Groups, &
+        MQC_R4Symm_Layout_Class,MQC_R4Tensor_Has_Conj,MQC_R4Tensor_Repack_Plain, &
+        MQC_R4Tensor_Combine,MQC_R4Tensor_Add_Arrays,MQC_R4Tensor_Promote, &
+        MQC_R4Symm_Slot_Weights,MQC_R4Tensor_Raw_I,MQC_R4Tensor_Raw_R,MQC_R4Tensor_Raw_C, &
+        MQC_Matrix_Outer_Core,MQC_R4Trans_Mat_Info,MQC_R4Trans_Make_T,MQC_R4Trans_Relation, &
+        MQC_R4Trans_Mat_Type,MQC_R4Trans_Unpack,MQC_R4Symm_Add_Op,MQC_R4Symm_Close_Group, &
+        MQC_R4Symm_Code,MQC_R4Symm_Hash_Code,MQC_R4Tensor_Slice_Slots, &
+        MQC_R4Symm_Keeps_Pair,MQC_R4Symm_Cand_Index,MQC_R4Tensor_Group,MQC_R4Tensor_Input_Class, &
+        MQC_R4Tensor_Same_Roles,MQC_R4Tensor_Raw_Dot,MQC_Matrix_Outer_Rels, &
+        MQC_R4Symm_Pairs,MQC_R4Tensor_Largest_Class
 !
       CONTAINS
 !
@@ -14403,11 +14533,15 @@
 
       Call MQC_Allocate_R4Tensor(MQC_R4Tensor_Size(RA,1),MQC_R4Tensor_Size(RA,2),&
                                  MQC_R4Tensor_Size(RA,3),MQC_R4Tensor_Size(RA,4),&
-                                 RB,'Real',RA%Storage)
-      if(mqc_have_int(RA)) then
+                                 RB,'Real',RA%Storage,RA%IndexOrder)
+      if(MQC_R4Tensor_HaveZero(RA)) then
+        continue
+      elseif(mqc_have_int(RA)) then
         RB%RTen = RA%ITen
       elseif(mqc_have_complex(RA)) then
         RB%RTen = RA%CTen
+      else
+        RB%RTen = RA%RTen
       endif
 
       End Function MQC_R4Tensor_Cast_Real
@@ -17025,10 +17159,14 @@
 !
 !     The padded matrix keeps the data type of Matrix (the new elements are zero). A
 !     square packed or diagonal matrix padded to a square size keeps its storage: the
-!     stored lower triangle (or diagonal) is followed by zeros.
+!     stored lower triangle (or diagonal) is followed by zeros. An unallocated Matrix
+!     gives a zero matrix of the new size.
       newRows = max(Rows,Matrix%NRow)
       newCols = max(Cols,Matrix%NCol)
-      if(newRows.eq.Matrix%NRow.and.newCols.eq.Matrix%NCol) then
+      if(.not.MQC_Matrix_isAllocated(Matrix)) then
+!       unallocated input (Storage and Data_Type undefined): zero matrix of the new size
+        call MatrixOut%init(newRows,newCols)
+      elseIf(newRows.eq.Matrix%NRow.and.newCols.eq.Matrix%NCol) then
         MatrixOut = Matrix
       elseIf(Matrix%Storage.ne.'StorFull'.and.Matrix%NRow.eq.Matrix%NCol.and.newRows.eq.newCols) then
         call MQC_Allocate_Matrix(newRows,newCols,MatrixOut,Matrix%Data_Type,Matrix%Storage)
@@ -17221,19 +17359,88 @@
       end function MQC_Matrix_Check_Zeros
 !
 !
+!     PROCEDURE MQC_Tri_Index
+!
+!>    \brief <b> MQC_Tri_Index returns the lower-triangular (diagonal included)
+!>    row-wise packed index of the pair (A,B)</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Tri_Index returns tri(A,B) = a(a-1)/2+b with a = max(A,B) and
+!>    b = min(A,B). It is symmetric in A and B. Helper of symIndexHash.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] A,B
+!>    \verbatim
+!>        A,B are Integer(kind=int64)
+!>        The pair of indices.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_Tri_Index(A,B) Result(Tri)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::A,B
+      Integer(kind=int64)::Tri
+
+      Tri = Max(A,B)*(Max(A,B)-1)/2+Min(A,B)
+
+      End Function MQC_Tri_Index
+!
+!
 !     PROCEDURE SymIndexHash
 !
-!>    \brief <b> SymIndexHash is a function that returns the index in a vector of a 
+!>    \brief <b> SymIndexHash is a function that returns the index in a vector of a
 !>    symmetric-packed matrix or rank-4 tensor</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
-!>       
+!>
 !>    SymIndexHash is a function that returns the index in a vector of a symmetric-
 !>    packed matrix or rank-4 tensor. If a matrix is tested, it is assumed lower-
 !>    triangular row-wise stored.
+!>
+!>    Rank-4 index construction (classes defined in Type MQC_R4Tensor):
+!>    tri(a,b) = a(a-1)/2+b with a = max, b = min (lower triangle, diagonal
+!>    included), computed by MQC_Tri_Index. For a pair (p,q) of one basis of
+!>    dimension n, the off-diagonal-first pair index and flip are
+!>    (a = max(p,q), b = min(p,q))
+!>      o(p,q) = (a-1)(a-2)/2+b  for p /= q   (1..N, N = n(n-1)/2)
+!>      o(p,p) = N+p                          (N+1..N+n)
+!>      f(p,q) = (p < q)
+!>    nX is the dimension of basis X, MX = nX(nX+1)/2, NX = nX(nX-1)/2.
+!>    '8-fold', R_8_1234 : tri(tri(i,j),tri(k,l))
+!>    S_4_1234  : s1 = max(o(i,j),o(k,l)), s2 = min; f1,f2 the flips of those
+!>                pairs. s1 <= N: hash = s1(s1-1)+2(s2-1)+g+1, g = 1 if
+!>                f1 /= f2 else 0; s1 > N: hash = N(N+1)/2+s1(s1-1)/2+s2.
+!>                Conj = f1, or f2 when the s1 pair is diagonal.
+!>    S_2_12_34 : s1 = o(i,j) in A, s2 = o(k,l) in B.
+!>                (i,j) off-diagonal: hash = (s1-1)(2NB+nB) + 2(s2-1)+g+1 if
+!>                (k,l) is off-diagonal, + 2NB+(s2-NB) if it is diagonal;
+!>                Conj = f1.
+!>                (i,j) diagonal: hash = NA(2NB+nB)+(s1-NA-1)MB+s2; Conj = f2.
+!>    R_4_12_34 : (tri(k,l)-1)MA+tri(i,j)
+!>    S_2_13_24 : tri(i+nA(j-1),k+nA(l-1))
+!>    R_2_12_3_4 : tri(i,j)+MA((k-1)+nK(l-1))
+!>    Packed aliases and _Phys/_Ord labels: the indices and Dims are first
+!>    mapped to chemist order by X(IndexOrder(q)) = Y(q).
+!>    StorFull, S_1_* : i+I(j-1)+IJ(k-1)+IJK(l-1) (column-major on the view
+!>                indices; the order of an S_1 label only places its basis groups)
+!>    Each class hash is exact: the sets of equal elements are numbered
+!>    1..symIndexSize, and Conj tells when the stored value is the complex
+!>    conjugate of element (i,j,k,l).
 !>
 !>    \endverbatim
 !
@@ -17244,34 +17451,47 @@
 !>        I is integer(kind=int64)
 !>        The first index of the matrix/rank-4 tensor.
 !>    \endverbatim
-!>    
+!>
 !>    \param[in] J
 !>    \verbatim
 !>        I is integer(kind=int64)
 !>        The second index of the matrix/rank-4 tensor.
 !>    \endverbatim
-!>    
+!>
 !>    \param[in] K
 !>    \verbatim
 !>        K is integer(kind=int64),Optional
 !>        The third index of the rank-4 tensor. This argument is
 !>        only required when taking hash of a rank-4 tensor.
 !>    \endverbatim
-!>    
+!>
 !>    \param[in] L
 !>    \verbatim
 !>        L is integer(kind=int64),Optional
 !>        The fourth index of the rank-4 tensor. This argument is
 !>        only required when taking hash of a rank-4 tensor.
 !>    \endverbatim
-!>    
+!>
 !>    \param[in] OrderIn
 !>    \verbatim
 !>        OrderIn is Character(Len=*),optional
 !>        The symmetry order for rank-4 tensors. Options are:
 !>        = '8-fold':  8-fold symmetry (default)
-!>        = '4-fold':  4-fold symmetry 
-!>       =  '2-fold':  2-fold symmetry
+!>        = any storage label accepted by MQC_R4Symm_Label (Dims required)
+!>    \endverbatim
+!>
+!>    \param[out] Conj
+!>    \verbatim
+!>        Conj is Logical,optional
+!>        TRUE when the stored value is the complex conjugate of the
+!>        requested element. FALSE for '8-fold' and matrices.
+!>    \endverbatim
+!>
+!>    \param[in] Dims
+!>    \verbatim
+!>        Dims is Integer(kind=int64),Dimension(4),optional
+!>        The dimensions I,J,K,L of the rank-4 tensor. Required when OrderIn
+!>        is a storage label.
 !>    \endverbatim
 !
 !     Authors:
@@ -17279,24 +17499,25 @@
 !>    \author X. Sheng
 !>    \author L. M. Thompson
 !>    \date 2017
+!>    \author M. M. F. Moraes
+!>    \date 2026
 !
-      Function symIndexHash(i,j,k,l,orderIn) result(hash)
+      Function symIndexHash(i,j,k,l,orderIn,conj,dims) result(hash)
 
       implicit none
       integer(kind=int64),intent(in)::i,j
       integer(kind=int64),intent(in),optional::k,l
-      integer(kind=int64)::ij,kl,ijkl,hash
+      integer(kind=int64)::hash
       character(Len=*),intent(in),optional::orderIn
+      logical,intent(out),optional::conj
+      integer(kind=int64),dimension(4),intent(in),optional::dims
       character(Len=64)::order
+      logical::my_conj
 
+      my_conj = .false.
       if(.not.(present(k).and.present(l))) then
 
-        if(i.gt.j) then
-          ij = i*(i-1)/2+j
-        else
-          ij = j*(j-1)/2+i
-        endif
-        hash = ij
+        hash = MQC_Tri_Index(i,j)
 
       elseIf(present(k).and.present(l)) then
 
@@ -17307,45 +17528,1568 @@
         endIf
 
         if(order.eq.'8-fold') then
-          if(i.gt.j) then
-            ij = i*(i-1)/2+j
-          else
-            ij = j*(j-1)/2+i
-          endif
-          if(k.gt.l) then
-            kl = k*(k-1)/2+l 
-          else
-            kl = l*(l-1)/2+k
-          endIf
-          if(ij.gt.kl) then
-            ijkl = ij*(ij-1)/2+kl 
-          else
-            ijkl = kl*(kl-1)/2+ij 
-          endIf
-          hash = ijkl
-        elseIf(order.eq.'2-fold') then
-          if(i.gt.j) then
-            ij = (i-1)**2+j
-          else
-            ij = (j-1)**2+(j-1)+i
-          endif
-          if(k.gt.l) then
-            kl = (k-1)**2+l
-          else
-            kl = (l-1)**2+(l-1)+k
-          endif
-          if(ij.gt.kl) then
-            ijkl = ij*(ij-1)/2+kl 
-          else
-            ijkl = kl*(kl-1)/2+ij 
-          endIf
-          hash = ijkl
+          hash = MQC_Tri_Index(MQC_Tri_Index(i,j),MQC_Tri_Index(k,l))
         else
-          call mqc_error_A('Unrecognized order option in synIndexHash',6,'order',order)
+          if(.not.present(dims)) call mqc_error_A('Dimensions required for this order &
+     &      in symIndexHash',6,'order',order)
+          hash = MQC_R4Symm_Hash(order,i,j,k,l,dims,my_conj)
         endIf
       endif
+      if(present(conj)) conj = my_conj
 
       end function symIndexHash
+!
+!
+!     PROCEDURE MQC_R4Symm_ToChem
+!
+!>    \brief <b> MQC_R4Symm_ToChem maps view indices (or dimensions) of an
+!>    MQC_R4Tensor to chemist-ordered ones</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Returns X with X(IndexOrder(q)) = Y(q): view position q holds chemist
+!>    position IndexOrder(q) (see Type MQC_R4Tensor).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] IndexOrder
+!>    \verbatim
+!>        IndexOrder is Integer(kind=int64),Dimension(4)
+!>        The view order, a permutation of 1,2,3,4.
+!>    \endverbatim
+!>
+!>    \param[in] Y
+!>    \verbatim
+!>        Y is Integer(kind=int64),Dimension(4)
+!>        The view indices or dimensions.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_ToChem(IndexOrder,Y) Result(X)
+
+      Implicit None
+      Integer(kind=int64),Dimension(4),Intent(In)::IndexOrder,Y
+      Integer(kind=int64),Dimension(4)::X
+
+      X(IndexOrder) = Y
+
+      End Function MQC_R4Symm_ToChem
+!
+!
+!     PROCEDURE MQC_R4Symm_Is_Order
+!
+!>    \brief <b> MQC_R4Symm_Is_Order returns TRUE if IndexOrder is a permutation
+!>    of 1,2,3,4</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Checks that every value 1..4 appears exactly once.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] IndexOrder
+!>    \verbatim
+!>        IndexOrder is Integer(kind=int64),Dimension(4)
+!>        The candidate order.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Is_Order(IndexOrder) Result(IsOrder)
+
+      Implicit None
+      Integer(kind=int64),Dimension(4),Intent(In)::IndexOrder
+      Logical::IsOrder
+      Integer(kind=int64)::Q
+
+      IsOrder = .True.
+      Do Q = 1, 4
+        If(Count(IndexOrder.eq.Q).ne.1) IsOrder = .False.
+      EndDo
+
+      End Function MQC_R4Symm_Is_Order
+!
+!
+!     PROCEDURE MQC_R4Symm_Has_Order
+!
+!>    \brief <b> MQC_R4Symm_Has_Order returns TRUE for the canonical labels that
+!>    carry an IndexOrder</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    TRUE for the packed classes (IndexOrder is a data view) and for the zero
+!>    and S_1 classes (IndexOrder places the basis groups); FALSE for StorFull.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] SymClass
+!>    \verbatim
+!>        SymClass is Character(Len=*)
+!>        A canonical storage label.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Has_Order(SymClass) Result(HasOrder)
+
+      Implicit None
+      Character(Len=*),Intent(In)::SymClass
+      Logical::HasOrder
+
+      Select Case(Trim(SymClass))
+      Case('R_8_1234','S_4_1234','R_4_12_34','S_2_12_34','S_2_13_24','R_2_12_3_4', &
+        'Z_24_1234','Z_6_123_4','Z_4_12_34','Z_2_12_3_4','Z_1_1_2_3_4','S_1_12_3_4', &
+        'S_1_1234','S_1_123_4','S_1_12_34', &
+        'S_1_1_2_3_4')
+        HasOrder = .True.
+      Case('unallocated','StorFull','Z')
+        HasOrder = .False.
+      Case Default
+        Call MQC_Error_A('Unrecognized storage label in MQC_R4Symm_Has_Order', 6, &
+          'SymClass', SymClass)
+      End Select
+
+      End Function MQC_R4Symm_Has_Order
+!
+!
+!     PROCEDURE MQC_R4Symm_Canon_Groups
+!
+!>    \brief <b> MQC_R4Symm_Canon_Groups returns the basis groups of the canonical
+!>    positions of a zero or S_1 class</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Group number of each canonical position 1..4 (equal numbers share a
+!>    basis): Z_24_1234 and S_1_1234 1111, Z_6_123_4 and S_1_123_4 1112,
+!>    Z_4_12_34 and S_1_12_34 1122,
+!>    Z_2_12_3_4 and S_1_12_3_4 1123, Z_1_1_2_3_4 and S_1_1_2_3_4 1234.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] SymClass
+!>    \verbatim
+!>        SymClass is Character(Len=*)
+!>        A canonical zero or S_1 label.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Canon_Groups(SymClass) Result(CG)
+
+      Implicit None
+      Character(Len=*),Intent(In)::SymClass
+      Integer,Dimension(4)::CG
+
+      Select Case(Trim(SymClass))
+      Case('Z_24_1234','S_1_1234')
+        CG = [1,1,1,1]
+      Case('Z_6_123_4','S_1_123_4')
+        CG = [1,1,1,2]
+      Case('Z_4_12_34','S_1_12_34')
+        CG = [1,1,2,2]
+      Case('Z_2_12_3_4','S_1_12_3_4')
+        CG = [1,1,2,3]
+      Case('Z_1_1_2_3_4','S_1_1_2_3_4')
+        CG = [1,2,3,4]
+      Case Default
+        Call MQC_Error_A('Not a zero or S_1 label in MQC_R4Symm_Canon_Groups', 6, &
+          'SymClass', SymClass)
+      End Select
+
+      End Function MQC_R4Symm_Canon_Groups
+!
+!
+!     PROCEDURE MQC_R4Symm_Layout_Order
+!
+!>    \brief <b> MQC_R4Symm_Layout_Order returns the canonical IndexOrder of a
+!>    layout-only (zero or S_1) class</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    For zero and S_1 classes IndexOrder only places the basis groups: view
+!>    position q belongs to the canonical group of position IndexOrder(q).
+!>    Several orders give the same layout; the lexicographically first one is
+!>    returned. Other classes return IndexOrder unchanged.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] SymClass
+!>    \verbatim
+!>        SymClass is Character(Len=*)
+!>        A canonical storage label.
+!>    \endverbatim
+!>
+!>    \param[in] IndexOrder
+!>    \verbatim
+!>        IndexOrder is Integer(kind=int64),Dimension(4)
+!>        The order to canonicalise.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Layout_Order(SymClass,IndexOrder) Result(Ord)
+
+      Implicit None
+      Character(Len=*),Intent(In)::SymClass
+      Integer(kind=int64),Dimension(4),Intent(In)::IndexOrder
+      Integer(kind=int64),Dimension(4)::Ord,Cand
+      Integer,Dimension(4)::CG
+      Integer::A,B,C,D,P,Q
+      Logical::Same
+
+      Ord = IndexOrder
+      If(MQC_R4Symm_Has_Order(SymClass).and..not.MQC_R4Symm_IsPacked(SymClass)) then
+        CG = MQC_R4Symm_Canon_Groups(SymClass)
+        Search: Do A = 1, 4
+          Do B = 1, 4
+            Do C = 1, 4
+              Do D = 1, 4
+                Cand = [A,B,C,D]
+                If(MQC_R4Symm_Is_Order(Cand)) then
+                  Same = .True.
+                  Compare: Do P = 1, 4
+                    Do Q = 1, 4
+                      If((CG(Cand(P)).eq.CG(Cand(Q))).neqv. &
+                        (CG(IndexOrder(P)).eq.CG(IndexOrder(Q)))) then
+                        Same = .False.
+                        Exit Compare
+                      EndIf
+                    EndDo
+                  EndDo Compare
+                  If(Same) then
+                    Ord = Cand
+                    Exit Search
+                  EndIf
+                EndIf
+              EndDo
+            EndDo
+          EndDo
+        EndDo Search
+      EndIf
+
+      End Function MQC_R4Symm_Layout_Order
+!
+!
+!     PROCEDURE MQC_R4Symm_Packed_Order
+!
+!>    \brief <b> MQC_R4Symm_Packed_Order returns the canonical IndexOrder of a
+!>    packed class view</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    For a packed class with operations (P,c), the views with IndexOrder O
+!>    and O' = invP(O) read the same values (conjugated when c is TRUE). Among
+!>    O and all O' the lexicographically first order is returned; Flip is TRUE
+!>    when it is reached through a conjugating operation (the caller then
+!>    toggles DoConjg of a complex tensor). Other classes return IndexOrder
+!>    unchanged and Flip FALSE.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] SymClass,IndexOrder
+!>    \verbatim
+!>        SymClass is Character(Len=*); IndexOrder is Integer(kind=int64),Dimension(4)
+!>    \endverbatim
+!>
+!>    \param[out] Flip
+!>    \verbatim
+!>        Flip is Logical
+!>        TRUE when the returned order reads the conjugated values.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Packed_Order(SymClass,IndexOrder,Flip,Plain) Result(Ord)
+
+      Implicit None
+      Character(Len=*),Intent(In)::SymClass
+      Integer(kind=int64),Dimension(4),Intent(In)::IndexOrder
+      Logical,Intent(Out)::Flip
+      Logical,Intent(In),Optional::Plain
+      Integer(kind=int64),Dimension(4)::Ord,Cand,invP
+      Integer(kind=int64),Dimension(4,7)::Perm
+      Logical,Dimension(7)::Conj
+      Integer(kind=int64)::NImg,N,Q
+      Logical::Smaller
+
+      Ord = IndexOrder
+      Flip = .False.
+      If(MQC_R4Symm_IsPacked(SymClass)) then
+        Call MQC_R4Symm_UnpackSymmetry(SymClass,Perm,Conj,NImg,Plain=Plain)
+        Do N = 1, NImg
+          invP(Perm(:,N)) = [1,2,3,4]
+          Cand = invP(IndexOrder)
+          Smaller = .False.
+          Do Q = 4, 1, -1
+            If(Cand(Q).lt.Ord(Q)) then
+              Smaller = .True.
+            ElseIf(Cand(Q).gt.Ord(Q)) then
+              Smaller = .False.
+            EndIf
+          EndDo
+          If(Smaller) then
+            Ord = Cand
+            Flip = Conj(N)
+          EndIf
+        EndDo
+      EndIf
+
+      End Function MQC_R4Symm_Packed_Order
+!
+!
+!     PROCEDURE MQC_R4Symm_Zero_Class
+!
+!>    \brief <b> MQC_R4Symm_Zero_Class returns the canonical zero class and
+!>    IndexOrder of a zero MQC_R4Tensor with dimensions I,J,K,L</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    A zero tensor is symmetric under every index permutation that keeps its
+!>    shape. Positions are grouped by equal dimension; the group sizes give the
+!>    class (4: Z_24_1234, 3+1: Z_6_123_4, 2+2: Z_4_12_34, 2+1+1: Z_2_12_3_4,
+!>    1+1+1+1: Z_1_1_2_3_4) and IndexOrder (canonical, see
+!>    MQC_R4Symm_Layout_Order) places the groups.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] I,J,K,L
+!>    \verbatim
+!>        I,J,K,L are Integer(kind=int64)
+!>        The dimensions of the rank-4 tensor.
+!>    \endverbatim
+!>
+!>    \param[out] SymClass,IndexOrder
+!>    \verbatim
+!>        SymClass is Character(Len=64); IndexOrder is Integer(kind=int64),Dimension(4)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_Zero_Class(I,J,K,L,SymClass,IndexOrder)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::I,J,K,L
+      Character(Len=64),Intent(Out)::SymClass
+      Integer(kind=int64),Dimension(4),Intent(Out)::IndexOrder
+      Integer(kind=int64),Dimension(4)::D,Cand
+      Integer,Dimension(4)::CG,NSame
+      Integer::A,B,C,E,P,Q
+      Logical::Same
+
+      D = [I,J,K,L]
+      Do P = 1, 4
+        NSame(P) = Count(D.eq.D(P))
+      EndDo
+      If(All(NSame.eq.4)) then
+        SymClass = 'Z_24_1234'
+      ElseIf(Any(NSame.eq.3)) then
+        SymClass = 'Z_6_123_4'
+      ElseIf(All(NSame.eq.2)) then
+        SymClass = 'Z_4_12_34'
+      ElseIf(Any(NSame.eq.2)) then
+        SymClass = 'Z_2_12_3_4'
+      Else
+        SymClass = 'Z_1_1_2_3_4'
+      EndIf
+      CG = MQC_R4Symm_Canon_Groups(SymClass)
+      IndexOrder = [1,2,3,4]
+      Search: Do A = 1, 4
+        Do B = 1, 4
+          Do C = 1, 4
+            Do E = 1, 4
+              Cand = [A,B,C,E]
+              If(MQC_R4Symm_Is_Order(Cand)) then
+                Same = .True.
+                Compare: Do P = 1, 4
+                  Do Q = 1, 4
+                    If((CG(Cand(P)).eq.CG(Cand(Q))).neqv.(D(P).eq.D(Q))) then
+                      Same = .False.
+                      Exit Compare
+                    EndIf
+                  EndDo
+                EndDo Compare
+                If(Same) then
+                  IndexOrder = Cand
+                  Exit Search
+                EndIf
+              EndIf
+            EndDo
+          EndDo
+        EndDo
+      EndDo Search
+
+      End Subroutine MQC_R4Symm_Zero_Class
+!
+!
+!     PROCEDURE MQC_R4Symm_With_Order
+!
+!>    \brief <b> MQC_R4Symm_With_Order writes a canonical label with its
+!>    IndexOrder suffix</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Returns SymClass (followed by '_plain' when Plain is TRUE) for IndexOrder
+!>    1234, with '_Phys' added for 1324 and '_Ord<4 digits>' otherwise.
+!>    MQC_R4Symm_Label reads these forms.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] SymClass,IndexOrder
+!>    \verbatim
+!>        SymClass is Character(Len=*); IndexOrder is Integer(kind=int64),Dimension(4)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_With_Order(SymClass,IndexOrder,Plain) Result(Label)
+
+      Implicit None
+      Character(Len=*),Intent(In)::SymClass
+      Integer(kind=int64),Dimension(4),Intent(In)::IndexOrder
+      Logical,Intent(In),Optional::Plain
+      Character(Len=64)::Label
+      Character(Len=4)::Digits
+
+      Label = SymClass
+      If(Present(Plain)) then
+        If(Plain) Label = Trim(SymClass)//'_plain'
+      EndIf
+      If(All(IndexOrder.eq.[1,3,2,4])) then
+        Label = Trim(Label)//'_Phys'
+      ElseIf(Any(IndexOrder.ne.[1,2,3,4])) then
+        Write(Digits,'(4I1)') IndexOrder
+        Label = Trim(Label)//'_Ord'//Digits
+      EndIf
+
+      End Function MQC_R4Symm_With_Order
+!
+!
+!     PROCEDURE MQC_R4Symm_Zero_Label
+!
+!>    \brief <b> MQC_R4Symm_Zero_Label returns the label of a zero MQC_R4Tensor
+!>    with dimensions I,J,K,L</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Returns the canonical zero class with its IndexOrder suffix, as getSymm
+!>    reports it (MQC_R4Symm_Zero_Class + MQC_R4Symm_With_Order). Examples:
+!>    (a,a,a,a) Z_24_1234, (a,b,a,a) Z_6_123_4_Ord1423, (a,b,a,b) Z_4_12_34_Phys,
+!>    (a,b,c,b) Z_2_12_3_4_Ord3142, (a,b,c,d) Z_1_1_2_3_4.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] I,J,K,L
+!>    \verbatim
+!>        I,J,K,L are Integer(kind=int64)
+!>        The dimensions of the rank-4 tensor.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Zero_Label(I,J,K,L) Result(Label)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::I,J,K,L
+      Character(Len=64)::Label,SymClass
+      Integer(kind=int64),Dimension(4)::Ord
+
+      Call MQC_R4Symm_Zero_Class(I,J,K,L,SymClass,Ord)
+      Label = MQC_R4Symm_With_Order(SymClass,Ord)
+
+      End Function MQC_R4Symm_Zero_Label
+!
+!
+!     PROCEDURE MQC_R4Symm_Constant_Storage
+!
+!>    \brief <b> MQC_R4Symm_Constant_Storage returns the storage used for a
+!>    constant (nonzero) MQC_R4Tensor with dimensions Dims</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    A constant tensor satisfies every equality without conjugation, so the
+!>    class is the plain class (R_8_1234, R_4_12_34, R_2_12_3_4) of largest
+!>    fold, over all 24 IndexOrders, whose dimensions fit. With all
+!>    dimensions different the storage is S_1_1_2_3_4 (full). The scalar type
+!>    only sets the data type.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Dims
+!>    \verbatim
+!>        Dims is Integer(kind=int64),Dimension(4)
+!>        The dimensions of the rank-4 tensor.
+!>    \endverbatim
+!>
+!>    \param[out] SymClass,IndexOrder
+!>    \verbatim
+!>        SymClass is Character(Len=64); IndexOrder is Integer(kind=int64),Dimension(4)
+!>        The storage label and its view order.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_Constant_Storage(Dims,SymClass,IndexOrder)
+
+      Implicit None
+      Integer(kind=int64),Dimension(4),Intent(In)::Dims
+      Character(Len=64),Intent(Out)::SymClass
+      Integer(kind=int64),Dimension(4),Intent(Out)::IndexOrder
+      Character(Len=10),Dimension(3)::Cand
+      Integer(kind=int64),Dimension(4)::Ord
+      Integer::C,A,B,P,Q
+
+      Cand = [Character(Len=10)::'R_8_1234','R_4_12_34','R_2_12_3_4']
+      SymClass = 'S_1_1_2_3_4'
+      IndexOrder = [1,2,3,4]
+      Search: Do C = 1, 3
+        Do A = 1, 4
+          Do B = 1, 4
+            Do P = 1, 4
+              Do Q = 1, 4
+                Ord = [A,B,P,Q]
+                If(MQC_R4Symm_Is_Order(Ord)) then
+                  If(MQC_R4Symm_Dims_OK(Cand(C),Dims(1),Dims(2),Dims(3),Dims(4),Ord)) then
+                    SymClass = Cand(C)
+                    IndexOrder = Ord
+                    Exit Search
+                  EndIf
+                EndIf
+              EndDo
+            EndDo
+          EndDo
+        EndDo
+      EndDo Search
+
+      End Subroutine MQC_R4Symm_Constant_Storage
+!
+!
+!     PROCEDURE MQC_R4Symm_Label
+!
+!>    \brief <b> MQC_R4Symm_Label returns the systematic label of an MQC_R4Tensor
+!>    storage (symmetry class)</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_R4Symm_Label maps any accepted storage name to the label stored in
+!>    Tensor%Storage. Positions 1,2,3,4 are the indices i,j,k,l of (ij|kl); the
+!>    classes are defined in the documentation of Type MQC_R4Tensor:
+!>    1.  'StorFull','Full','full','storfull','unknown'           -> 'StorFull'
+!>        'unallocated' -> 'unallocated' (no tensor; not a storage to allocate)
+!>    2.  'R_8_1234','R8','StorSymm','Symm','symm','storsymm','8-fold' -> 'R_8_1234'
+!>    3.  'S_4_1234','S4'               -> 'S_4_1234'
+!>    4.  'R_4_12_34','R4'              -> 'R_4_12_34'
+!>    5.  'S_2_12_34','S2Pair'          -> 'S_2_12_34'
+!>    6.  'S_2_13_24','S2Exchange'      -> 'S_2_13_24'
+!>    7.  'R_2_12_3_4','R2BPair'        -> 'R_2_12_3_4'
+!>    8.  Views (IndexOrder returned):
+!>        'R_2_13_24','R2Exchange'      -> 'S_2_13_24', 1234
+!>        'R_2_14_23','R2Extremes'      -> 'S_2_13_24', 1243
+!>        'S_2_14_23','S2Extremes'      -> 'S_2_12_34', 1342
+!>        'R_2_34_1_2','R2KPair'        -> 'R_2_12_3_4', 3412
+!>    9.  Zero tensors: 'Z','zero','fullsymmetric' -> 'Z' (class and order are
+!>        then taken from the dimensions at allocation); the canonical
+!>        Z_24_1234, Z_6_123_4, Z_4_12_34, Z_2_12_3_4, Z_1_1_2_3_4; and the views
+!>        Z_6_124_3 / Z_6_134_2 / Z_6_234_1 -> Z_6_123_4, 1243 / 1423 / 4123,
+!>        Z_4_13_24 / Z_4_14_23 -> Z_4_12_34, 1324 / 1342,
+!>        Z_2_13_2_4 / Z_2_14_2_3 / Z_2_23_1_4 / Z_2_24_1_3 / Z_2_34_1_2 ->
+!>        Z_2_12_3_4, 1324 / 1342 / 3124 / 3142 / 3412.
+!>    10. Full-stored (no symmetry; the order only places the basis groups):
+!>        'S_1_1234', 'S_1_123_4', 'S_1_12_34', 'S_1_12_3_4';
+!>        'S_1_13_2_4' / 'S_1_14_2_3' / 'S_1_23_1_4' / 'S_1_24_1_3'
+!>        -> 'S_1_12_3_4', 1324 / 1342 / 3124 / 3142; 'S_1_1_2_3_4'.
+!>    11. '<label>_plain': S_4_1234 with its equalities taken without
+!>        conjugation (Plain = TRUE; meaningful for complex data only);
+!>        S_2_12_34_plain -> 'S_2_13_24' with IndexOrder 1324; any other label
+!>        is an error. 'Klein' -> 'S_4_1234' with Plain = TRUE (S_4_1234_plain
+!>        for complex data, S_4_1234 for real or integer data).
+!>    _Phys / _Ord<digits> suffixes are accepted on every label that carries an
+!>    IndexOrder (packed, zero and S_1 classes); the suffix order is composed
+!>    with the order of the label (alias, _plain).
+!>   
+!>    Each label <X>_<N>_<Group> encodes:
+!>      - scalar-type <X> = C (Complex), R (Real/Integer), S (Any) or Z (zero tensor)
+!>      - number of symmetrical permutations <N>-fold (N = 8, 4, 2 or 1)
+!>      - orbital groups <Group>, concatenated number indicates same basis
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] LabelIn
+!>    \verbatim
+!>        LabelIn is Character(Len=*)
+!>        The storage name to normalise.
+!>    \endverbatim
+!>
+!>    \param[out] IndexOrder
+!>    \verbatim
+!>        IndexOrder is Integer(kind=int64),Dimension(4),Optional
+!>        The view order implied by the name (1234 for systematic labels).
+!>    \endverbatim
+!>
+!>    \param[out] Plain
+!>    \verbatim
+!>        Plain is Logical,Optional
+!>        TRUE for a '_plain' S_4_1234 label.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Recursive Function MQC_R4Symm_Label(LabelIn,IndexOrder,Plain) Result(Label)
+
+      Implicit None
+      Character(Len=*),Intent(In)::LabelIn
+      Integer(kind=int64),Dimension(4),Intent(Out),Optional::IndexOrder
+      Logical,Intent(Out),Optional::Plain
+      Character(Len=64)::Label,Base
+      Integer(kind=int64),Dimension(4)::my_Order,BaseOrder,SufOrder,PhysOrder
+      Logical::my_Plain
+      Integer::N,IOS
+
+      my_Order = [1,2,3,4]
+      PhysOrder = [1,3,2,4]
+      my_Plain = .False.
+      N = Len_Trim(LabelIn)
+!     Order suffixes: <label>_Phys or <label>_Ord<4 digits>, for any class that
+!     carries an IndexOrder (packed, zero and S_1 classes); the suffix order is
+!     composed with the order of <label>.
+      If(N.gt.5.and.LabelIn(Max(1,N-4):N).eq.'_Phys') then
+        Base = MQC_R4Symm_Label(LabelIn(1:N-5),BaseOrder,my_Plain)
+        If(.not.MQC_R4Symm_Has_Order(Base)) &
+          Call MQC_Error_A('_Phys needs a class with an IndexOrder in MQC_R4Symm_Label',6, &
+          'LabelIn',LabelIn)
+        Label = Base
+        my_Order = BaseOrder(PhysOrder)
+      ElseIf(N.gt.8.and.LabelIn(Max(1,N-7):Max(1,N-4)).eq.'_Ord') then
+        Base = MQC_R4Symm_Label(LabelIn(1:N-8),BaseOrder,my_Plain)
+        Read(LabelIn(N-3:N),'(4I1)',IOStat=IOS) SufOrder
+        If(IOS.ne.0) SufOrder = 0
+        If(.not.MQC_R4Symm_Is_Order(SufOrder).or..not.MQC_R4Symm_Has_Order(Base)) &
+          Call MQC_Error_A('Bad _Ord suffix in MQC_R4Symm_Label',6,'LabelIn',LabelIn)
+        Label = Base
+        my_Order = BaseOrder(SufOrder)
+!     Plain suffix: the conjugations of S_4_1234 are dropped (complex data).
+!     Plain S_2_12_34 is S_2_13_24 read in physicist order.
+      ElseIf(N.gt.6.and.LabelIn(Max(1,N-5):N).eq.'_plain') then
+        Base = MQC_R4Symm_Label(LabelIn(1:N-6),BaseOrder)
+        Select Case(Trim(Base))
+        Case('S_4_1234')
+          Label = Base
+          my_Order = BaseOrder
+          my_Plain = .True.
+        Case('S_2_12_34')
+          Label = 'S_2_13_24'
+          my_Order = PhysOrder(BaseOrder)
+        Case Default
+          Call MQC_Error_A('_plain only applies to S_4_1234 (S_2_12_34 becomes &
+     &      S_2_13_24_Phys) in MQC_R4Symm_Label',6,'LabelIn',LabelIn)
+        End Select
+      Else
+        Select Case(Trim(LabelIn))
+!       zero tensors (class and order from the dimensions when not given)
+        Case('Z','zero','Zero','fullsymmetric')
+          Label = 'Z'
+        Case('Z_24_1234','Z_6_123_4','Z_4_12_34','Z_2_12_3_4','Z_1_1_2_3_4')
+          Label = Trim(LabelIn)
+        Case('Z_6_124_3')
+          Label = 'Z_6_123_4'
+          my_Order = [1,2,4,3]
+        Case('Z_6_134_2')
+          Label = 'Z_6_123_4'
+          my_Order = [1,4,2,3]
+        Case('Z_6_234_1')
+          Label = 'Z_6_123_4'
+          my_Order = [4,1,2,3]
+        Case('Z_4_13_24')
+          Label = 'Z_4_12_34'
+          my_Order = [1,3,2,4]
+        Case('Z_4_14_23')
+          Label = 'Z_4_12_34'
+          my_Order = [1,3,4,2]
+        Case('Z_2_13_2_4')
+          Label = 'Z_2_12_3_4'
+          my_Order = [1,3,2,4]
+        Case('Z_2_14_2_3')
+          Label = 'Z_2_12_3_4'
+          my_Order = [1,3,4,2]
+        Case('Z_2_23_1_4')
+          Label = 'Z_2_12_3_4'
+          my_Order = [3,1,2,4]
+        Case('Z_2_24_1_3')
+          Label = 'Z_2_12_3_4'
+          my_Order = [3,1,4,2]
+        Case('Z_2_34_1_2')
+          Label = 'Z_2_12_3_4'
+          my_Order = [3,4,1,2]
+!       full-stored tensors
+        Case('unallocated')
+          Label = 'unallocated'
+        Case('StorFull','Full','full','storfull','unknown')
+          Label = 'StorFull'
+        Case('S_1_12_3_4')
+          Label = 'S_1_12_3_4'
+        Case('S_1_1234','S_1_123_4','S_1_12_34')
+          Label = Trim(LabelIn)
+        Case('S_1_13_2_4')
+          Label = 'S_1_12_3_4'
+          my_Order = [1,3,2,4]
+        Case('S_1_14_2_3')
+          Label = 'S_1_12_3_4'
+          my_Order = [1,3,4,2]
+        Case('S_1_23_1_4')
+          Label = 'S_1_12_3_4'
+          my_Order = [3,1,2,4]
+        Case('S_1_24_1_3')
+          Label = 'S_1_12_3_4'
+          my_Order = [3,1,4,2]
+        Case('S_1_1_2_3_4')
+          Label = 'S_1_1_2_3_4'
+!       packed classes
+        Case('R_8_1234','R8','StorSymm','Symm','symm','storsymm','8-fold')
+          Label = 'R_8_1234'
+        Case('S_4_1234','S4')
+          Label = 'S_4_1234'
+        Case('Klein')
+!         S_4_1234 without conjugation (plain is dropped for real data)
+          Label = 'S_4_1234'
+          my_Plain = .True.
+        Case('R_4_12_34','R4')
+          Label = 'R_4_12_34'
+        Case('S_2_12_34','S2Pair')
+          Label = 'S_2_12_34'
+        Case('S_2_13_24','S2Exchange','R_2_13_24','R2Exchange')
+          Label = 'S_2_13_24'
+        Case('R_2_14_23','R2Extremes')
+          Label = 'S_2_13_24'
+          my_Order = [1,2,4,3]
+        Case('S_2_14_23','S2Extremes')
+          Label = 'S_2_12_34'
+          my_Order = [1,3,4,2]
+        Case('R_2_12_3_4','R2BPair')
+          Label = 'R_2_12_3_4'
+        Case('R_2_34_1_2','R2KPair')
+          Label = 'R_2_12_3_4'
+          my_Order = [3,4,1,2]
+        Case Default
+          Call MQC_Error_A('Unrecognized storage label in MQC_R4Symm_Label', 6, &
+            'LabelIn', LabelIn)
+        End Select
+      EndIf
+      If(Present(IndexOrder)) IndexOrder = my_Order
+      If(Present(Plain)) Plain = my_Plain
+
+      End Function MQC_R4Symm_Label
+!
+!
+!     PROCEDURE MQC_R4Symm_IsPacked
+!
+!>    \brief <b> MQC_R4Symm_IsPacked returns TRUE if an MQC_R4Tensor storage label
+!>    is a packed symmetry class</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_R4Symm_IsPacked returns TRUE for the classes stored packed (R_8_1234,
+!>    S_4_1234, R_4_12_34, S_2_12_34, S_2_13_24, R_2_12_3_4) and FALSE for
+!>    'StorFull' and the S_1_*
+!>    layouts, which are stored full. Label must be a systematic label (as
+!>    stored in Tensor%Storage); any other string, including an unset Storage,
+!>    returns FALSE.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Label
+!>    \verbatim
+!>        Label is Character(Len=*)
+!>        The systematic storage label.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_IsPacked(Label) Result(IsPacked)
+
+      Implicit None
+      Character(Len=*),Intent(In)::Label
+      Logical::IsPacked
+
+      Select Case(Trim(Label))
+      Case('R_8_1234','S_4_1234','R_4_12_34','S_2_12_34','S_2_13_24','R_2_12_3_4')
+        IsPacked = .True.
+      Case('unallocated','StorFull','S_1_12_3_4','S_1_1_2_3_4','Z', &
+        'S_1_1234','S_1_123_4','S_1_12_34', &
+        'Z_24_1234','Z_6_123_4','Z_4_12_34','Z_2_12_3_4','Z_1_1_2_3_4')
+        IsPacked = .False.
+      Case Default
+        Call MQC_Error_A('Unrecognized storage label in MQC_R4Symm_IsPacked', 6, &
+          'Label', Label)
+      End Select
+
+      End Function MQC_R4Symm_IsPacked
+!
+!
+!     PROCEDURE MQC_R4Symm_Dims_OK
+!
+!>    \brief <b> MQC_R4Symm_Dims_OK returns TRUE if the dimensions I,J,K,L are
+!>    compatible with an MQC_R4Tensor storage</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Positions sharing a basis must have the same dimension (checked on the
+!>    canonical positions, i.e. I,J,K,L mapped through the IndexOrder of the
+!>    label, or the IndexOrder argument when present):
+!>    R_8_1234, S_4_1234        : I=J=K=L
+!>    R_4_12_34, S_2_12_34      : I=J, K=L
+!>    S_2_13_24                 : I=K, J=L
+!>    R_2_12_3_4, S_1_12_3_4    : I=J
+!>    S_1_1234                  : I=J=K=L
+!>    S_1_123_4                 : I=J=K
+!>    S_1_12_34                 : I=J, K=L
+!>    StorFull, S_1_1_2_3_4, Z  : any
+!>    Z_24_1234, Z_6_123_4, Z_4_12_34, Z_2_12_3_4, Z_1_1_2_3_4: strict, the
+!>    dimensions are equal exactly within the canonical groups (the zero class
+!>    of a tensor follows from its dimensions).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Label
+!>    \verbatim
+!>        Label is Character(Len=*)
+!>        The storage label (any name accepted by MQC_R4Symm_Label).
+!>    \endverbatim
+!>
+!>    \param[in] I,J,K,L
+!>    \verbatim
+!>        I,J,K,L are Integer(kind=int64)
+!>        The (view) dimensions of the rank-4 tensor.
+!>    \endverbatim
+!>
+!>    \param[in] IndexOrder
+!>    \verbatim
+!>        IndexOrder is Integer(kind=int64),Dimension(4),Optional
+!>        View order; overrides the one implied by Label.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Dims_OK(Label,I,J,K,L,IndexOrder) Result(DimsOK)
+
+      Implicit None
+      Character(Len=*),Intent(In)::Label
+      Integer(kind=int64),Intent(In)::I,J,K,L
+      Integer(kind=int64),Dimension(4),Intent(In),Optional::IndexOrder
+      Logical::DimsOK
+      Character(Len=64)::SymClass
+      Integer(kind=int64),Dimension(4)::my_Order,D
+      Integer,Dimension(4)::CG
+      Integer::P,Q
+
+      SymClass = MQC_R4Symm_Label(Label,my_Order)
+      If(Present(IndexOrder)) my_Order = IndexOrder
+      D = MQC_R4Symm_ToChem(my_Order,[I,J,K,L])
+      Select Case(SymClass)
+      Case('Z','StorFull','S_1_1_2_3_4')
+        DimsOK = .True.
+      Case('Z_24_1234','Z_6_123_4','Z_4_12_34','Z_2_12_3_4','Z_1_1_2_3_4')
+!       strict: equal dimensions exactly within the canonical groups
+        CG = MQC_R4Symm_Canon_Groups(SymClass)
+        DimsOK = .True.
+        Do P = 1, 4
+          Do Q = 1, 4
+            If((D(P).eq.D(Q)).neqv.(CG(P).eq.CG(Q))) DimsOK = .False.
+          EndDo
+        EndDo
+      Case('R_8_1234','S_4_1234')
+        DimsOK = (D(1).eq.D(2)).and.(D(1).eq.D(3)).and.(D(1).eq.D(4))
+      Case('R_4_12_34','S_2_12_34')
+        DimsOK = (D(1).eq.D(2)).and.(D(3).eq.D(4))
+      Case('S_2_13_24')
+        DimsOK = (D(1).eq.D(3)).and.(D(2).eq.D(4))
+      Case('R_2_12_3_4','S_1_12_3_4')
+        DimsOK = (D(1).eq.D(2))
+      Case('S_1_1234')
+        DimsOK = (D(1).eq.D(2)).and.(D(1).eq.D(3)).and.(D(1).eq.D(4))
+      Case('S_1_123_4')
+        DimsOK = (D(1).eq.D(2)).and.(D(1).eq.D(3))
+      Case('S_1_12_34')
+        DimsOK = (D(1).eq.D(2)).and.(D(3).eq.D(4))
+      Case('unallocated')
+        DimsOK = .False.
+      Case Default
+        Call MQC_Error_A('Unrecognized storage label in MQC_R4Symm_Dims_OK', 6, &
+          'Label', Label)
+      End Select
+
+      End Function MQC_R4Symm_Dims_OK
+!
+!
+!     PROCEDURE MQC_R4Symm_UnpackSymmetry
+!
+!>    \brief <b> MQC_R4Symm_UnpackSymmetry returns the symmetry operations of an
+!>    MQC_R4Tensor storage class</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Returns the complete set of non-identity operations of a class (see the
+!>    table in Type MQC_R4Tensor). Operation n maps element x = (i,j,k,l) to
+!>    x(Perm(:,n)), and T(x) = T(x(Perm(:,n))), complex conjugated when
+!>    Conj(n) is TRUE. Full-stored labels return NImg = 0. Chemist operations:
+!>    R_8_1234  : (2134) (1243) (2143) (3412) (4312) (3421) (4321)
+!>    S_4_1234  : (3412) (2143)* (4321)*
+!>    R_4_12_34 : (2134) (1243) (2143)
+!>    S_2_12_34 : (2143)*
+!>    S_2_13_24 : (3412)
+!>    R_2_12_3_4: (2134)
+!>    A '_plain' label (or Plain = TRUE) returns the operations without
+!>    conjugation.
+!>    For a view (alias label, _Phys/_Ord, or the IndexOrder argument) the
+!>    operations are returned in view coordinates: Perm(q) = invOrder(P(IndexOrder(q))),
+!>    with P the chemist operation and invOrder the inverse of IndexOrder.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Label
+!>    \verbatim
+!>        Label is Character(Len=*)
+!>        The storage label (any name accepted by MQC_R4Symm_Label).
+!>    \endverbatim
+!>
+!>    \param[out] Perm
+!>    \verbatim
+!>        Perm is Integer(kind=int64),Dimension(4,7)
+!>        Perm(:,n) is the index permutation of operation n.
+!>    \endverbatim
+!>
+!>    \param[out] Conj
+!>    \verbatim
+!>        Conj is Logical,Dimension(7)
+!>        TRUE if operation n includes complex conjugation.
+!>    \endverbatim
+!>
+!>    \param[out] NImg
+!>    \verbatim
+!>        NImg is Integer(kind=int64)
+!>        The number of operations (0 to 7).
+!>    \endverbatim
+!>
+!>    \param[in] IndexOrder
+!>    \verbatim
+!>        IndexOrder is Integer(kind=int64),Dimension(4),Optional
+!>        View order; overrides the one implied by Label.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_UnpackSymmetry(Label,Perm,Conj,NImg,IndexOrder,Plain)
+
+      Implicit None
+      Character(Len=*),Intent(In)::Label
+      Integer(kind=int64),Dimension(4,7),Intent(Out)::Perm
+      Logical,Dimension(7),Intent(Out)::Conj
+      Integer(kind=int64),Intent(Out)::NImg
+      Integer(kind=int64),Dimension(4),Intent(In),Optional::IndexOrder
+      Logical,Intent(In),Optional::Plain
+      Logical::my_Plain
+      Character(Len=64)::SymClass
+      Integer(kind=int64),Dimension(4)::my_Order,invOrder,Tmp
+      Integer(kind=int64)::N,Q
+
+      SymClass = MQC_R4Symm_Label(Label,my_Order,my_Plain)
+      If(Present(IndexOrder)) my_Order = IndexOrder
+      If(Present(Plain)) my_Plain = my_Plain.or.Plain
+      Perm = 0
+      Conj = .False.
+      Select Case(SymClass)
+      Case('R_8_1234')
+        NImg = 7
+        Perm(:,1) = [2,1,3,4]
+        Perm(:,2) = [1,2,4,3]
+        Perm(:,3) = [2,1,4,3]
+        Perm(:,4) = [3,4,1,2]
+        Perm(:,5) = [4,3,1,2]
+        Perm(:,6) = [3,4,2,1]
+        Perm(:,7) = [4,3,2,1]
+      Case('S_4_1234')
+        NImg = 3
+        Perm(:,1) = [3,4,1,2]
+        Perm(:,2) = [2,1,4,3]
+        Perm(:,3) = [4,3,2,1]
+        Conj(2:3) = .True.
+      Case('R_4_12_34')
+        NImg = 3
+        Perm(:,1) = [2,1,3,4]
+        Perm(:,2) = [1,2,4,3]
+        Perm(:,3) = [2,1,4,3]
+      Case('S_2_12_34')
+        NImg = 1
+        Perm(:,1) = [2,1,4,3]
+        Conj(1) = .True.
+      Case('S_2_13_24')
+        NImg = 1
+        Perm(:,1) = [3,4,1,2]
+      Case('R_2_12_3_4')
+        NImg = 1
+        Perm(:,1) = [2,1,3,4]
+      Case('unallocated','StorFull','S_1_12_3_4','S_1_1_2_3_4','Z', &
+        'S_1_1234','S_1_123_4','S_1_12_34', &
+        'Z_24_1234','Z_6_123_4','Z_4_12_34','Z_2_12_3_4','Z_1_1_2_3_4')
+        NImg = 0
+      Case Default
+        Call MQC_Error_A('Unrecognized storage label in MQC_R4Symm_UnpackSymmetry', 6, &
+          'Label', Label)
+      End Select
+      If(my_Plain) Conj = .False.
+!     Operations in view coordinates: conjugate by the index order.
+      If(Any(my_Order.ne.[1,2,3,4])) then
+        invOrder(my_Order) = [1,2,3,4]
+        Do N = 1, NImg
+          Tmp = Perm(:,N)
+          Do Q = 1, 4
+            Perm(Q,N) = invOrder(Tmp(my_Order(Q)))
+          EndDo
+        EndDo
+      EndIf
+
+      End Subroutine MQC_R4Symm_UnpackSymmetry
+!
+!
+!     PROCEDURE symIndexSize
+!
+!>    \brief <b> symIndexSize returns the length of the array that stores an
+!>    MQC_R4Tensor with the given storage and dimensions</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    symIndexSize returns the number of stored elements. With nX the dimension
+!>    of a basis, MX = nX(nX+1)/2 its pairs (diagonal included):
+!>    StorFull, S_1_*           : I*J*K*L
+!>    R_8_1234                  : M(M+1)/2
+!>    S_4_1234                  : (n**4+3n**2)/4
+!>    R_4_12_34                 : MA*MB              (A = I=J, B = K=L)
+!>    S_2_12_34                 : (nA**2 nB**2+nA nB)/2
+!>    S_2_13_24                 : P(P+1)/2, P = I*J
+!>    R_2_12_3_4                : MA*K*L             (A = I=J)
+!>    Dimensions are chemist ones (Dims mapped through the IndexOrder of the
+!>    label) and must satisfy MQC_R4Symm_Dims_OK.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] OrderIn
+!>    \verbatim
+!>        OrderIn is Character(Len=*)
+!>        The storage label (any name accepted by MQC_R4Symm_Label).
+!>    \endverbatim
+!>
+!>    \param[in] Dims
+!>    \verbatim
+!>        Dims is Integer(kind=int64),Dimension(4)
+!>        The dimensions I,J,K,L of the rank-4 tensor.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function symIndexSize(OrderIn,Dims) Result(NElem)
+
+      Implicit None
+      Character(Len=*),Intent(In)::OrderIn
+      Integer(kind=int64),Dimension(4),Intent(In)::Dims
+      Integer(kind=int64)::NElem,M,NA,NB
+      Character(Len=64)::SymClass
+      Integer(kind=int64),Dimension(4)::my_Order,D
+
+      SymClass = MQC_R4Symm_Label(OrderIn,my_Order)
+      D = MQC_R4Symm_ToChem(my_Order,Dims)
+      Select Case(SymClass)
+      Case('unallocated','Z','Z_24_1234','Z_6_123_4','Z_4_12_34','Z_2_12_3_4','Z_1_1_2_3_4')
+        NElem = 0
+      Case('StorFull','S_1_12_3_4','S_1_1_2_3_4','S_1_1234','S_1_123_4','S_1_12_34')
+        NElem = D(1)*D(2)*D(3)*D(4)
+      Case('R_8_1234')
+        M = D(1)*(D(1)+1)/2
+        NElem = M*(M+1)/2
+      Case('S_4_1234')
+        NElem = (D(1)**4+3*D(1)**2)/4
+      Case('R_4_12_34')
+        NElem = (D(1)*(D(1)+1)/2)*(D(3)*(D(3)+1)/2)
+      Case('S_2_12_34')
+        NA = D(1)
+        NB = D(3)
+        NElem = (NA**2*NB**2+NA*NB)/2
+      Case('S_2_13_24')
+        M = D(1)*D(2)
+        NElem = M*(M+1)/2
+      Case('R_2_12_3_4')
+        NElem = (D(1)*(D(1)+1)/2)*D(3)*D(4)
+      Case Default
+        Call MQC_Error_A('Unrecognized storage label in symIndexSize', 6, &
+          'OrderIn', OrderIn)
+      End Select
+
+      End Function symIndexSize
+!
+!
+!     PROCEDURE MQC_R4Symm_PairIndex
+!
+!>    \brief <b> MQC_R4Symm_PairIndex returns the off-diagonal-first index of a
+!>    pair of one basis</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    For a pair (P,Q) of a basis of dimension N, returns S = o(P,Q) (see
+!>    symIndexHash), Flip = (P < Q) and Diag = (P = Q). Off-diagonal pairs get
+!>    1..N(N-1)/2, diagonal pairs N(N-1)/2+1..N(N+1)/2.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] P,Q,N
+!>    \verbatim
+!>        P,Q,N are Integer(kind=int64)
+!>        The pair and the dimension of its basis.
+!>    \endverbatim
+!>
+!>    \param[out] S,Flip,Diag
+!>    \verbatim
+!>        S is Integer(kind=int64); Flip, Diag are Logical
+!>        The pair index, its orientation and whether it is diagonal.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_PairIndex(P,Q,N,S,Flip,Diag)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::P,Q,N
+      Integer(kind=int64),Intent(Out)::S
+      Logical,Intent(Out)::Flip,Diag
+
+      Diag = P.eq.Q
+      Flip = P.lt.Q
+      If(Diag) then
+        S = N*(N-1)/2+P
+      Else
+        S = (Max(P,Q)-1)*(Max(P,Q)-2)/2+Min(P,Q)
+      EndIf
+
+      End Subroutine MQC_R4Symm_PairIndex
+!
+!
+!     PROCEDURE MQC_R4Symm_TwoPairHash
+!
+!>    \brief <b> MQC_R4Symm_TwoPairHash returns the packed index of two pairs that
+!>    are transposed together with complex conjugation</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Packed index for the relation T(I,J;K,L) = T(J,I;L,K)*, with (I,J) a pair
+!>    of basis A (dimension NA) and (K,L) a pair of basis B (dimension NB). Used
+!>    by S_2_12_34; the construction is given in
+!>    symIndexHash.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] I,J,K,L,NA,NB
+!>    \verbatim
+!>        I,J,K,L,NA,NB are Integer(kind=int64)
+!>        The two pairs and the dimensions of their bases.
+!>    \endverbatim
+!>
+!>    \param[out] Conj
+!>    \verbatim
+!>        Conj is Logical
+!>        TRUE when the stored value is the complex conjugate of the element.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_TwoPairHash(I,J,K,L,NA,NB,Conj) Result(Hash)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::I,J,K,L,NA,NB
+      Logical,Intent(Out)::Conj
+      Integer(kind=int64)::Hash,S1,S2,OffA,OffB,G
+      Logical::F1,F2,D1,D2
+
+      OffA = NA*(NA-1)/2
+      OffB = NB*(NB-1)/2
+      Call MQC_R4Symm_PairIndex(I,J,NA,S1,F1,D1)
+      Call MQC_R4Symm_PairIndex(K,L,NB,S2,F2,D2)
+      If(.not.D1) then
+        Conj = F1
+        If(.not.D2) then
+          G = 0
+          If(F1.neqv.F2) G = 1
+          Hash = (S1-1)*(2*OffB+NB)+2*(S2-1)+G+1
+        Else
+          Hash = (S1-1)*(2*OffB+NB)+2*OffB+(S2-OffB)
+        EndIf
+      Else
+        Conj = F2
+        Hash = OffA*(2*OffB+NB)+(S1-OffA-1)*(OffB+NB)+S2
+      EndIf
+
+      End Function MQC_R4Symm_TwoPairHash
+!
+!
+!     PROCEDURE MQC_R4Symm_Hash
+!
+!>    \brief <b> MQC_R4Symm_Hash returns the storage index of element (I,J,K,L)
+!>    of an MQC_R4Tensor with the given storage label</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Class branch of symIndexHash; the construction of each index is given in
+!>    the symIndexHash documentation.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Label
+!>    \verbatim
+!>        Label is Character(Len=*)
+!>        The storage label (any name accepted by MQC_R4Symm_Label).
+!>    \endverbatim
+!>
+!>    \param[in] I,J,K,L
+!>    \verbatim
+!>        I,J,K,L are Integer(kind=int64)
+!>        The element indices.
+!>    \endverbatim
+!>
+!>    \param[in] Dims
+!>    \verbatim
+!>        Dims is Integer(kind=int64),Dimension(4)
+!>        The dimensions of the rank-4 tensor.
+!>    \endverbatim
+!>
+!>    \param[out] Conj
+!>    \verbatim
+!>        Conj is Logical
+!>        TRUE when the stored value is the complex conjugate of the element.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Hash(Label,I,J,K,L,Dims,Conj) Result(Hash)
+
+      Implicit None
+      Character(Len=*),Intent(In)::Label
+      Integer(kind=int64),Intent(In)::I,J,K,L
+      Integer(kind=int64),Dimension(4),Intent(In)::Dims
+      Logical,Intent(Out)::Conj
+      Integer(kind=int64)::Hash
+      Character(Len=64)::SymClass
+      Logical::my_Plain
+      Integer(kind=int64),Dimension(4)::my_Order,X,D
+
+      SymClass = MQC_R4Symm_Label(Label,my_Order,my_Plain)
+!     Packed classes are read through the order; full-stored data is physical.
+      If(MQC_R4Symm_IsPacked(SymClass)) then
+        X = MQC_R4Symm_ToChem(my_Order,[I,J,K,L])
+        D = MQC_R4Symm_ToChem(my_Order,Dims)
+      Else
+        X = [I,J,K,L]
+        D = Dims
+      EndIf
+      Hash = MQC_R4Symm_Hash_Code(MQC_R4Symm_Code(SymClass),X,D,Conj)
+      If(my_Plain) Conj = .False.
+
+      End Function MQC_R4Symm_Hash
+!
+!
+!     PROCEDURE MQC_R4Symm_Code
+!
+!>    \brief <b> MQC_R4Symm_Code returns the hash code of a canonical R4 storage
+!>    label</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    1 R_8_1234, 2 S_4_1234, 3 R_4_12_34, 4 S_2_12_34, 5 S_2_13_24,
+!>    6 R_2_12_3_4, 0 full-stored (StorFull, S_1_*), -1 no element hash (zero
+!>    tensors, unallocated). Any other label is an error. Stored on the tensor
+!>    (SymCode) together with its storage label.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] SymClass
+!>    \verbatim
+!>        SymClass is Character(Len=*), a canonical storage label
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Code(SymClass) Result(Code)
+
+      Implicit None
+      Character(Len=*),Intent(In)::SymClass
+      Integer(kind=int64)::Code
+
+      Select Case(Trim(SymClass))
+      Case('R_8_1234')
+        Code = 1
+      Case('S_4_1234')
+        Code = 2
+      Case('R_4_12_34')
+        Code = 3
+      Case('S_2_12_34')
+        Code = 4
+      Case('S_2_13_24')
+        Code = 5
+      Case('R_2_12_3_4')
+        Code = 6
+      Case('StorFull','S_1_12_3_4','S_1_1_2_3_4','S_1_1234','S_1_123_4','S_1_12_34')
+        Code = 0
+      Case('unallocated','Z_24_1234','Z_6_123_4','Z_4_12_34','Z_2_12_3_4','Z_1_1_2_3_4')
+        Code = -1
+      Case Default
+        Call MQC_Error_A('Unrecognized storage label in MQC_R4Symm_Code', 6, 'SymClass', SymClass)
+      End Select
+
+      End Function MQC_R4Symm_Code
+!
+!
+!     PROCEDURE MQC_R4Symm_Hash_Code
+!
+!>    \brief <b> MQC_R4Symm_Hash_Code returns the stored index of an element in
+!>    chemist order for a storage hash code</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The class hashes of symIndexHash (formulas in its documentation),
+!>    selected by the code of MQC_R4Symm_Code; X and D are already in chemist
+!>    order. Conj is TRUE when the stored value is the conjugate of the
+!>    element (before a plain flag or a pending DoConjg).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Code
+!>    \verbatim
+!>        Code is Integer(kind=int64)
+!>    \endverbatim
+!>
+!>    \param[in] X,D
+!>    \verbatim
+!>        X, D are Integer(kind=int64),Dimension(4): element and dimensions
+!>    \endverbatim
+!>
+!>    \param[out] Conj
+!>    \verbatim
+!>        Conj is Logical
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Hash_Code(Code,X,D,Conj) Result(Hash)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::Code
+      Integer(kind=int64),Dimension(4),Intent(In)::X,D
+      Logical,Intent(Out)::Conj
+      Integer(kind=int64)::Hash,S1,S2,STmp,Off,G
+      Logical::F1,F2,D1,D2,LTmp
+
+      Conj = .False.
+      Select Case(Code)
+      Case(0)
+        Hash = X(1)+D(1)*(X(2)-1)+D(1)*D(2)*(X(3)-1)+D(1)*D(2)*D(3)*(X(4)-1)
+      Case(1)
+        Hash = MQC_Tri_Index(MQC_Tri_Index(X(1),X(2)),MQC_Tri_Index(X(3),X(4)))
+      Case(2)
+        Off = D(1)*(D(1)-1)/2
+        Call MQC_R4Symm_PairIndex(X(1),X(2),D(1),S1,F1,D1)
+        Call MQC_R4Symm_PairIndex(X(3),X(4),D(1),S2,F2,D2)
+        If(S1.lt.S2) then
+          STmp = S1
+          S1 = S2
+          S2 = STmp
+          LTmp = F1
+          F1 = F2
+          F2 = LTmp
+          LTmp = D1
+          D1 = D2
+          D2 = LTmp
+        EndIf
+        If(D1) then
+          Conj = F2
+        Else
+          Conj = F1
+        EndIf
+        If(S1.le.Off) then
+          G = 0
+          If(F1.neqv.F2) G = 1
+          Hash = S1*(S1-1)+2*(S2-1)+G+1
+        Else
+          Hash = Off*(Off+1)/2+S1*(S1-1)/2+S2
+        EndIf
+      Case(3)
+        Hash = (MQC_Tri_Index(X(3),X(4))-1)*(D(1)*(D(1)+1)/2)+MQC_Tri_Index(X(1),X(2))
+      Case(4)
+        Hash = MQC_R4Symm_TwoPairHash(X(1),X(2),X(3),X(4),D(1),D(3),Conj)
+      Case(5)
+        Hash = MQC_Tri_Index(X(1)+D(1)*(X(2)-1),X(3)+D(1)*(X(4)-1))
+      Case(6)
+        Hash = MQC_Tri_Index(X(1),X(2))+(D(1)*(D(1)+1)/2)*((X(3)-1)+D(3)*(X(4)-1))
+      Case Default
+        Call MQC_Error_I('No element hash for this storage code in MQC_R4Symm_Hash_Code', 6, &
+          'Code', Code)
+      End Select
+
+      End Function MQC_R4Symm_Hash_Code
 !
 !
 !     PROCEDURE MQC_ElementMatrixProduct
@@ -19992,9 +21736,15 @@
       Logical,Optional,Intent(In)::Math
       Logical::Symmetric,myMath
       Integer(kind=int64)::I,J,K
-      Real(kind=real64)::Thresh=1e-10
+      Real(kind=real64)::Thresh
       Character(len=64)::myOption
-
+!
+      If(MQC_very_small.gt.0.0) then
+        thresh = MQC_very_small
+      Else
+        thresh = 1e-10
+      EndIf
+!
       If(Present(Option)) then
         call string_change_case(Option,'l',myOption)
       else
@@ -20748,8 +22498,14 @@
       Class(MQC_Matrix),Intent(In)::Matrix
       Logical::Diagonal
       Integer(kind=int64)::I,J,II
-      Real(kind=real64)::Thresh=1e-14
-
+      Real(kind=real64)::Thresh
+!
+      If(MQC_very_small.gt.0.0) then
+        thresh = MQC_very_small
+      Else
+        thresh = 1e-10
+      EndIf
+!
       Diagonal = .True.
       If(MQC_Matrix_Rows(Matrix).ne.MQC_Matrix_Columns(Matrix)) then
         Diagonal = .False.
@@ -23193,7 +24949,7 @@
       Type(MQC_Vector),Intent(In)::Vector
       Character(len=16)::Symmetry
       Logical::realOK,imagOK
-      Real(kind=real64)::thresh,scale
+      Real(kind=real64)::thresh,myscale
       Integer(kind=int64)::I
 !
       If(MQC_very_small.gt.0.0) then
@@ -23207,9 +24963,9 @@
         realOK = .true.
         imagOK = .true.
         Do I = 1, Vector%Length
-          scale = thresh*max(1.0,abs(Vector%VecC(I)))
-          If(abs(aimag(Vector%VecC(I))).gt.scale) realOK = .false.
-          If(abs(real(Vector%VecC(I))).gt.scale) imagOK = .false.
+          myscale = thresh*max(1.0,abs(Vector%VecC(I)))
+          If(abs(aimag(Vector%VecC(I))).gt.myscale) realOK = .false.
+          If(abs(real(Vector%VecC(I))).gt.myscale) imagOK = .false.
         EndDo
         If(realOK) then
           Symmetry = 'hermitian'
@@ -27029,11 +28785,14 @@
 !>    Scalars. If the location of an element is negative then it is counted from the 
 !>    end of the MQC matrix row/column. The following options are available: 
 !>
-!>    1. Option = 'element' adds scalar into specified element only (default).
-!>    2. Option = 'symmetric' adds scalar symmetrically.
-!>    3. Option = 'antisymmetric' adds scalar antisymmetrically.
-!>    4. Option = 'hermitian' adds scalar hermitianally.
-!>    5. Option = 'antihermitian' adds scalar antihermitianally.
+!>    1. SymmFlag = 'element' adds scalar into specified element only (default).
+!>    2. SymmFlag = 'symmetric' adds scalar symmetrically.
+!>    3. SymmFlag = 'antisymmetric' adds scalar antisymmetrically.
+!>    4. SymmFlag = 'hermitian' adds scalar hermitianally.
+!>    5. SymmFlag = 'antihermitian' adds scalar antihermitianally.
+!>    6. SymmFlag = 'keep' writes scalar preserving the matrix storage symmetry
+!>       (StorSymm/StorAsym/StorHerm/StorAhrm: as 'symmetric'/'antisymmetric'/
+!>       'hermitian'/'antihermitian'; StorFull, StorDiag: as 'element').
 !>
 !>    \endverbatim
 !
@@ -27067,15 +28826,16 @@
 !>        Matrix.
 !>    \endverbatim
 !>    
-!>    \param[in] Option
+!>    \param[in] SymmFlag
 !>    \verbatim
-!>        Option is Character(len=*),Optional
+!>        SymmFlag is Character(len=*),Optional
 !>        = 'element':       add scalar into specified element 
 !>                           only (default)
 !>        = 'symmetric':     add scalar symmetrically
 !>        = 'antisymmetric': add scalar antisymmetrically
 !>        = 'hermitian':     add scalar hermitianally
 !>        = 'antihermitian': add scalar antihermitianally.
+!>        = 'keep':          preserve the storage symmetry (see 6.)
 !>    \endverbatim
 !
 !     Authors:
@@ -27083,7 +28843,7 @@
 !>    \author L. M. Thompson
 !>    \date 2017
 !
-      Recursive Subroutine MQC_Matrix_Scalar_Put_Scalar(Matrix,ScalarIn,I,J,Option)
+      Recursive Subroutine MQC_Matrix_Scalar_Put_Scalar(Matrix,ScalarIn,I,J,SymmFlag)
 !
 !     Variable Declarations.
 !
@@ -27091,13 +28851,13 @@
       Type(MQC_Scalar),Intent(in)::I,J
       Class(MQC_Matrix),Intent(InOut)::Matrix
       Class(*),Intent(In)::ScalarIn
-      Character(len=*),Optional,Intent(In)::Option
+      Character(len=*),Optional,Intent(In)::SymmFlag
       Integer(kind=int64)::IndI,IndJ
       Character(len=64)::myOption
 
       IndI = I
       IndJ = J
-      Call MQC_Matrix_Scalar_Put_Int(Matrix,ScalarIn,IndI,IndJ,Option)
+      Call MQC_Matrix_Scalar_Put_Int(Matrix,ScalarIn,IndI,IndJ,SymmFlag)
 
       End Subroutine MQC_Matrix_Scalar_Put_Scalar
 !
@@ -27119,11 +28879,14 @@
 !>    counted from the end of the MQC matrix row/column. The following options are 
 !>    available: 
 !>
-!>    1. Option = 'element' adds scalar into specified element only (default).
-!>    2. Option = 'symmetric' adds scalar symmetrically.
-!>    3. Option = 'antisymmetric' adds scalar antisymmetrically.
-!>    4. Option = 'hermitian' adds scalar hermitianally.
-!>    5. Option = 'antihermitian' adds scalar antihermitianally.
+!>    1. SymmFlag = 'element' adds scalar into specified element only (default).
+!>    2. SymmFlag = 'symmetric' adds scalar symmetrically.
+!>    3. SymmFlag = 'antisymmetric' adds scalar antisymmetrically.
+!>    4. SymmFlag = 'hermitian' adds scalar hermitianally.
+!>    5. SymmFlag = 'antihermitian' adds scalar antihermitianally.
+!>    6. SymmFlag = 'keep' writes scalar preserving the matrix storage symmetry
+!>       (StorSymm/StorAsym/StorHerm/StorAhrm: as 'symmetric'/'antisymmetric'/
+!>       'hermitian'/'antihermitian'; StorFull, StorDiag: as 'element').
 !>
 !>    \endverbatim
 !
@@ -27157,15 +28920,16 @@
 !>        Matrix.
 !>    \endverbatim
 !>    
-!>    \param[in] Option
+!>    \param[in] SymmFlag
 !>    \verbatim
-!>        Option is Character(len=*),Optional
+!>        SymmFlag is Character(len=*),Optional
 !>        = 'element':       add scalar into specified element 
 !>                           only (default)
 !>        = 'symmetric':     add scalar symmetrically
 !>        = 'antisymmetric': add scalar antisymmetrically
 !>        = 'hermitian':     add scalar hermitianally
 !>        = 'antihermitian': add scalar antihermitianally.
+!>        = 'keep':          preserve the storage symmetry (see 6.)
 !>    \endverbatim
 !
 !     Authors:
@@ -27173,7 +28937,7 @@
 !>    \author L. M. Thompson
 !>    \date 2021
 !
-      Recursive Subroutine MQC_Matrix_Scalar_Put_ScaInt(Matrix,ScalarIn,I,J,Option)
+      Recursive Subroutine MQC_Matrix_Scalar_Put_ScaInt(Matrix,ScalarIn,I,J,SymmFlag)
 !
 !     Variable Declarations.
 !
@@ -27182,13 +28946,13 @@
       Integer,Intent(in)::J
       Class(MQC_Matrix),Intent(InOut)::Matrix
       Class(*),Intent(In)::ScalarIn
-      Character(len=*),Optional,Intent(In)::Option
+      Character(len=*),Optional,Intent(In)::SymmFlag
       Integer(kind=int64)::IndI,IndJ
       Character(len=64)::myOption
 
       IndI = I
       IndJ = J
-      Call MQC_Matrix_Scalar_Put_Int(Matrix,ScalarIn,IndI,IndJ,Option)
+      Call MQC_Matrix_Scalar_Put_Int(Matrix,ScalarIn,IndI,IndJ,SymmFlag)
 
       End Subroutine MQC_Matrix_Scalar_Put_ScaInt
 !
@@ -27209,11 +28973,14 @@
 !>    and a MQC Scalar. If the location of an element is negative then it is counted 
 !>    from the end of the MQC matrix row/column. The following options are available: 
 !>
-!>    1. Option = 'element' adds scalar into specified element only (default).
-!>    2. Option = 'symmetric' adds scalar symmetrically.
-!>    3. Option = 'antisymmetric' adds scalar antisymmetrically.
-!>    4. Option = 'hermitian' adds scalar hermitianally.
-!>    5. Option = 'antihermitian' adds scalar antihermitianally.
+!>    1. SymmFlag = 'element' adds scalar into specified element only (default).
+!>    2. SymmFlag = 'symmetric' adds scalar symmetrically.
+!>    3. SymmFlag = 'antisymmetric' adds scalar antisymmetrically.
+!>    4. SymmFlag = 'hermitian' adds scalar hermitianally.
+!>    5. SymmFlag = 'antihermitian' adds scalar antihermitianally.
+!>    6. SymmFlag = 'keep' writes scalar preserving the matrix storage symmetry
+!>       (StorSymm/StorAsym/StorHerm/StorAhrm: as 'symmetric'/'antisymmetric'/
+!>       'hermitian'/'antihermitian'; StorFull, StorDiag: as 'element').
 !>
 !>    \endverbatim
 !
@@ -27247,15 +29014,16 @@
 !>        Matrix.
 !>    \endverbatim
 !>    
-!>    \param[in] Option
+!>    \param[in] SymmFlag
 !>    \verbatim
-!>        Option is Character(len=*),Optional
+!>        SymmFlag is Character(len=*),Optional
 !>        = 'element':       add scalar into specified element 
 !>                           only (default)
 !>        = 'symmetric':     add scalar symmetrically
 !>        = 'antisymmetric': add scalar antisymmetrically
 !>        = 'hermitian':     add scalar hermitianally
 !>        = 'antihermitian': add scalar antihermitianally.
+!>        = 'keep':          preserve the storage symmetry (see 6.)
 !>    \endverbatim
 !
 !     Authors:
@@ -27263,7 +29031,7 @@
 !>    \author L. M. Thompson
 !>    \date 2021
 !
-      Recursive Subroutine MQC_Matrix_Scalar_Put_IntSca(Matrix,ScalarIn,I,J,Option)
+      Recursive Subroutine MQC_Matrix_Scalar_Put_IntSca(Matrix,ScalarIn,I,J,SymmFlag)
 !
 !     Variable Declarations.
 !
@@ -27272,13 +29040,13 @@
       Type(MQC_Scalar),Intent(in)::J
       Class(MQC_Matrix),Intent(InOut)::Matrix
       Class(*),Intent(In)::ScalarIn
-      Character(len=*),Optional,Intent(In)::Option
+      Character(len=*),Optional,Intent(In)::SymmFlag
       Integer(kind=int64)::IndI,IndJ
       Character(len=64)::myOption
 
       IndI = I
       IndJ = J
-      Call MQC_Matrix_Scalar_Put_Int(Matrix,ScalarIn,IndI,IndJ,Option)
+      Call MQC_Matrix_Scalar_Put_Int(Matrix,ScalarIn,IndI,IndJ,SymmFlag)
 
       End Subroutine MQC_Matrix_Scalar_Put_IntSca
 !
@@ -27298,11 +29066,14 @@
 !>    an element is negative then it is counted from the end of the MQC matrix 
 !>    row/column. The following options are available: 
 !>
-!>    1. Option = 'element' adds scalar into specified element only (default).
-!>    2. Option = 'symmetric' adds scalar symmetrically.
-!>    3. Option = 'antisymmetric' adds scalar antisymmetrically.
-!>    4. Option = 'hermitian' adds scalar hermitianally.
-!>    5. Option = 'antihermitian' adds scalar antihermitianally.
+!>    1. SymmFlag = 'element' adds scalar into specified element only (default).
+!>    2. SymmFlag = 'symmetric' adds scalar symmetrically.
+!>    3. SymmFlag = 'antisymmetric' adds scalar antisymmetrically.
+!>    4. SymmFlag = 'hermitian' adds scalar hermitianally.
+!>    5. SymmFlag = 'antihermitian' adds scalar antihermitianally.
+!>    6. SymmFlag = 'keep' writes scalar preserving the matrix storage symmetry
+!>       (StorSymm/StorAsym/StorHerm/StorAhrm: as 'symmetric'/'antisymmetric'/
+!>       'hermitian'/'antihermitian'; StorFull, StorDiag: as 'element').
 !>
 !>    \endverbatim
 !
@@ -27336,15 +29107,16 @@
 !>        Matrix.
 !>    \endverbatim
 !>    
-!>    \param[in] Option
+!>    \param[in] SymmFlag
 !>    \verbatim
-!>        Option is Character(len=*),Optional
+!>        SymmFlag is Character(len=*),Optional
 !>        = 'element':       add scalar into specified element 
 !>                           only (default)
 !>        = 'symmetric':     add scalar symmetrically
 !>        = 'antisymmetric': add scalar antisymmetrically
 !>        = 'hermitian':     add scalar hermitianally
 !>        = 'antihermitian': add scalar antihermitianally.
+!>        = 'keep':          preserve the storage symmetry (see 6.)
 !>    \endverbatim
 !
 !     Authors:
@@ -27352,7 +29124,7 @@
 !>    \author L. M. Thompson
 !>    \date 2017
 !
-      Recursive Subroutine MQC_Matrix_Scalar_Put_Int(Matrix,ScalarIn,I,J,Option)
+      Recursive Subroutine MQC_Matrix_Scalar_Put_Int(Matrix,ScalarIn,I,J,SymmFlag)
 !
 !     Variable Declarations.
 !
@@ -27360,16 +29132,30 @@
       Integer,Intent(in)::I,J
       Class(MQC_Matrix),Intent(InOut)::Matrix
       Class(*),Intent(In)::ScalarIn
-      Character(len=*),Optional,Intent(In)::Option
+      Character(len=*),Optional,Intent(In)::SymmFlag
       Type(MQC_Scalar)::Scalar
       Integer(kind=int64)::IndI,IndJ
       Character(len=64)::myOption
 
-      If(Present(Option)) then
-        call string_change_case(Option,'l',myOption)
+      If(Present(SymmFlag)) then
+        call string_change_case(SymmFlag,'l',myOption)
       else
         myOption = 'element'
       endIf
+      If(myOption.eq.'keep') then
+        Select Case(Matrix%Storage)
+        Case('StorSymm')
+          myOption = 'symmetric'
+        Case('StorAsym')
+          myOption = 'antisymmetric'
+        Case('StorHerm')
+          myOption = 'hermitian'
+        Case('StorAhrm')
+          myOption = 'antihermitian'
+        Case Default
+          myOption = 'element'
+        End Select
+      EndIf
       If(myOption.ne.'element'.and.myOption.ne.'symmetric'.and.myOption.ne.'antisymmetric'.and. &
         myOption.ne.'hermitian'.and.myOption.ne.'antihermitian') call mqc_error_a('Unrecognized &
         & option in MQC_Matrix_Scalar_Put',6,'myOption',myOption)
@@ -29673,130 +31459,527 @@
 !     PROCEDURE MQC_Matrix_Matrix_Outer
 !
 !>    \brief <b> MQC_Matrix_Matrix_Outer is a function that returns the rank-4
-!>    tensor containing the outer product of two MQC matrices</b> 
+!>    tensor containing the outer product of two MQC matrices</b>
 !
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
 !>
-!>    MQC_Matrix_Matrix_Outer is a function that returns the rank-4 tensor containing 
-!>    the outer product of two MQC matrices.
+!>    R(i,j,k,l) = MA(i,j)*MB(k,l). The data type is the promoted one and the
+!>    storage is the largest class of the symmetry predicted from MA and MB
+!>    (MQC_Matrix_Outer_Core); the operator .outer. uses the defaults.
+!>
+!>    Symmetry of R. Each matrix gives relations (swap, sign, conj) from its
+!>    label (MQC_Matrix_Get_Symmetry): symmetric or diagonal (swap,+), anti-
+!>    symmetric (swap,-), hermitian (swap,+,conj), antihermitian (swap,-,conj);
+!>    real data: every relation also with the other conj flag. A relation of MA
+!>    and one of MB with the same conj flag and sign product +1 give the
+!>    operation 2134 (MA swap), 1243 (MB swap) or 2143 (both), with conj.
+!>    Relations between the matrices (equal dimensions) add MA = MB: 3412;
+!>    MA = conjg(MB): 3412*; MA = transpose(MB): 4321; MA = dagger(MB): 4321*.
+!>    Relations with an overall sign -1 (e.g. antisymmetric x symmetric) are
+!>    not stored. Examples:
+!>    | MA      | MB      | relation   | real data      | complex data          |
+!>    |---------+---------+------------+----------------+-----------------------|
+!>    | sym     | sym     | -          | R4             | R4                    |
+!>    | herm    | herm    | -          | R4             | S2Pair (2143*)        |
+!>    | sym     | herm    | -          | R4             | R2                    |
+!>    | asym    | asym    | -          | S2Pair (2143)  | S2 view (2143)        |
+!>    | sym     | general | -          | R2             | R2                    |
+!>    | sym     | sym     | MA = MB    | R8             | R8                    |
+!>    | herm    | herm    | MA = MB    | R8             | S4                    |
+!>    | herm    | herm    | MA = MB^H  | -              | S4                    |
+!>    | general | general | MA = MB    | S2 (3412)      | S2                    |
+!>    | general | general | MA = MB^T  | S2Pair (4321)  | S2 view (4321)        |
+!>    | general | general | MA = MB^H  | -              | S2Pair view (4321*)   |
 !>
 !>    \endverbatim
 !
 !     Arguments:
 !     ==========
-!>    \param[in] Matrix1
+!>    \param[in] MA
 !>    \verbatim
-!>        Matrix1 is type(mqc_matrix)
+!>        MA is type(mqc_matrix)
 !>        The first matrix in the outer product.
 !>    \endverbatim
 !>
-!>    \param[in] Matrix2
+!>    \param[in] MB
 !>    \verbatim
-!>        Matrix2 is type(mqc_matrix)
+!>        MB is type(mqc_matrix)
 !>        The second matrix in the outer product.
 !>    \endverbatim
 !>
+!>    \param[in] TestSymm
+!>    \verbatim
+!>        TestSymm is Logical,optional (default TRUE)
+!>        Test a matrix without symmetry label ('unknown') for symmetric,
+!>        hermitian, antisymmetric and antihermitian, in this order.
+!>    \endverbatim
+!>
+!>    \param[in] Grouping
+!>    \verbatim
+!>        Grouping is Logical,optional (default TRUE)
+!>        Test the relations MA = MB, conjg(MB), transpose(MB), dagger(MB)
+!>        (threshold MQC_very_small, 1e-10 if not set).
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author L. M. Thompson, M. M. F. Moraes
-!>    \date 2019, 2025
+!>    \date 2019, 2025, 2026
 !
-    Function MQC_Matrix_Matrix_Outer(matrix1,matrix2) result(outer)
+      Function MQC_Matrix_Matrix_Outer(MA,MB,TestSymm,Grouping) Result(R)
 !
 !     Variable Declarations.
       Implicit None
-      type(mqc_r4tensor)::outer
-      type(mqc_matrix),intent(in)::matrix1,matrix2
-      integer(kind=int64)::M,N,O,P,i,j,k,l
-      
-      M = size(matrix1,1)
-      N = size(matrix1,2)
-      O = size(matrix2,1)
-      P = size(matrix2,2)
-      
-      call outer%init(M,N,O,P)
-       
-!!!$OMP PARALLEL DO DEFAULT(NONE), &
-!!!$OMP SHARED(M,N,O,P,outer,matrix1,matrix2)
-      do i = 1,M
-        do j = 1,N
-          do k = 1,O
-            do l = 1,P
-              call outer%put(matrix1%at(i,j)*matrix2%at(k,l),i,j,k,l)
-            endDo
-          endDo
-        endDo
-      endDo
-!!!$OMP END PARALLEL DO
-    end function MQC_Matrix_Matrix_Outer
+      Type(MQC_Matrix),Intent(In)::MA,MB
+      Logical,Intent(In),Optional::TestSymm,Grouping
+      Type(MQC_R4Tensor)::R
+      Logical::my_TestSymm,my_Grouping
+
+      my_TestSymm = .True.
+      If(Present(TestSymm)) my_TestSymm = TestSymm
+      my_Grouping = .True.
+      If(Present(Grouping)) my_Grouping = Grouping
+      If(my_Grouping) then
+        R = MQC_Matrix_Outer_Core(MA,MB,'test',my_TestSymm)
+      Else
+        R = MQC_Matrix_Outer_Core(MA,MB,'none',my_TestSymm)
+      EndIf
+
+      End Function MQC_Matrix_Matrix_Outer
+!
+!
+!     PROCEDURE MQC_Matrix_Matrix_Outer_Op
+!
+!>    \brief <b> MQC_Matrix_Matrix_Outer_Op is the operator .outer. for two MQC
+!>    matrices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Matrix_Matrix_Outer with the default options.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] MA,MB
+!>    \verbatim
+!>        MA, MB are type(mqc_matrix)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_Matrix_Matrix_Outer_Op(MA,MB) Result(R)
+
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::MA,MB
+      Type(MQC_R4Tensor)::R
+
+      R = MQC_Matrix_Matrix_Outer(MA,MB)
+
+      End Function MQC_Matrix_Matrix_Outer_Op
+!
+!
+!     PROCEDURE MQC_Matrix_Matrix_SymOuter
+!
+!>    \brief <b> MQC_Matrix_Matrix_SymOuter returns the outer product of an MQC
+!>    matrix with a transformed copy of itself</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    R = MA .outer. T(MA), with T given by secondSym: 'self' (MA),
+!>    'transpose', 'conjugate' or 'dagger'. The relation between the two
+!>    factors is known, so it is not tested (Grouping = FALSE ignores it); see
+!>    MQC_Matrix_Matrix_Outer for the symmetry of R.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] MA
+!>    \verbatim
+!>        MA is type(mqc_matrix)
+!>    \endverbatim
+!>
+!>    \param[in] secondSym
+!>    \verbatim
+!>        secondSym is Character(len=*): 'self', 'transpose', 'conjugate' or
+!>        'dagger' (any case).
+!>    \endverbatim
+!>
+!>    \param[in] TestSymm
+!>    \verbatim
+!>        TestSymm is Logical,optional (default TRUE)
+!>        Test MA for a symmetry if it has no label ('unknown').
+!>    \endverbatim
+!>
+!>    \param[in] Grouping
+!>    \verbatim
+!>        Grouping is Logical,optional (default TRUE)
+!>        Use the relation between MA and T(MA).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_Matrix_Matrix_SymOuter(MA,secondSym,TestSymm,Grouping) Result(R)
+
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::MA
+      Character(Len=*),Intent(In)::secondSym
+      Logical,Intent(In),Optional::TestSymm,Grouping
+      Type(MQC_R4Tensor)::R
+      Type(MQC_Matrix)::MB
+      Character(Len=64)::my_Sym,my_Rel
+      Logical::my_TestSymm,my_Grouping
+
+      my_TestSymm = .True.
+      If(Present(TestSymm)) my_TestSymm = TestSymm
+      my_Grouping = .True.
+      If(Present(Grouping)) my_Grouping = Grouping
+      Call String_Change_Case(secondSym,'l',my_Sym)
+      Select Case(Trim(my_Sym))
+      Case('self')
+        MB = MA
+      Case('transpose')
+        MB = Transpose(MA)
+      Case('conjugate')
+        MB = Conjg(MA)
+      Case('dagger')
+        MB = Dagger(MA)
+      Case Default
+        Call MQC_Error_A('Unrecognized secondSym in MQC_Matrix_Matrix_SymOuter', 6, &
+          'secondSym', secondSym)
+      End Select
+      my_Rel = my_Sym
+      If(.not.my_Grouping) my_Rel = 'none'
+      R = MQC_Matrix_Outer_Core(MA,MB,my_Rel,my_TestSymm)
+
+      End Function MQC_Matrix_Matrix_SymOuter
+!
+!
+!     PROCEDURE MQC_Matrix_Outer_Core
+!
+!>    \brief <b> MQC_Matrix_Outer_Core computes the outer product of two MQC
+!>    matrices in the storage of its predicted symmetry</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Rel is the relation between MA and MB: 'none', 'test' (tested), or known:
+!>    'self' (MB = MA), 'conjugate', 'transpose', 'dagger' (MB = T(MA)). The
+!>    group of R (see MQC_Matrix_Matrix_Outer) gives the class
+!>    (MQC_R4Symm_Best_Class), else StorFull; a zero matrix gives a zero
+!>    tensor. Packed R: one product per slot; full R: column blocks.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] MA,MB,Rel,TestSymm
+!>    \verbatim
+!>        MA, MB are type(mqc_matrix); Rel is Character(len=*); TestSymm is Logical
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_Matrix_Outer_Core(MA,MB,Rel,TestSymm) Result(R)
+
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::MA,MB
+      Character(Len=*),Intent(In)::Rel
+      Logical,Intent(In)::TestSymm
+      Type(MQC_R4Tensor)::R
+      Integer(kind=int64)::M,N,O,P,TypeCode,NG,NRA,NRB,A,B,S,X0,K,L
+      Integer(kind=int64),Dimension(4)::X,Ord,PP
+      Integer(kind=int64),Dimension(4,48)::GP
+      Logical,Dimension(48)::GC
+      Integer(kind=int64),Dimension(3,4)::RelA,RelB
+      Character(Len=64)::my_Type,NewClass
+      Logical::RealA,RealB,Found,NewPlain,ZeroIn,Cj
+      Integer(kind=int64),Dimension(:),Allocatable::W0,W1,Rep
+      Integer(kind=int64),Dimension(:,:),Allocatable::IA,IB
+      Real(kind=real64),Dimension(:,:),Allocatable::RA,RB
+      Complex(kind=real64),Dimension(:,:),Allocatable::CA,CB
+      Complex(kind=real64)::VC
+      Real(kind=real64)::Thresh
+
+      If(MQC_very_small.gt.0.0) then
+        Thresh = MQC_very_small
+      Else
+        Thresh = 1e-10
+      EndIf
+      If(.not.MQC_Matrix_isAllocated(MA).or..not.MQC_Matrix_isAllocated(MB)) &
+        Call MQC_Error_A('Unallocated matrix in MQC_Matrix_Outer_Core', 6, &
+        'MA%Storage', MA%Storage, 'MB%Storage', MB%Storage)
+      M = Size(MA,1)
+      N = Size(MA,2)
+      O = Size(MB,1)
+      P = Size(MB,2)
+      RealA = .not.MQC_Matrix_HaveComplex(MA)
+      RealB = .not.MQC_Matrix_HaveComplex(MB)
+      If(.not.RealA.or..not.RealB) then
+        my_Type = 'Complex'
+        TypeCode = 3
+      ElseIf(MQC_Matrix_HaveReal(MA).or.MQC_Matrix_HaveReal(MB)) then
+        my_Type = 'Real'
+        TypeCode = 2
+      Else
+        my_Type = 'Integer'
+        TypeCode = 1
+      EndIf
+      Select Case(TypeCode)
+      Case(1)
+        Call MQC_Matrix_To_Array(IA,MA,Unpack=.True.)
+        Call MQC_Matrix_To_Array(IB,MB,Unpack=.True.)
+        ZeroIn = All(IA.eq.0).or.All(IB.eq.0)
+      Case(2)
+        Call MQC_Matrix_To_Array(RA,MA,Unpack=.True.)
+        Call MQC_Matrix_To_Array(RB,MB,Unpack=.True.)
+        ZeroIn = All(RA.eq.0.0).or.All(RB.eq.0.0)
+        If(MQC_very_small.gt.0.0) ZeroIn = ZeroIn.or.MaxVal(Abs(RA)).le.MQC_very_small.or. &
+          MaxVal(Abs(RB)).le.MQC_very_small
+      Case(3)
+        Call MQC_Matrix_To_Array(CA,MA,Unpack=.True.)
+        Call MQC_Matrix_To_Array(CB,MB,Unpack=.True.)
+        ZeroIn = All(CA.eq.(0.0,0.0)).or.All(CB.eq.(0.0,0.0))
+        If(MQC_very_small.gt.0.0) ZeroIn = ZeroIn.or.MaxVal(Abs(CA)).le.MQC_very_small.or. &
+          MaxVal(Abs(CB)).le.MQC_very_small
+      Case Default
+        Call MQC_Error_I('MQC_Matrix_Outer_Core: unknown case in Setup', 6, 'TypeCode', TypeCode)
+      End Select
+
+      If(ZeroIn) then
+        Call MQC_Allocate_R4Tensor(M,N,O,P,R,my_Type,'Z')
+      Else
+!       relations of each matrix: (swap, sign, conj)
+        Call MQC_Matrix_Outer_Rels(MA,RealA,TestSymm,RelA,NRA)
+        Call MQC_Matrix_Outer_Rels(MB,RealB,TestSymm,RelB,NRB)
+        NG = 0
+        Do A = 1, NRA
+          Do B = 1, NRB
+            If(RelA(3,A).ne.RelB(3,B).or.RelA(2,A)*RelB(2,B).ne.1) Cycle
+            PP = [1,2,3,4]
+            If(RelA(1,A).eq.1) PP(1:2) = [2,1]
+            If(RelB(1,B).eq.1) PP(3:4) = [4,3]
+            Call MQC_R4Symm_Add_Op(PP,RelA(3,A).eq.1,GP,GC,NG)
+          EndDo
+        EndDo
+!       relations between the matrices
+        Select Case(Trim(Rel))
+        Case('none')
+          Continue
+        Case('self')
+          PP = [3,4,1,2]
+          Call MQC_R4Symm_Add_Op(PP,.False.,GP,GC,NG)
+        Case('conjugate')
+          PP = [3,4,1,2]
+          Call MQC_R4Symm_Add_Op(PP,.True.,GP,GC,NG)
+        Case('transpose')
+          PP = [4,3,2,1]
+          Call MQC_R4Symm_Add_Op(PP,.False.,GP,GC,NG)
+        Case('dagger')
+          PP = [4,3,2,1]
+          Call MQC_R4Symm_Add_Op(PP,.True.,GP,GC,NG)
+        Case('test')
+          If(M.eq.O.and.N.eq.P) then
+            PP = [3,4,1,2]
+            Select Case(TypeCode)
+            Case(1)
+              If(All(IA.eq.IB)) Call MQC_R4Symm_Add_Op(PP,.False.,GP,GC,NG)
+            Case(2)
+              If(MaxVal(Abs(RA-RB)).le.Thresh) Call MQC_R4Symm_Add_Op(PP,.False.,GP,GC,NG)
+            Case(3)
+              If(MaxVal(Abs(CA-CB)).le.Thresh) Call MQC_R4Symm_Add_Op(PP,.False.,GP,GC,NG)
+              If(MaxVal(Abs(CA-Conjg(CB))).le.Thresh) Call MQC_R4Symm_Add_Op(PP,.True.,GP,GC,NG)
+            Case Default
+              Call MQC_Error_I('MQC_Matrix_Outer_Core: unknown case in Grouping', 6, &
+                'TypeCode', TypeCode)
+            End Select
+          EndIf
+          If(M.eq.P.and.N.eq.O) then
+            PP = [4,3,2,1]
+            Select Case(TypeCode)
+            Case(1)
+              If(All(IA.eq.Transpose(IB))) Call MQC_R4Symm_Add_Op(PP,.False.,GP,GC,NG)
+            Case(2)
+              If(MaxVal(Abs(RA-Transpose(RB))).le.Thresh) Call MQC_R4Symm_Add_Op(PP,.False.,GP,GC,NG)
+            Case(3)
+              If(MaxVal(Abs(CA-Transpose(CB))).le.Thresh) Call MQC_R4Symm_Add_Op(PP,.False.,GP,GC,NG)
+              If(MaxVal(Abs(CA-Conjg(Transpose(CB)))).le.Thresh) Call MQC_R4Symm_Add_Op(PP,.True.,GP,GC,NG)
+            Case Default
+              Call MQC_Error_I('MQC_Matrix_Outer_Core: unknown case in Grouping', 6, &
+                'TypeCode', TypeCode)
+            End Select
+          EndIf
+        Case Default
+          Call MQC_Error_A('Unrecognized relation in MQC_Matrix_Outer_Core', 6, 'Rel', Rel)
+        End Select
+        Call MQC_R4Symm_Close_Group(GP,GC,NG)
+        Call MQC_R4Symm_Best_Class(GP,GC,NG,TypeCode.ne.3,[M,N,O,P],NewClass,Ord,NewPlain,Found)
+        If(Found) then
+          Call MQC_Allocate_R4Tensor(M,N,O,P,R,my_Type,MQC_R4Symm_With_Order(NewClass,Ord,NewPlain))
+!         one product per slot, at its first element
+          Call MQC_R4Symm_Slot_Weights(R,W0,W1,Rep)
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(R,Rep,IA,IB,RA,RB,CA,CB,M,N,O,TypeCode), &
+!$OMP PRIVATE(X0,X,Cj,VC)
+          Do S = 1, Size(Rep)
+            X0 = Rep(S)-1
+            X(1) = Mod(X0,M)+1
+            X0 = X0/M
+            X(2) = Mod(X0,N)+1
+            X0 = X0/N
+            X(3) = Mod(X0,O)+1
+            X(4) = X0/O+1
+            Select Case(TypeCode)
+            Case(1)
+              R%ITen(S,1,1,1) = IA(X(1),X(2))*IB(X(3),X(4))
+            Case(2)
+              R%RTen(S,1,1,1) = RA(X(1),X(2))*RB(X(3),X(4))
+            Case(3)
+              If(MQC_R4Tensor_Slot(R,X(1),X(2),X(3),X(4),Cj).ne.S) Call MQC_Error_I( &
+                'MQC_Matrix_Outer_Core: slot mismatch', 6, 'S', S)
+              VC = CA(X(1),X(2))*CB(X(3),X(4))
+              If(Cj) VC = Conjg(VC)
+              R%CTen(S,1,1,1) = VC
+            Case Default
+              Call MQC_Error_I('MQC_Matrix_Outer_Core: unknown case in Packed', 6, 'TypeCode', TypeCode)
+            End Select
+          EndDo
+!$OMP END PARALLEL DO
+        Else
+          Call MQC_Allocate_R4Tensor(M,N,O,P,R,my_Type,'StorFull')
+          Do L = 1, P
+            Do K = 1, O
+              Select Case(TypeCode)
+              Case(1)
+                R%ITen(:,:,K,L) = IA*IB(K,L)
+              Case(2)
+                R%RTen(:,:,K,L) = RA*RB(K,L)
+              Case(3)
+                R%CTen(:,:,K,L) = CA*CB(K,L)
+              Case Default
+                Call MQC_Error_I('MQC_Matrix_Outer_Core: unknown case in Full', 6, 'TypeCode', TypeCode)
+              End Select
+            EndDo
+          EndDo
+        EndIf
+      EndIf
+
+      End Function MQC_Matrix_Outer_Core
 !
 !
 !     PROCEDURE MQC_Matrix_Matrix_Cross_Outer
 !
 !>    \brief <b> MQC_Matrix_Matrix_Cross_Outer is similar to
-!>    MQC_Matrix_Matrix_Outer but returns a rank-4 with swapped indexes
-!>    M1(i,l)xM(k,j) instead of M1(i,j)xM2(k,l)</b> 
+!>    MQC_Matrix_Matrix_Outer but returns a rank-4 with swapped indexes</b>
 !
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
 !>
-!>    MQC_Matrix_Matrix_Cross_Outer is a function that returns the rank-4 tensor containing 
-!>    the  M1(i,l)xM(k,j) outer product of two MQC matrices.
+!>    X(i,l,k,j) = MA(i,j)*MB(k,l): the outer product MQC_Matrix_Matrix_Outer
+!>    read with IndexOrder 1432 (Permute([1,4,3,2])). A packed outer product
+!>    keeps its class as an O(1) view (label suffix, e.g. _Ord1432); a full one
+!>    is permuted in memory. The operator .crossouter. uses the defaults.
 !>
 !>    \endverbatim
 !
 !     Arguments:
 !     ==========
-!>    \param[in] Matrix1
+!>    \param[in] MA
 !>    \verbatim
-!>        Matrix1 is type(mqc_matrix)
+!>        MA is type(mqc_matrix)
 !>        The first matrix in the outer product.
 !>    \endverbatim
 !>
-!>    \param[in] Matrix2
+!>    \param[in] MB
 !>    \verbatim
-!>        Matrix2 is type(mqc_matrix)
+!>        MB is type(mqc_matrix)
 !>        The second matrix in the outer product.
 !>    \endverbatim
 !>
+!>    \param[in] TestSymm,Grouping
+!>    \verbatim
+!>        TestSymm, Grouping are Logical,optional (default TRUE); see
+!>        MQC_Matrix_Matrix_Outer.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author L. M. Thompson, M. M. F. Moraes
+!>    \date 2019, 2025, 2026
+!
+      Function MQC_Matrix_Matrix_Cross_Outer(MA,MB,TestSymm,Grouping) Result(X)
+!
+!     Variable Declarations.
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::MA,MB
+      Logical,Intent(In),Optional::TestSymm,Grouping
+      Type(MQC_R4Tensor)::X,Outer
+      Integer(kind=int64),Dimension(4)::Ord
+
+      Outer = MQC_Matrix_Matrix_Outer(MA,MB,TestSymm,Grouping)
+      Ord = [1,4,3,2]
+      X = MQC_R4Tensor_Permute(Outer,Ord,.False.)
+
+      End Function MQC_Matrix_Matrix_Cross_Outer
+!
+!
+!     PROCEDURE MQC_Matrix_Matrix_Cross_Outer_Op
+!
+!>    \brief <b> MQC_Matrix_Matrix_Cross_Outer_Op is the operator .crossouter. for
+!>    two MQC matrices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_Matrix_Matrix_Cross_Outer with the default options.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] MA,MB
+!>    \verbatim
+!>        MA, MB are type(mqc_matrix)
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
-!>    \date 2024
+!>    \date 2026
 !
-      Function MQC_Matrix_Matrix_Cross_Outer(matrix1,matrix2) result(outer)
-!
-!     Variable Declarations.
+      Function MQC_Matrix_Matrix_Cross_Outer_Op(MA,MB) Result(X)
+
       Implicit None
-      type(mqc_r4tensor)::outer
-      type(mqc_matrix),intent(in)::matrix1,matrix2
-      integer(kind=int64)::M,N,O,P,i,j,k,l
+      Type(MQC_Matrix),Intent(In)::MA,MB
+      Type(MQC_R4Tensor)::X
 
-      M = size(matrix1,1)
-      N = size(matrix1,2)
-      O = size(matrix2,1)
-      P = size(matrix2,2)
+      X = MQC_Matrix_Matrix_Cross_Outer(MA,MB)
 
-      call outer%init(M,P,O,N)
-
-      do i = 1,M
-        do j = 1,N
-          do k = 1,O
-            do l = 1,P
-              call outer%put(matrix1%at(i,j)*matrix2%at(k,l),i,l,k,j)
-            endDo
-          endDo
-        endDo
-      endDo
-
-      end function MQC_Matrix_Matrix_Cross_Outer
+      End Function MQC_Matrix_Matrix_Cross_Outer_Op
 !
 !
 !     PROCEDURE MQC_Matrix_Matrix_Kronecker_Product
@@ -30776,13 +32959,17 @@
 !>    \author X. Sheng
 !>    \date 2016
 !
-      Subroutine MQC_Allocate_R4Tensor(I,J,K,L,Tensor,Data_Type,Storage)
+      Subroutine MQC_Allocate_R4Tensor(I,J,K,L,Tensor,Data_Type,Storage,IndexOrder)
 !
       Implicit None
       Integer(kind=int64),Intent(In)::I,J,K,L
       Character(Len=*),Intent(In)::Data_Type,Storage
       Type(MQC_R4Tensor),Intent(InOut)::Tensor
+      Integer(kind=int64),Dimension(4),Intent(In),Optional::IndexOrder
       Integer(kind=int64)::ICur,JCur,KCur,LCur
+      Character(Len=64)::my_Storage
+      Integer(kind=int64),Dimension(4)::my_Order
+      Logical::PackFlip,my_Plain
 
       If (I.lt.0 .or. J.lt.0 .or. K.lt.0 .or. L.lt.0) then
         Call MQC_Error_I('Dimensions less than zero in MQC_Allocate_R4Tensor', 6, &
@@ -30794,43 +32981,71 @@
 
       Call MQC_Deallocate_R4Tensor(Tensor)
 
-      If(Storage.eq.'StorFull' .or. Storage.eq.'Full' .or. Storage.eq.'full' .or. Storage.eq.'storfull') then
-        Tensor%Storage = 'StorFull'
+      my_Storage = MQC_R4Symm_Label(Storage,my_Order,my_Plain)
+      If(my_Storage.eq.'unallocated') Call MQC_Error_A('A storage label is required in &
+     &  MQC_Allocate_R4Tensor', 6, 'Storage', Storage)
+!     A zero tensor without an explicit class takes it from the dimensions.
+      If(my_Storage.eq.'Z') Call MQC_R4Symm_Zero_Class(I,J,K,L,my_Storage,my_Order)
+      If(Present(IndexOrder)) then
+        If(.not.MQC_R4Symm_Is_Order(IndexOrder)) Call MQC_Error_I('IndexOrder is not a &
+     &    permutation in MQC_Allocate_R4Tensor', 6, 'IndexOrder(1)', IndexOrder(1), &
+     &    'IndexOrder(2)', IndexOrder(2), 'IndexOrder(3)', IndexOrder(3), &
+     &    'IndexOrder(4)', IndexOrder(4))
+        If(Any(my_Order.ne.[1,2,3,4]).and.Any(MQC_R4Symm_Layout_Order(my_Storage,my_Order) &
+          .ne.MQC_R4Symm_Layout_Order(my_Storage,IndexOrder))) &
+          Call MQC_Error_A('IndexOrder disagrees with the order of the label &
+     &    in MQC_Allocate_R4Tensor', 6, 'Storage', Storage)
+        my_Order = IndexOrder
+      EndIf
+      If(.not.MQC_R4Symm_Has_Order(my_Storage).and.Any(my_Order.ne.[1,2,3,4])) &
+        Call MQC_Error_A('IndexOrder does not apply to this storage in &
+     &  MQC_Allocate_R4Tensor', 6, 'Storage', Storage)
+      my_Order = MQC_R4Symm_Layout_Order(my_Storage,my_Order)
+      my_Order = MQC_R4Symm_Packed_Order(my_Storage,my_Order,PackFlip,my_Plain)
+      If(.not.MQC_R4Symm_Dims_OK(my_Storage,I,J,K,L,my_Order)) Call MQC_Error_I('Dimensions &
+     &  not compatible with the storage in MQC_Allocate_R4Tensor', 6, 'I', I, 'J', J, &
+     &  'K', K, 'L', L)
+      Tensor%Storage = my_Storage
+      Tensor%SymCode = MQC_R4Symm_Code(my_Storage)
+      Tensor%IndexOrder = my_Order
+      If(my_Storage(1:2).eq.'Z_') then
+!       zero tensor: dimensions and data type only (data arrays stay unallocated)
+        ICur = 0
+        JCur = 0
+        KCur = 0
+        LCur = 0
+      ElseIf(.not.MQC_R4Symm_IsPacked(my_Storage)) then
         ICur = I
         JCur = J
         KCur = K
         LCur = L
-      ElseIf(Storage.eq.'StorSymm' .or. Storage.eq.'Symm' .or. Storage.eq.'symm' .or. Storage.eq.'storsymm') then
-        If(I.ne.J.and.I.ne.K.and.I.ne.L) Call MQC_Error_I('Attempting to assign rank-4 tensor of variable dimensions to &
-     &    symmetric form in MQC_Allocate_R4Tensor', 6, 'I', I, 'J', J, 'K', K, 'L', L)
-        Tensor%Storage = 'StorSymm'
-        ICur = (I**4+2*I**3+3*I**2+2*I)/8
+      Else
+        ICur = symIndexSize(my_Storage,MQC_R4Symm_ToChem(my_Order,[I,J,K,L]))
         JCur = 1
         KCur = 1
         LCur = 1
-      Else
-        Call MQC_Error_A('Storage type not recognised in MQC_Allocate_R4Tensor', 6, &
-             'Storage', Storage)
       EndIf
 
       If(Data_Type.eq.'Integer' .or. Data_Type.eq.'integer' .or. Data_Type.eq.'Int' .or. Data_Type.eq.'int') then
         Tensor%Data_Type = 'Integer'
-        If(Allocated(Tensor%ITen)) Deallocate(Tensor%ITen)
-        Allocate(Tensor%ITen(ICur,JCur,KCur,LCur))
+        If(my_Storage(1:2).ne.'Z_') Allocate(Tensor%ITen(ICur,JCur,KCur,LCur))
       ElseIf(Data_Type.eq.'Real' .or. Data_Type.eq.'real') then
         Tensor%Data_Type = 'Real'
-        If(Allocated(Tensor%RTen)) Deallocate(Tensor%RTen)
-        Allocate(Tensor%RTen(ICur,JCur,KCur,LCur))
+        If(my_Storage(1:2).ne.'Z_') Allocate(Tensor%RTen(ICur,JCur,KCur,LCur))
       ElseIf(Data_Type.eq.'Complex' .or. Data_Type.eq.'complex') then
         Tensor%Data_Type = 'Complex'
-        If(Allocated(Tensor%CTen)) Deallocate(Tensor%CTen)
-        Allocate(Tensor%CTen(ICur,JCur,KCur,LCur))
+        If(my_Storage(1:2).ne.'Z_') Allocate(Tensor%CTen(ICur,JCur,KCur,LCur))
+      Else
+        Call MQC_Error_A('Data type not recognised in MQC_Allocate_R4Tensor', 6, &
+          'Data_Type', Data_Type)
       EndIf
 
       Tensor%I = I
       Tensor%J = J
       Tensor%K = K
       Tensor%L = L
+      If(PackFlip.and.Tensor%Data_Type.eq.'Complex') Tensor%DoConjg = .True.
+      Tensor%PlainSymm = my_Plain.and.Tensor%Data_Type.eq.'Complex'
 
       End Subroutine mqc_allocate_r4tensor
 !
@@ -30873,8 +33088,12 @@
       If(Allocated(Tensor%ITen)) Deallocate(Tensor%ITen)
       If(Allocated(Tensor%RTen)) Deallocate(Tensor%RTen)
       If(Allocated(Tensor%CTen)) Deallocate(Tensor%CTen)
-      Tensor%Data_Type = ''
-      Tensor%Storage = ''
+      Tensor%Data_Type = 'unallocated'
+      Tensor%Storage = 'unallocated'
+      Tensor%SymCode = -1
+      Tensor%IndexOrder = [1,2,3,4]
+      Tensor%DoConjg = .False.
+      Tensor%PlainSymm = .False.
       Tensor%I = 0
       Tensor%J = 0
       Tensor%K = 0
@@ -31029,7 +33248,8 @@
       Class(MQC_R4Tensor),Intent(In)::Tensor
       Type(MQC_Scalar)::Element
       Integer,Intent(In)::I,J,K,L
-      Integer(kind=int64)::IndI,IndJ,IndK,IndL
+      Integer(kind=int64)::IndI,IndJ,IndK,IndL,Slot
+      Logical::DoConj
 
       IndI = I
       IndJ = J
@@ -31054,7 +33274,7 @@
            'IndL', IndL, &
            'Tensor%L', Tensor%L )
       
-      If(Tensor%Storage.eq.'StorFull') then
+      If(MQC_R4Tensor_HaveFull(Tensor)) then
         If(Tensor%Data_Type.eq.'Integer') then
           Element = (Tensor%ITen(IndI,IndJ,IndK,IndL))
         ElseIf(Tensor%Data_Type.eq.'Real') then
@@ -31065,16 +33285,29 @@
           Call MQC_Error_A('Tensor type not defined in MQC_R4Tensor_At', 6, &
                'Tensor%Data_Type', Tensor%Data_Type )
         EndIf
-      ElseIf(Tensor%Storage.eq.'StorSymm') then
+      ElseIf(MQC_R4Tensor_HaveSymmetric(Tensor)) then
+        Slot = MQC_R4Tensor_Slot(Tensor,IndI,IndJ,IndK,IndL,DoConj)
         If(Tensor%Data_Type.eq.'Integer') then
-          Element = Tensor%ITen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1)
+          Element = Tensor%ITen(Slot,1,1,1)
         ElseIf(Tensor%Data_Type.eq.'Real') then
-          Element = Tensor%RTen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1)
+          Element = Tensor%RTen(Slot,1,1,1)
         ElseIf(Tensor%Data_Type.eq.'Complex') then
-          Element = Tensor%CTen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1)
+          If(DoConj) then
+            Element = Conjg(Tensor%CTen(Slot,1,1,1))
+          Else
+            Element = Tensor%CTen(Slot,1,1,1)
+          EndIf
         Else
           Call MQC_Error_A('Tensor type not defined in MQC_R4Tensor_At', 6, &
             'Tensor%Data_Type', Tensor%Data_Type )
+        EndIf
+      ElseIf(MQC_R4Tensor_HaveZero(Tensor)) then
+        If(Tensor%Data_Type.eq.'Integer') then
+          Element = 0
+        ElseIf(Tensor%Data_Type.eq.'Complex') then
+          Element = (0.0,0.0)
+        Else
+          Element = 0.0
         EndIf
       Else
         Call MQC_Error_A('Storage type not defined in MQC_R4Tensor_At', 6, &
@@ -31150,9 +33383,15 @@
 !>    \param[in] SymmFlag  
 !>    \verbatim
 !>        SymmFlag is Character(Len=*),Optional
-!>        Whether to add value to tensor symmetrically
-!>        = 'no symm': do not add symmetrically
-!>        = 'symm:' add value in 8-fold symmetry locations.
+!>        = 'noSymm': write the element only (default). A packed tensor
+!>                    stays packed only if the element is fixed by its class
+!>                    (and real when self-conjugate); otherwise it is expanded.
+!>        = 'keep':   write the element so that the tensor's own class is
+!>                    preserved (packed: into its slot; full: element only).
+!>        = 'symm' or any class label: write the element and all its images
+!>                    under that class (see MQC_R4Symm_UnpackSymmetry).
+!>        A complex value on a self-conjugate position cannot satisfy the
+!>        class; the tensor is expanded and only the element is written.
 !>    \endverbatim
 !
 !     Authors:
@@ -31244,9 +33483,15 @@
 !>    \param[in] SymmFlag  
 !>    \verbatim
 !>        SymmFlag is Character(Len=*),Optional
-!>        Whether to add value to tensor symmetrically
-!>        = 'no symm': do not add symmetrically
-!>        = 'symm:' add value in 8-fold symmetry locations.
+!>        = 'noSymm': write the element only (default). A packed tensor
+!>                    stays packed only if the element is fixed by its class
+!>                    (and real when self-conjugate); otherwise it is expanded.
+!>        = 'keep':   write the element so that the tensor's own class is
+!>                    preserved (packed: into its slot; full: element only).
+!>        = 'symm' or any class label: write the element and all its images
+!>                    under that class (see MQC_R4Symm_UnpackSymmetry).
+!>        A complex value on a self-conjugate position cannot satisfy the
+!>        class; the tensor is expanded and only the element is written.
 !>    \endverbatim
 !
 !     Authors:
@@ -31260,10 +33505,16 @@
       Integer,Intent(In)::I,J,K,L
       Class(MQC_R4Tensor),Intent(InOut)::Tensor
       Class(*),Intent(In)::ElementIn
-      Type(MQC_Scalar)::Element
+      Type(MQC_Scalar)::Element,ConjElement
       Integer(kind=int64)::IndI,IndJ,IndK,IndL
       Character(Len=*),Intent(In),Optional::SymmFlag
       Character(Len=64)::my_SymmFlag
+      Logical::Fixed,SelfConj,NonReal,KeepPacked
+      Logical,Dimension(7)::Conj
+      Integer(kind=int64),Dimension(4,7)::Perm
+      Integer(kind=int64),Dimension(4)::Idx,Img,KeyOrder
+      Integer(kind=int64)::NImg,N
+      Logical::SameKey,ElemZero,SkipPut,KeyFlip,KeyPlain
 
       IndI = I
       IndJ = J
@@ -31283,18 +33534,32 @@
         Call MQC_Error_I('ElementIn type not defined in MQC_R4Tensor_Put',6)
       End Select
 
+      KeyOrder = [1,2,3,4]
+      KeyPlain = .False.
       If(Present(SymmFlag)) then
-        my_SymmFlag = SymmFlag
+        Select Case(Trim(SymmFlag))
+        Case('noSymm')
+          my_SymmFlag = 'noSymm'
+        Case('keep')
+          If(MQC_R4Tensor_HaveSymmetric(Tensor)) then
+            my_SymmFlag = Tensor%Storage
+            KeyOrder = Tensor%IndexOrder
+            KeyPlain = Tensor%PlainSymm
+          Else
+            my_SymmFlag = 'noSymm'
+          EndIf
+        Case Default
+          my_SymmFlag = MQC_R4Symm_Label(SymmFlag,KeyOrder,KeyPlain)
+          If(.not.MQC_R4Symm_IsPacked(my_SymmFlag)) my_SymmFlag = 'noSymm'
+        End Select
       Else
-        my_SymmFlag = 'no symm'
+        my_SymmFlag = 'noSymm'
       EndIf
-      If(my_SymmFlag.ne.'no symm'.and.my_SymmFlag.ne.'symm') Call MQC_Error_A('Unrecognized symmetry flag in &
-    &   mqc_r4tensor_put',6,'my_SymmFlag',my_SymmFlag)
 
       If (IndI.lt.0) IndI = Tensor%I + IndI + 1
       If (IndJ.lt.0) IndJ = Tensor%J + IndJ + 1
-      If (IndK.lt.0) IndK = Tensor%K + IndI + 1
-      If (IndL.lt.0) IndL = Tensor%L + IndJ + 1
+      If (IndK.lt.0) IndK = Tensor%K + IndK + 1
+      If (IndL.lt.0) IndL = Tensor%L + IndL + 1
       If (IndI.eq.0.or.IndI.gt.Tensor%I) Call MQC_Error_I('Index I badly specified in mqc_r4tensor_put', 6, &
            'IndI', IndI, &
            'Tensor%I', Tensor%I)
@@ -31307,200 +33572,97 @@
       If (IndL.eq.0.or.IndL.gt.Tensor%L) Call MQC_Error_I('Index L badly specified in mqc_r4tensor_put', 6, &
            'IndL', IndL, &
            'Tensor%L', Tensor%L)
+      If(my_SymmFlag.ne.'noSymm') then
+        If(.not.MQC_R4Symm_Dims_OK(my_SymmFlag,Tensor%I,Tensor%J,Tensor%K,Tensor%L,KeyOrder)) &
+          Call MQC_Error_A('Tensor dimensions not compatible with SymmFlag in &
+     &      mqc_r4tensor_put',6,'my_SymmFlag',my_SymmFlag)
+      EndIf
 
+!     A complex element with a nonzero imaginary part cannot sit on a
+!     self-conjugate position.
+      NonReal = .False.
+      If(Element%Data_Type.eq.'Complex') then
+        If(Aimag(Element%ScaC).ne.0.0) NonReal = .True.
+      EndIf
 
-      If(my_SymmFlag.eq.'no symm'.and.MQC_R4Tensor_HaveSymmetric(Tensor).and. &
-        .not.((IndI.eq.IndJ).and.(IndI.eq.IndK).and.(IndI.eq.IndL))) &
-        Call MQC_R4Tensor_Symm2Full(Tensor) 
-
-
-      If(MQC_R4Tensor_HaveFull(Tensor)) then
-        If (Tensor%Data_Type.eq.'Integer') then
-          If (Element%Data_Type.eq.'Integer') then
-            If(my_SymmFlag.eq.'no symm') then
-              Tensor%ITen(IndI,IndJ,IndK,IndL) = Element%ScaI
-            ElseIf(my_SymmFlag.eq.'symm') then
-              Tensor%ITen(IndI,IndJ,IndK,IndL) = Element%ScaI
-              Tensor%ITen(IndJ,IndI,IndK,IndL) = Element%ScaI
-              Tensor%ITen(IndI,IndJ,IndL,IndK) = Element%ScaI
-              Tensor%ITen(IndJ,IndI,IndL,IndK) = Element%ScaI
-              Tensor%ITen(IndK,IndL,IndI,IndJ) = Element%ScaI
-              Tensor%ITen(IndL,IndK,IndI,IndJ) = Element%ScaI
-              Tensor%ITen(IndK,IndL,IndJ,IndI) = Element%ScaI
-              Tensor%ITen(IndL,IndK,IndJ,IndI) = Element%ScaI
-            EndIf
-          ElseIf (Element%Data_Type.eq.'Real') then
-            Call MQC_R4Tensor_Copy_Int2Real(Tensor)  
-            If(my_SymmFlag.eq.'no symm') then
-              Tensor%RTen(IndI,IndJ,IndK,IndL) = Element%ScaR
-            ElseIf(my_SymmFlag.eq.'symm') then
-              Tensor%RTen(IndI,IndJ,IndK,IndL) = Element%ScaR
-              Tensor%RTen(IndJ,IndI,IndK,IndL) = Element%ScaR
-              Tensor%RTen(IndI,IndJ,IndL,IndK) = Element%ScaR
-              Tensor%RTen(IndJ,IndI,IndL,IndK) = Element%ScaR
-              Tensor%RTen(IndK,IndL,IndI,IndJ) = Element%ScaR
-              Tensor%RTen(IndL,IndK,IndI,IndJ) = Element%ScaR
-              Tensor%RTen(IndK,IndL,IndJ,IndI) = Element%ScaR
-              Tensor%RTen(IndL,IndK,IndJ,IndI) = Element%ScaR
-            EndIf
-          ElseIf (Element%Data_Type.eq.'Complex') then
-            Call MQC_R4Tensor_Copy_Int2Complex(Tensor)  
-            If(my_SymmFlag.eq.'no symm') then
-              Tensor%CTen(IndI,IndJ,IndK,IndL) = Element%ScaC
-            ElseIf(my_SymmFlag.eq.'symm') then
-              Tensor%CTen(IndI,IndJ,IndK,IndL) = Element%ScaC
-              Tensor%CTen(IndJ,IndI,IndK,IndL) = Element%ScaC
-              Tensor%CTen(IndI,IndJ,IndL,IndK) = Element%ScaC
-              Tensor%CTen(IndJ,IndI,IndL,IndK) = Element%ScaC
-              Tensor%CTen(IndK,IndL,IndI,IndJ) = Element%ScaC
-              Tensor%CTen(IndL,IndK,IndI,IndJ) = Element%ScaC
-              Tensor%CTen(IndK,IndL,IndJ,IndI) = Element%ScaC
-              Tensor%CTen(IndL,IndK,IndJ,IndI) = Element%ScaC
-            EndIf
-          Else
-            Call MQC_Error_A('Scalar type not defined in MQC_R4Tensor_Put', 6, &
-                 'Element%Data_Type', Element%Data_Type, &
-                 'Tensor%Data_Type', Tensor%Data_Type )
-          EndIf
-        ElseIf (Tensor%Data_Type.eq.'Real') then
-          If (Element%Data_Type.eq.'Integer') then
-            If(my_SymmFlag.eq.'no symm') then
-              Tensor%RTen(IndI,IndJ,IndK,IndL) = Element%ScaI
-            ElseIf(my_SymmFlag.eq.'symm') then
-              Tensor%RTen(IndI,IndJ,IndK,IndL) = Element%ScaI
-              Tensor%RTen(IndJ,IndI,IndK,IndL) = Element%ScaI
-              Tensor%RTen(IndI,IndJ,IndL,IndK) = Element%ScaI
-              Tensor%RTen(IndJ,IndI,IndL,IndK) = Element%ScaI
-              Tensor%RTen(IndK,IndL,IndI,IndJ) = Element%ScaI
-              Tensor%RTen(IndL,IndK,IndI,IndJ) = Element%ScaI
-              Tensor%RTen(IndK,IndL,IndJ,IndI) = Element%ScaI
-              Tensor%RTen(IndL,IndK,IndJ,IndI) = Element%ScaI
-            EndIf
-          ElseIf (Element%Data_Type.eq.'Real') then
-            If(my_SymmFlag.eq.'no symm') then
-              Tensor%RTen(IndI,IndJ,IndK,IndL) = Element%ScaR
-            ElseIf(my_SymmFlag.eq.'symm') then
-              Tensor%RTen(IndI,IndJ,IndK,IndL) = Element%ScaR
-              Tensor%RTen(IndJ,IndI,IndK,IndL) = Element%ScaR
-              Tensor%RTen(IndI,IndJ,IndL,IndK) = Element%ScaR
-              Tensor%RTen(IndJ,IndI,IndL,IndK) = Element%ScaR
-              Tensor%RTen(IndK,IndL,IndI,IndJ) = Element%ScaR
-              Tensor%RTen(IndL,IndK,IndI,IndJ) = Element%ScaR
-              Tensor%RTen(IndK,IndL,IndJ,IndI) = Element%ScaR
-              Tensor%RTen(IndL,IndK,IndJ,IndI) = Element%ScaR
-            EndIf
-          ElseIf (Element%Data_Type.eq.'Complex') then
-            Call MQC_R4Tensor_Copy_Real2Complex(Tensor)  
-            If(my_SymmFlag.eq.'no symm') then
-              Tensor%CTen(IndI,IndJ,IndK,IndL) = Element%ScaC
-            ElseIf(my_SymmFlag.eq.'symm') then
-              Tensor%CTen(IndI,IndJ,IndK,IndL) = Element%ScaC
-              Tensor%CTen(IndJ,IndI,IndK,IndL) = Element%ScaC
-              Tensor%CTen(IndI,IndJ,IndL,IndK) = Element%ScaC
-              Tensor%CTen(IndJ,IndI,IndL,IndK) = Element%ScaC
-              Tensor%CTen(IndK,IndL,IndI,IndJ) = Element%ScaC
-              Tensor%CTen(IndL,IndK,IndI,IndJ) = Element%ScaC
-              Tensor%CTen(IndK,IndL,IndJ,IndI) = Element%ScaC
-              Tensor%CTen(IndL,IndK,IndJ,IndI) = Element%ScaC
-            EndIf
-          Else
-            Call MQC_Error_A('Scalar type not defined in MQC_R4Tensor_Put', 6, &
-                 'Element%Data_Type', Element%Data_Type, &
-                 'Tensor%Data_Type', Tensor%Data_Type )
-          EndIf
-        ElseIf (Tensor%Data_Type.eq.'Complex') then
-          If (Element%Data_Type.eq.'Integer') then
-            If(my_SymmFlag.eq.'no symm') then
-              Tensor%CTen(IndI,IndJ,IndK,IndL) = Element%ScaI
-            ElseIf(my_SymmFlag.eq.'symm') then
-              Tensor%CTen(IndI,IndJ,IndK,IndL) = Element%ScaI
-              Tensor%CTen(IndJ,IndI,IndK,IndL) = Element%ScaI
-              Tensor%CTen(IndI,IndJ,IndL,IndK) = Element%ScaI
-              Tensor%CTen(IndJ,IndI,IndL,IndK) = Element%ScaI
-              Tensor%CTen(IndK,IndL,IndI,IndJ) = Element%ScaI
-              Tensor%CTen(IndL,IndK,IndI,IndJ) = Element%ScaI
-              Tensor%CTen(IndK,IndL,IndJ,IndI) = Element%ScaI
-              Tensor%CTen(IndL,IndK,IndJ,IndI) = Element%ScaI
-            EndIf
-          ElseIf (Element%Data_Type.eq.'Real') then
-            If(my_SymmFlag.eq.'no symm') then
-              Tensor%CTen(IndI,IndJ,IndK,IndL) = Element%ScaR
-            ElseIf(my_SymmFlag.eq.'symm') then
-              Tensor%CTen(IndI,IndJ,IndK,IndL) = Element%ScaR
-              Tensor%CTen(IndJ,IndI,IndK,IndL) = Element%ScaR
-              Tensor%CTen(IndI,IndJ,IndL,IndK) = Element%ScaR
-              Tensor%CTen(IndJ,IndI,IndL,IndK) = Element%ScaR
-              Tensor%CTen(IndK,IndL,IndI,IndJ) = Element%ScaR
-              Tensor%CTen(IndL,IndK,IndI,IndJ) = Element%ScaR
-              Tensor%CTen(IndK,IndL,IndJ,IndI) = Element%ScaR
-              Tensor%CTen(IndL,IndK,IndJ,IndI) = Element%ScaR
-            EndIf
-          ElseIf (Element%Data_Type.eq.'Complex') then
-            If(my_SymmFlag.eq.'no symm') then
-              Tensor%CTen(IndI,IndJ,IndK,IndL) = Element%ScaC
-            ElseIf(my_SymmFlag.eq.'symm') then
-              Tensor%CTen(IndI,IndJ,IndK,IndL) = Element%ScaC
-              Tensor%CTen(IndJ,IndI,IndK,IndL) = Element%ScaC
-              Tensor%CTen(IndI,IndJ,IndL,IndK) = Element%ScaC
-              Tensor%CTen(IndJ,IndI,IndL,IndK) = Element%ScaC
-              Tensor%CTen(IndK,IndL,IndI,IndJ) = Element%ScaC
-              Tensor%CTen(IndL,IndK,IndI,IndJ) = Element%ScaC
-              Tensor%CTen(IndK,IndL,IndJ,IndI) = Element%ScaC
-              Tensor%CTen(IndL,IndK,IndJ,IndI) = Element%ScaC
-            EndIf
-          Else
-            Call MQC_Error_A('Scalar type not defined in MQC_R4Tensor_Put', 6, &
-                 'Element%Data_Type', Element%Data_Type, &
-                 'Tensor%Data_Type', Tensor%Data_Type )
-          EndIf
+!     A zero tensor stays zero for a zero element; otherwise it first becomes
+!     zeros of the keyword class (StorFull for noSymm/keep).
+      Select Case(Element%Data_Type)
+      Case('Integer')
+        ElemZero = Element%ScaI.eq.0
+      Case('Real')
+        ElemZero = Element%ScaR.eq.0.0
+      Case('Complex')
+        ElemZero = Element%ScaC.eq.(0.0,0.0)
+      Case Default
+        Call MQC_Error_A('Element type not defined in MQC_R4Tensor_Put', 6, &
+          'Element%Data_Type', Element%Data_Type)
+      End Select
+      SkipPut = .False.
+      If(MQC_R4Tensor_HaveZero(Tensor)) then
+        If(ElemZero) then
+          SkipPut = .True.
+        ElseIf(my_SymmFlag.ne.'noSymm') then
+          Call MQC_R4Tensor_Zero2Storage(Tensor,my_SymmFlag,KeyOrder,KeyPlain)
         Else
-          Call MQC_Error_A('Tensor type not defined in MQC_R4Tensor_Put', 6, &
-               'Tensor%Data_Type', Tensor%Data_Type )
+          Call MQC_R4Tensor_Zero2Storage(Tensor,'StorFull',[1,2,3,4])
         EndIf
-      ElseIf(MQC_R4Tensor_HaveSymmetric(Tensor)) then
-        If (Tensor%Data_Type.eq.'Integer') then
-          If (Element%Data_Type.eq.'Integer') then
-            Tensor%ITen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1) = Element%ScaI
-          ElseIf (Element%Data_Type.eq.'Real') then
-            Tensor%ITen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1) = Element%ScaR
-          ElseIf (Element%Data_Type.eq.'Complex') then
-            Tensor%ITen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1) = Element%ScaC
+      EndIf
+
+      If(.not.SkipPut) then
+  !     Put rules: a packed tensor keeps its storage only when the write
+  !     preserves its class; otherwise it is expanded to full first.
+        If(MQC_R4Tensor_HaveSymmetric(Tensor)) then
+          Call MQC_R4Symm_Element_Type(Tensor%Storage,IndI,IndJ,IndK,IndL,Fixed,SelfConj, &
+            Tensor%IndexOrder,Tensor%PlainSymm)
+          SameKey = .False.
+          If(my_SymmFlag.eq.Tensor%Storage) SameKey = All(MQC_R4Symm_Packed_Order( &
+            my_SymmFlag,KeyOrder,KeyFlip,KeyPlain).eq.Tensor%IndexOrder).and. &
+            (Tensor%PlainSymm.eqv.(KeyPlain.and.Tensor%Data_Type.eq.'Complex'))
+          If(SameKey) then
+            KeepPacked = .not.(SelfConj.and.NonReal)
+          ElseIf(my_SymmFlag.eq.'noSymm') then
+            KeepPacked = Fixed.and..not.(SelfConj.and.NonReal)
           Else
-            Call MQC_Error_A('Scalar type not defined in MQC_R4Tensor_Put', 6, &
-                 'Element%Data_Type', Element%Data_Type, &
-                 'Tensor%Data_Type', Tensor%Data_Type )
+            KeepPacked = .False.
           EndIf
-        ElseIf (Tensor%Data_Type.eq.'Real') then
-          If (Element%Data_Type.eq.'Integer') then
-            Tensor%RTen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1) = Element%ScaI
-          ElseIf (Element%Data_Type.eq.'Real') then
-            Tensor%RTen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1) = Element%ScaR
-          ElseIf (Element%Data_Type.eq.'Complex') then
-            Tensor%RTen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1) = Element%ScaC
-          Else
-            Call MQC_Error_A('Scalar type not defined in MQC_R4Tensor_Put', 6, &
-                 'Element%Data_Type', Element%Data_Type, &
-                 'Tensor%Data_Type', Tensor%Data_Type )
-          EndIf
-        ElseIf (Tensor%Data_Type.eq.'Complex') then
-          If (Element%Data_Type.eq.'Integer') then
-            Tensor%CTen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1) = Element%ScaI
-          ElseIf (Element%Data_Type.eq.'Real') then
-            Tensor%CTen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1) = Element%ScaR
-          ElseIf (Element%Data_Type.eq.'Complex') then
-            Tensor%CTen(symIndexHash(IndI,IndJ,IndK,IndL),1,1,1) = Element%ScaC
-          Else
-            Call MQC_Error_A('Scalar type not defined in MQC_R4Tensor_Put', 6, &
-                 'Element%Data_Type', Element%Data_Type, &
-                 'Tensor%Data_Type', Tensor%Data_Type )
-          EndIf
-        Else
-          Call MQC_Error_A('Tensor type not defined in MQC_R4Tensor_Put', 6, &
-               'Tensor%Data_Type', Tensor%Data_Type )
+          If(.not.KeepPacked) Call MQC_R4Tensor_Symm2Full(Tensor)
         EndIf
-      Else
-        Call MQC_Error_A('Unrecognized storage type in MQC_R4Tensor_Put', &
-          6, 'Tensor%Storage', Tensor%Storage)
+
+  !     Upcast the tensor to hold the element type.
+        If(Tensor%Data_Type.eq.'Integer'.and.Element%Data_Type.eq.'Real') then
+          Call MQC_R4Tensor_Copy_Int2Real(Tensor)
+        ElseIf(Tensor%Data_Type.eq.'Integer'.and.Element%Data_Type.eq.'Complex') then
+          Call MQC_R4Tensor_Copy_Int2Complex(Tensor)
+        ElseIf(Tensor%Data_Type.eq.'Real'.and.Element%Data_Type.eq.'Complex') then
+          Call MQC_R4Tensor_Copy_Real2Complex(Tensor)
+        EndIf
+
+        Call MQC_R4Tensor_Put_Raw(Tensor,Element,IndI,IndJ,IndK,IndL)
+
+  !     Class keyword on a full tensor: write every image, unless the element
+  !     breaks a conjugation constraint (then only the element is written).
+        If(my_SymmFlag.ne.'noSymm'.and.MQC_R4Tensor_HaveFull(Tensor)) then
+          Call MQC_R4Symm_Element_Type(my_SymmFlag,IndI,IndJ,IndK,IndL,Fixed,SelfConj,KeyOrder, &
+            KeyPlain)
+          If(.not.(SelfConj.and.NonReal)) then
+            If(Element%Data_Type.eq.'Complex') then
+              ConjElement = Conjg(Element%ScaC)
+            Else
+              ConjElement = Element
+            EndIf
+            Call MQC_R4Symm_UnpackSymmetry(my_SymmFlag,Perm,Conj,NImg,KeyOrder,KeyPlain)
+            Idx = [IndI,IndJ,IndK,IndL]
+            Do N = 1, NImg
+              Img = Idx(Perm(:,N))
+              If(Conj(N)) then
+                Call MQC_R4Tensor_Put_Raw(Tensor,ConjElement,Img(1),Img(2),Img(3),Img(4))
+              Else
+                Call MQC_R4Tensor_Put_Raw(Tensor,Element,Img(1),Img(2),Img(3),Img(4))
+              EndIf
+            EndDo
+          EndIf
+        EndIf
       EndIf
 
       End Subroutine MQC_R4Tensor_Put_Int
@@ -31578,6 +33740,7 @@
       Logical,Optional::blank_at_top,blank_at_bottom
       Logical::short_print
       Real(kind=real64)::print_threshold 
+      Type(MQC_R4Tensor)::Tmp
 
  1000 Format(1x,A)
  1020 Format( " " )
@@ -31600,57 +33763,32 @@
         short_print = .false.
       EndIf
       If(Present(Header)) Write(IOut,1000) Trim(Header)
-      If(MQC_R4Tensor_HaveFull(Tensor)) then
-        Do I = 1, Tensor%I
-          Do J = 1, Tensor%J
-            Do K = 1, Tensor%K
-              Do l = 1, Tensor%L
+      Tmp = Tensor
+      If(MQC_R4Tensor_HaveSymmetric(Tmp).or.MQC_R4Tensor_HaveZero(Tmp)) &
+        Call MQC_R4Tensor_Symm2Full(Tmp)
+      If(MQC_R4Tensor_HaveFull(Tmp)) then
+        Do I = 1, Tmp%I
+          Do J = 1, Tmp%J
+            Do K = 1, Tmp%K
+              Do l = 1, Tmp%L
                 If(short_print) then
-                  If(Tensor%Data_Type.eq.'Integer') then
-                    If(abs(Tensor%ITen(I,J,K,L)).gt.print_threshold) &
-                      Write(IOut,1100) I,J,K,L,Tensor%ITen(I,J,K,L)
-                  ElseIf(Tensor%Data_Type.eq.'Real') then
-                    If(abs(Tensor%RTen(I,J,K,L)).gt.print_threshold) &
-                      Write(IOut,1200) I,J,K,L,Tensor%RTen(I,J,K,L)
-                  ElseIf(Tensor%Data_Type.eq.'Complex') then
-                    If(abs(Tensor%CTen(I,J,K,L)).gt.print_threshold) &
-                      Write(IOut,1300) I,J,K,L,Tensor%CTen(I,J,K,L)
+                  If(Tmp%Data_Type.eq.'Integer') then
+                    If(abs(Tmp%ITen(I,J,K,L)).gt.print_threshold) &
+                      Write(IOut,1100) I,J,K,L,Tmp%ITen(I,J,K,L)
+                  ElseIf(Tmp%Data_Type.eq.'Real') then
+                    If(abs(Tmp%RTen(I,J,K,L)).gt.print_threshold) &
+                      Write(IOut,1200) I,J,K,L,Tmp%RTen(I,J,K,L)
+                  ElseIf(Tmp%Data_Type.eq.'Complex') then
+                    If(abs(Tmp%CTen(I,J,K,L)).gt.print_threshold) &
+                      Write(IOut,1300) I,J,K,L,Tmp%CTen(I,J,K,L)
                   EndIf
                 Else
-                  If(Tensor%Data_Type.eq.'Integer') then
-                    Write(IOut,1100) I,J,K,L,Tensor%ITen(I,J,K,L)
-                  ElseIf(Tensor%Data_Type.eq.'Real') then
-                    Write(IOut,1200) I,J,K,L,Tensor%RTen(I,J,K,L)
-                  ElseIf(Tensor%Data_Type.eq.'Complex') then
-                    Write(IOut,1300) I,J,K,L,Tensor%CTen(I,J,K,L)
-                  EndIf
-                EndIF
-              EndDo
-            EndDo
-          EndDo
-        EndDo
-      ElseIf(MQC_R4Tensor_HaveSymmetric(Tensor)) then
-        Do I = 1, Tensor%I
-          Do J = 1, Tensor%J
-            Do K = 1, Tensor%K
-              Do l = 1, Tensor%L
-                If(short_print) then
-                  If(abs(Tensor%at(I,J,K,L)).gt.print_threshold ) then
-                    If(Tensor%Data_Type.eq.'Integer') then
-                      Write(IOut,1100) I,J,K,L,Tensor%ITen(symIndexHash(I,J,K,L),1,1,1)
-                    ElseIf(Tensor%Data_Type.eq.'Real') then
-                      Write(IOut,1200) I,J,K,L,Tensor%RTen(symIndexHash(I,J,K,L),1,1,1)
-                    ElseIf(Tensor%Data_Type.eq.'Complex') then
-                      Write(IOut,1300) I,J,K,L,Tensor%CTen(symIndexHash(I,J,K,L),1,1,1)
-                    EndIf
-                  EndIf
-                Else
-                  If(Tensor%Data_Type.eq.'Integer') then
-                    Write(IOut,1100) I,J,K,L,Tensor%ITen(symIndexHash(I,J,K,L),1,1,1)
-                  ElseIf(Tensor%Data_Type.eq.'Real') then
-                    Write(IOut,1200) I,J,K,L,Tensor%RTen(symIndexHash(I,J,K,L),1,1,1)
-                  ElseIf(Tensor%Data_Type.eq.'Complex') then
-                    Write(IOut,1300) I,J,K,L,Tensor%CTen(symIndexHash(I,J,K,L),1,1,1)
+                  If(Tmp%Data_Type.eq.'Integer') then
+                    Write(IOut,1100) I,J,K,L,Tmp%ITen(I,J,K,L)
+                  ElseIf(Tmp%Data_Type.eq.'Real') then
+                    Write(IOut,1200) I,J,K,L,Tmp%RTen(I,J,K,L)
+                  ElseIf(Tmp%Data_Type.eq.'Complex') then
+                    Write(IOut,1300) I,J,K,L,Tmp%CTen(I,J,K,L)
                   EndIf
                 EndIF
               EndDo
@@ -31659,7 +33797,7 @@
         EndDo
       Else
         Call MQC_Error_A('Unrecognized storage type in MQC_Print_R4Tensor_Algebra1', &
-          6, 'Tensor%Storage', Tensor%Storage)
+          6, 'Tmp%Storage', Tmp%Storage)
       EndIf
       If(present(blank_at_bottom)) then
         If(blank_at_bottom) Write(IOut,1020)
@@ -31854,17 +33992,20 @@
 
       if(allocated(ArrayOut)) deallocate(ArrayOut)
 
-      If(MQC_R4Tensor_HaveInteger(TensorIn)) then
+      If(MQC_R4Tensor_HaveZero(TensorIn)) then
+        allocate(ArrayOut(TensorIn%I,TensorIn%J,TensorIn%K,TensorIn%L))
+        ArrayOut = 0
+      ElseIf(MQC_R4Tensor_HaveInteger(TensorIn)) then
         allocate(ArrayOut(Size(TensorIn%ITen,1),Size(TensorIn%ITen,2),&
           Size(TensorIn%ITen,3),Size(TensorIn%ITen,4)))
         ArrayOut = TensorIn%ITen
       ElseIf(MQC_R4Tensor_HaveReal(TensorIn)) then
-        allocate(ArrayOut(Size(TensorIn%ITen,1),Size(TensorIn%ITen,2),&
-          Size(TensorIn%ITen,3),Size(TensorIn%ITen,4)))
+        allocate(ArrayOut(Size(TensorIn%RTen,1),Size(TensorIn%RTen,2),&
+          Size(TensorIn%RTen,3),Size(TensorIn%RTen,4)))
         ArrayOut = TensorIn%RTen
       ElseIf(MQC_R4Tensor_HaveComplex(TensorIn)) then
-        allocate(ArrayOut(Size(TensorIn%ITen,1),Size(TensorIn%ITen,2),&
-          Size(TensorIn%ITen,3),Size(TensorIn%ITen,4)))
+        allocate(ArrayOut(Size(TensorIn%CTen,1),Size(TensorIn%CTen,2),&
+          Size(TensorIn%CTen,3),Size(TensorIn%CTen,4)))
         ArrayOut = TensorIn%CTen
       Else
         Call MQC_Error_A('TensorIn type unknown in MQC_Tensor2IntegerArray', 6, &
@@ -31872,6 +34013,180 @@
       EndIf
 
       End Subroutine MQC_Set_Tensor2IntegerArray
+!
+!
+!     PROCEDURE MQC_R4Tensor_Get_Array_Real
+!
+!>    \brief <b> MQC_R4Tensor_Get_Array_Real returns the data of an MQC_R4Tensor
+!>    as an intrinsic real rank-4 array</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    FullView absent or FALSE: the stored array, as ArrayOut = Tensor (a packed
+!>    tensor gives its packed array of length symIndexSize, shape (n,1,1,1); a
+!>    zero tensor a zero I x J x K x L array). FullView TRUE: the I x J x K x L
+!>    values in view order (packed and zero tensors through a full copy).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Tensor
+!>    \verbatim
+!>        Tensor is Class(MQC_R4Tensor)
+!>    \endverbatim
+!>
+!>    \param[in,out] ArrayOut
+!>    \verbatim
+!>        ArrayOut is Real(kind=real64),Dimension(:,:,:,:),Allocatable
+!>    \endverbatim
+!>
+!>    \param[in] FullView
+!>    \verbatim
+!>        FullView is Logical,Optional (default FALSE)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Get_Array_Real(Tensor,ArrayOut,FullView)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(In)::Tensor
+      Real(kind=real64),Dimension(:,:,:,:),Allocatable,Intent(InOut)::ArrayOut
+      Logical,Intent(In),Optional::FullView
+      Type(MQC_R4Tensor)::Tmp
+      Logical::my_FullView
+
+      my_FullView = .False.
+      If(Present(FullView)) my_FullView = FullView
+      Tmp = Tensor
+      If(my_FullView.and.(MQC_R4Tensor_HaveSymmetric(Tmp).or.MQC_R4Tensor_HaveZero(Tmp))) &
+        Call MQC_R4Tensor_Symm2Full(Tmp)
+      Call MQC_Set_Tensor2RealArray(ArrayOut,Tmp)
+
+      End Subroutine MQC_R4Tensor_Get_Array_Real
+!
+!
+!     PROCEDURE MQC_R4Tensor_Get_Array_Complex
+!
+!>    \brief <b> MQC_R4Tensor_Get_Array_Complex returns the data of an MQC_R4Tensor
+!>    as an intrinsic complex rank-4 array</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    FullView absent or FALSE: the stored array, as ArrayOut = Tensor (a packed
+!>    tensor gives its packed array of length symIndexSize, shape (n,1,1,1); a
+!>    zero tensor a zero I x J x K x L array). FullView TRUE: the I x J x K x L
+!>    values in view order (packed and zero tensors through a full copy).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Tensor
+!>    \verbatim
+!>        Tensor is Class(MQC_R4Tensor)
+!>    \endverbatim
+!>
+!>    \param[in,out] ArrayOut
+!>    \verbatim
+!>        ArrayOut is Complex(kind=real64),Dimension(:,:,:,:),Allocatable
+!>    \endverbatim
+!>
+!>    \param[in] FullView
+!>    \verbatim
+!>        FullView is Logical,Optional (default FALSE)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Get_Array_Complex(Tensor,ArrayOut,FullView)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(In)::Tensor
+      Complex(kind=real64),Dimension(:,:,:,:),Allocatable,Intent(InOut)::ArrayOut
+      Logical,Intent(In),Optional::FullView
+      Type(MQC_R4Tensor)::Tmp
+      Logical::my_FullView
+
+      my_FullView = .False.
+      If(Present(FullView)) my_FullView = FullView
+      Tmp = Tensor
+      If(my_FullView.and.(MQC_R4Tensor_HaveSymmetric(Tmp).or.MQC_R4Tensor_HaveZero(Tmp))) &
+        Call MQC_R4Tensor_Symm2Full(Tmp)
+      Call MQC_Set_Tensor2ComplexArray(ArrayOut,Tmp)
+
+      End Subroutine MQC_R4Tensor_Get_Array_Complex
+!
+!
+!     PROCEDURE MQC_R4Tensor_Get_Array_Integer
+!
+!>    \brief <b> MQC_R4Tensor_Get_Array_Integer returns the data of an MQC_R4Tensor
+!>    as an intrinsic integer rank-4 array</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    FullView absent or FALSE: the stored array, as ArrayOut = Tensor (a packed
+!>    tensor gives its packed array of length symIndexSize, shape (n,1,1,1); a
+!>    zero tensor a zero I x J x K x L array). FullView TRUE: the I x J x K x L
+!>    values in view order (packed and zero tensors through a full copy).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Tensor
+!>    \verbatim
+!>        Tensor is Class(MQC_R4Tensor)
+!>    \endverbatim
+!>
+!>    \param[in,out] ArrayOut
+!>    \verbatim
+!>        ArrayOut is Integer(kind=int64),Dimension(:,:,:,:),Allocatable
+!>    \endverbatim
+!>
+!>    \param[in] FullView
+!>    \verbatim
+!>        FullView is Logical,Optional (default FALSE)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Get_Array_Integer(Tensor,ArrayOut,FullView)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(In)::Tensor
+      Integer(kind=int64),Dimension(:,:,:,:),Allocatable,Intent(InOut)::ArrayOut
+      Logical,Intent(In),Optional::FullView
+      Type(MQC_R4Tensor)::Tmp
+      Logical::my_FullView
+
+      my_FullView = .False.
+      If(Present(FullView)) my_FullView = FullView
+      Tmp = Tensor
+      If(my_FullView.and.(MQC_R4Tensor_HaveSymmetric(Tmp).or.MQC_R4Tensor_HaveZero(Tmp))) &
+        Call MQC_R4Tensor_Symm2Full(Tmp)
+      Call MQC_Set_Tensor2IntegerArray(ArrayOut,Tmp)
+
+      End Subroutine MQC_R4Tensor_Get_Array_Integer
 !
 !
 !     PROCEDURE MQC_Set_Tensor2RealArray
@@ -31916,7 +34231,10 @@
 
       if(allocated(ArrayOut)) deallocate(ArrayOut)
 
-      If(MQC_R4Tensor_HaveInteger(TensorIn)) then
+      If(MQC_R4Tensor_HaveZero(TensorIn)) then
+        allocate(ArrayOut(TensorIn%I,TensorIn%J,TensorIn%K,TensorIn%L))
+        ArrayOut = 0
+      ElseIf(MQC_R4Tensor_HaveInteger(TensorIn)) then
         allocate(ArrayOut(Size(TensorIn%ITen,1),Size(TensorIn%ITen,2),&
           Size(TensorIn%ITen,3),Size(TensorIn%ITen,4)))
         ArrayOut = TensorIn%ITen
@@ -31978,7 +34296,10 @@
 
       if(allocated(ArrayOut)) deallocate(ArrayOut)
 
-      If(MQC_R4Tensor_HaveInteger(TensorIn)) then
+      If(MQC_R4Tensor_HaveZero(TensorIn)) then
+        allocate(ArrayOut(TensorIn%I,TensorIn%J,TensorIn%K,TensorIn%L))
+        ArrayOut = 0
+      ElseIf(MQC_R4Tensor_HaveInteger(TensorIn)) then
         allocate(ArrayOut(Size(TensorIn%ITen,1),Size(TensorIn%ITen,2),&
           Size(TensorIn%ITen,3),Size(TensorIn%ITen,4)))
         ArrayOut = TensorIn%ITen
@@ -32000,17 +34321,23 @@
 !
 !     PROCEDURE MQC_R4Tensor_Initialize
 !
-!>    \brief <b> MQC_R4Tensor_Initialize is a subroutine that initializes an MQC 
+!>    \brief <b> MQC_R4Tensor_Initialize is a subroutine that initializes an MQC
 !>    rank-4 tensor with each element equal to a chosen value</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
-!>       
-!>    MQC_R4Tensor_Initialize is a subroutine that initializes an MQC rank-4 tensor 
-!>    with each element equal to a chosen value. Optional argument Scalar determines 
-!>    the value of each element, with the default equal to zero. 
+!>
+!>    MQC_R4Tensor_Initialize is a subroutine that initializes an MQC rank-4 tensor
+!>    with each element equal to a chosen value. Optional argument Scalar determines
+!>    the value of each element, with the default equal to zero.
+!>    A zero (or absent) Scalar gives a zero tensor (no stored data; class and
+!>    IndexOrder from the dimensions, see MQC_R4Symm_Zero_Class), with the data type of the
+!>    scalar (Real when absent). A nonzero Scalar gives the packed class chosen
+!>    by MQC_R4Symm_Constant_Storage from the dimensions (R_8_1234, R_4_12_34
+!>    or R_2_12_3_4 with an IndexOrder, or S_1_1_2_3_4 when all dimensions
+!>    differ), filled with the scalar.
 !>
 !>    \endverbatim
 !
@@ -32022,70 +34349,66 @@
 !>        The MQC rank-4 tensor to initialize.
 !>    \endverbatim
 !>
-!>    \param[in] I
+!>    \param[in] I,J,K,L
 !>    \verbatim
-!>        I is Integer(kind=int64)
-!>        The number of the first dimension to initialize 
-!>        R4Tensor.
-!>    \endverbatim
-!>
-!>    \param[in] J
-!>    \verbatim
-!>        J is Integer(kind=int64)
-!>        The number of the second dimension to initialize 
-!>        R4Tensor.
-!>    \endverbatim
-!>
-!>    \param[in] K
-!>    \verbatim
-!>        K is Integer(kind=int64)
-!>        The number of the third dimension to initialize 
-!>        R4Tensor.
-!>    \endverbatim
-!>
-!>    \param[in] L
-!>    \verbatim
-!>        L is Integer(kind=int64)
-!>        The number of the fourth dimension to initialize 
-!>        R4Tensor.
+!>        I,J,K,L are Integer(kind=int64)
+!>        The dimensions of R4Tensor.
 !>    \endverbatim
 !>
 !>    \param[in] Scalar
 !>    \verbatim
 !>        Scalar is Class(*),Optional
-!>        The value to set each element of R4Tensor.
+!>        The value of every element (Integer, Real or Complex; default 0).
 !>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
 !>    \date 2017
+!>    \author M. M. F. Moraes
+!>    \date 2026
 !
       Subroutine MQC_R4Tensor_Initialize(R4Tensor,I,J,K,L,Scalar)
-!
+
       Implicit None
-      Real(kind=real64)::Zero=0.0d0
       Integer(kind=int64),Intent(In)::I,J,K,L
       Class(*),Optional::Scalar
       Class(MQC_R4Tensor),Intent(InOut)::R4Tensor
+      Character(Len=64)::my_Class
+      Character(Len=8)::my_Type
+      Integer(kind=int64),Dimension(4)::my_Order
+      Logical::IsZero
 
+      my_Type = 'Real'
+      IsZero = .True.
       If(Present(Scalar)) then
         Select Type (Scalar)
         Type is (Integer)
-          Call MQC_Allocate_R4Tensor(I,J,K,L,R4Tensor,'Integer','StorFull')
-          R4Tensor%ITen = Scalar
+          my_Type = 'Integer'
+          IsZero = Scalar.eq.0
         Type is (Real)
-          Call MQC_Allocate_R4Tensor(I,J,K,L,R4Tensor,'Real','StorFull')
-          R4Tensor%RTen = Scalar
+          my_Type = 'Real'
+          IsZero = Scalar.eq.0.0
         Type is (Complex(Kind=real64))
-          Call MQC_Allocate_R4Tensor(I,J,K,L,R4Tensor,'Complex','StorFull')
-          R4Tensor%CTen = Scalar
+          my_Type = 'Complex'
+          IsZero = Scalar.eq.(0.0,0.0)
         Class Default
           Call MQC_Error_I('Scalar Type not defined in MQC_R4Tensor_Initialize', 6)
         End Select
+      EndIf
+      If(IsZero) then
+        Call MQC_Allocate_R4Tensor(I,J,K,L,R4Tensor,my_Type,'Z')
       Else
-        Call MQC_Allocate_R4Tensor(I,J,K,L,R4Tensor,'Real','StorFull')
-        R4Tensor%RTen = Zero
+        Call MQC_R4Symm_Constant_Storage([I,J,K,L],my_Class,my_Order)
+        Call MQC_Allocate_R4Tensor(I,J,K,L,R4Tensor,my_Type,my_Class,my_Order)
+        Select Type (Scalar)
+        Type is (Integer)
+          R4Tensor%ITen = Scalar
+        Type is (Real)
+          R4Tensor%RTen = Scalar
+        Type is (Complex(Kind=real64))
+          R4Tensor%CTen = Scalar
+        End Select
       EndIf
 
       End Subroutine MQC_R4Tensor_Initialize
@@ -32099,7 +34422,17 @@
 !>
 !>    \verbatim
 !>
-!>    Returns a rank-four tensor with permuted dimensions.
+!>    Returns a rank-four tensor with permuted dimensions: output position q
+!>    takes input position Order(q), Output(y) = T(x) with x(Order(q)) = y(q),
+!>    and output dimension q is input dimension Order(q). With DoConjg the
+!>    values are complex conjugated.
+!>    Packed tensors: a view change only (no data moved); the new IndexOrder
+!>    is IndexOrder(Order), made canonical by MQC_R4Symm_Packed_Order, and
+!>    DoConjg is toggled for complex data. Zero tensors: the class and
+!>    IndexOrder follow from the new dimensions. Full tensors: the data is
+!>    moved; an S_1 layout follows the order, StorFull stays StorFull.
+!>    (Before 2026 the element loop used the inverse mapping, which only agreed
+!>    with the dimensions for self-inverse orders.)
 !>
 !>    \endverbatim
 !
@@ -32122,6 +34455,8 @@
 !     ========
 !>    \author L. M. Thompson
 !>    \date 2026
+!>    \author M. M. F. Moraes
+!>    \date 2026
 !
       Function MQC_R4Tensor_Permute(Tensor,Order,DoConjg) Result(Output)
 !
@@ -32130,53 +34465,65 @@
       Integer(kind=int64),Dimension(4),Intent(In)::Order
       Logical,Intent(In)::DoConjg
       Type(MQC_R4Tensor)::Output
-      Type(MQC_Scalar)::ScalarValue
-      Integer(kind=int64)::I,J,K,L,N
-      Integer(kind=int64),Dimension(4)::IndexOut,TensorShape
+      Integer(kind=int64),Dimension(4)::InDims,OutDims,X,NewOrder
+      Integer(kind=int64)::I,J,K,L
+      Logical::Flip
 
-      Do N=1,4
-        If(Order(N).lt.1.or.Order(N).gt.4.or.Count(Order.eq.Order(N)).ne.1) &
-          Call MQC_Error_I('Order is not a permutation in MQC_R4Tensor_Permute',6)
-      EndDo
-
-      TensorShape=[Tensor%I,Tensor%J,Tensor%K,Tensor%L]
-      Select Case(Tensor%Data_Type)
-      Case('Integer')
-        Call Output%init(TensorShape(Order(1)),TensorShape(Order(2)), &
-          TensorShape(Order(3)),TensorShape(Order(4)),0_int64)
-      Case('Real')
-        Call Output%init(TensorShape(Order(1)),TensorShape(Order(2)), &
-          TensorShape(Order(3)),TensorShape(Order(4)),0.0_real64)
-      Case('Complex')
-        Call Output%init(TensorShape(Order(1)),TensorShape(Order(2)), &
-          TensorShape(Order(3)),TensorShape(Order(4)),(0.0_real64,0.0_real64))
-      Case Default
-        Call MQC_Error_A('Tensor type not defined in MQC_R4Tensor_Permute',6, &
-          'Tensor%Data_Type',Tensor%Data_Type)
-      End Select
-      Do I=1,Output%I
-        Do J=1,Output%J
-          Do K=1,Output%K
-            Do L=1,Output%L
-              IndexOut=[I,J,K,L]
-              ScalarValue=Tensor%at(IndexOut(Order(1)),IndexOut(Order(2)), &
-                IndexOut(Order(3)),IndexOut(Order(4)))
-              Select Case(Tensor%Data_Type)
-              Case('Integer')
-                Call Output%put(ScalarValue%ival(),I,J,K,L)
-              Case('Real')
-                Call Output%put(ScalarValue%rval(),I,J,K,L)
-              Case('Complex')
-                If(DoConjg) Then
-                  Call Output%put(Conjg(ScalarValue%cval()),I,J,K,L)
-                Else
-                  Call Output%put(ScalarValue%cval(),I,J,K,L)
-                EndIf
-              End Select
+      If(.not.MQC_R4Symm_Is_Order(Order)) &
+        Call MQC_Error_I('Order is not a permutation in MQC_R4Tensor_Permute',6)
+      InDims = [Tensor%I,Tensor%J,Tensor%K,Tensor%L]
+      OutDims = InDims(Order)
+      If(MQC_R4Tensor_HaveSymmetric(Tensor)) then
+!       packed: a view change, no data moved
+        Output = Tensor
+        Output%IndexOrder = MQC_R4Symm_Packed_Order(Tensor%Storage,Tensor%IndexOrder(Order),Flip, &
+          Tensor%PlainSymm)
+        Output%I = OutDims(1)
+        Output%J = OutDims(2)
+        Output%K = OutDims(3)
+        Output%L = OutDims(4)
+        If(Output%Data_Type.eq.'Complex') then
+          If(DoConjg.neqv.Flip) Output%DoConjg = .not.Output%DoConjg
+        EndIf
+      ElseIf(MQC_R4Tensor_HaveZero(Tensor)) then
+!       zero: no data; class and order follow from the new dimensions
+        Call MQC_Allocate_R4Tensor(OutDims(1),OutDims(2),OutDims(3),OutDims(4),Output, &
+          Tensor%Data_Type,'Z')
+      ElseIf(MQC_R4Tensor_HaveFull(Tensor)) then
+!       full: move the data; an S_1 layout follows the order
+        If(Tensor%Storage.eq.'StorFull') then
+          NewOrder = [1,2,3,4]
+        Else
+          NewOrder = Tensor%IndexOrder(Order)
+        EndIf
+        Call MQC_Allocate_R4Tensor(OutDims(1),OutDims(2),OutDims(3),OutDims(4),Output, &
+          Tensor%Data_Type,Tensor%Storage,NewOrder)
+        Do L = 1, OutDims(4)
+          Do K = 1, OutDims(3)
+            Do J = 1, OutDims(2)
+              Do I = 1, OutDims(1)
+                X = MQC_R4Symm_ToChem(Order,[I,J,K,L])
+                Select Case(Tensor%Data_Type)
+                Case('Integer')
+                  Output%ITen(I,J,K,L) = Tensor%ITen(X(1),X(2),X(3),X(4))
+                Case('Real')
+                  Output%RTen(I,J,K,L) = Tensor%RTen(X(1),X(2),X(3),X(4))
+                Case('Complex')
+                  If(DoConjg) then
+                    Output%CTen(I,J,K,L) = Conjg(Tensor%CTen(X(1),X(2),X(3),X(4)))
+                  Else
+                    Output%CTen(I,J,K,L) = Tensor%CTen(X(1),X(2),X(3),X(4))
+                  EndIf
+                End Select
+              EndDo
             EndDo
           EndDo
         EndDo
-      EndDo
+      Else
+        Call MQC_Error_A('Storage type not defined in MQC_R4Tensor_Permute',6, &
+          'Tensor%Storage',Tensor%Storage)
+      EndIf
+
       End Function MQC_R4Tensor_Permute
 !
 !     PROCEDURE MQC_Matrix_SymmSymmR4Tensor_Put_Real
@@ -32244,6 +34591,8 @@
 !>
 !>    MQC_R4Tensor_SymmSymmMatrix_Put_Complex is a subroutine that returns a MQC 
 !>    rank-4 tensor with elements defined by values in an intrinsic complex vector.
+!>    The complex packed array is taken as R_8_1234 (plain 8-fold equalities, as
+!>    in the file packing).
 !>
 !>    \endverbatim
 !
@@ -32436,18 +34785,23 @@
       Function MQC_R4Tensor_HaveFull(Tensor)
 !
 !     Variable Declarations.
+!
       Implicit None
-      Logical::MQC_R4Tensor_HaveFull   
+      Logical::MQC_R4Tensor_HaveFull
       Type(MQC_R4Tensor),Intent(In)::Tensor
 !
-      If(Tensor%Storage.eq.'StorFull') then
-        MQC_R4Tensor_HaveFull = .True. 
-      Else
+      Select Case(Trim(Tensor%Storage))
+      Case('StorFull','S_1_12_3_4','S_1_1_2_3_4','S_1_1234','S_1_123_4','S_1_12_34')
+        MQC_R4Tensor_HaveFull = .True.
+      Case('unallocated','R_8_1234','S_4_1234','R_4_12_34','S_2_12_34','S_2_13_24','R_2_12_3_4', &
+        'Z_24_1234','Z_6_123_4','Z_4_12_34','Z_2_12_3_4','Z_1_1_2_3_4')
         MQC_R4Tensor_HaveFull = .False.
-      EndIf
-!
+      Case Default
+        Call MQC_Error_A('Unrecognized storage in MQC_R4Tensor_HaveFull', 6, &
+          'Tensor%Storage', Tensor%Storage)
+      End Select
       Return
-      End Function MQC_R4Tensor_HaveFull   
+      End Function MQC_R4Tensor_HaveFull
 !
 !
 !     PROCEDURE MQC_R4Tensor_HaveSymmetric
@@ -32485,28 +34839,591 @@
       Logical::MQC_R4Tensor_HaveSymmetric 
       Type(MQC_R4Tensor),Intent(In)::Tensor
 !
-      If(Tensor%Storage.eq.'StorSymm') then
-        MQC_R4Tensor_HaveSymmetric = .True. 
-      Else
-        MQC_R4Tensor_HaveSymmetric = .False.
-      EndIf
+      MQC_R4Tensor_HaveSymmetric = MQC_R4Symm_IsPacked(Tensor%Storage)
 !
       Return
       End Function MQC_R4Tensor_HaveSymmetric   
 !
 !
-!     PROCEDURE MQC_R4Tensor_Full2Symm
+!     PROCEDURE MQC_R4Tensor_HaveZero
 !
-!>    \brief <b> MQC_R4Tensor_Full2Symm is a subroutine that converts an unpacked MQC 
-!>    rank-4 tensor to symmetric-packed</b>
+!>    \brief <b> MQC_R4Tensor_HaveZero returns TRUE if an MQC_R4Tensor is a
+!>    zero tensor (no stored data)</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
-!>       
-!>    MQC_R4Tensor_Full2Symm is a subroutine that converts an unpacked MQC rank-4 
-!>    tensor to symmetric-packed.
+!>
+!>    A zero tensor keeps its dimensions and data type and stores no data;
+!>    its class (Z_24_1234, Z_6_123_4, Z_4_12_34, Z_2_12_3_4, Z_1_1_2_3_4) and
+!>    IndexOrder follow from the dimensions (MQC_R4Symm_Zero_Class).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Tensor
+!>    \verbatim
+!>        Tensor is Class(MQC_R4Tensor)
+!>        The rank-4 tensor.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Tensor_HaveZero(Tensor) Result(HaveZero)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(In)::Tensor
+      Logical::HaveZero
+
+      HaveZero = Tensor%Storage(1:2).eq.'Z_'
+
+      End Function MQC_R4Tensor_HaveZero
+!
+!
+!     PROCEDURE MQC_R4Tensor_Zero2Storage
+!
+!>    \brief <b> MQC_R4Tensor_Zero2Storage replaces a zero MQC_R4Tensor by
+!>    zeros in a given storage</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Allocates Label/IndexOrder storage with the tensor's dimensions and
+!>    data type and fills it with zeros.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] Tensor
+!>    \verbatim
+!>        Tensor is Class(MQC_R4Tensor)
+!>        The zero rank-4 tensor.
+!>    \endverbatim
+!>
+!>    \param[in] Label,IndexOrder
+!>    \verbatim
+!>        Label is Character(Len=*); IndexOrder is Integer(kind=int64),Dimension(4)
+!>        The target storage.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Zero2Storage(Tensor,Label,IndexOrder,Plain)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(InOut)::Tensor
+      Character(Len=*),Intent(In)::Label
+      Integer(kind=int64),Dimension(4),Intent(In)::IndexOrder
+      Logical,Intent(In),Optional::Plain
+      Integer(kind=int64)::I,J,K,L
+      Character(Len=64)::my_Type
+
+      I = Tensor%I
+      J = Tensor%J
+      K = Tensor%K
+      L = Tensor%L
+      my_Type = Tensor%Data_Type
+      Call MQC_Allocate_R4Tensor(I,J,K,L,Tensor,my_Type,Label,IndexOrder)
+      If(Present(Plain)) Tensor%PlainSymm = Plain.and.Tensor%Data_Type.eq.'Complex'
+      Select Case(Tensor%Data_Type)
+      Case('Integer')
+        Tensor%ITen = 0
+      Case('Real')
+        Tensor%RTen = 0.0
+      Case('Complex')
+        Tensor%CTen = (0.0,0.0)
+      End Select
+
+      End Subroutine MQC_R4Tensor_Zero2Storage
+!
+!
+!     PROCEDURE MQC_R4Tensor_Build_Packed
+!
+!>    \brief <b> MQC_R4Tensor_Build_Packed packs an MQC_R4Tensor into a class,
+!>    checking the symmetry in the same pass</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Reads every view element of Tensor once (raw array when full, at()
+!>    otherwise) and stores it in its slot of Packed (storage Class with
+!>    IndexOrder). The first visit of a slot stores the value, and a
+!>    self-conjugate element must be real; later visits must match the stored
+!>    value within MQC_very_small (1e-10 if not set). OK is FALSE at the first
+!>    violation; Packed is then incomplete.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Tensor
+!>    \verbatim
+!>        Tensor is Class(MQC_R4Tensor)
+!>        The rank-4 tensor to pack.
+!>    \endverbatim
+!>
+!>    \param[in] SymClass,IndexOrder
+!>    \verbatim
+!>        SymClass is Character(Len=*); IndexOrder is Integer(kind=int64),Dimension(4)
+!>        The packed storage (a canonical packed class) and its view order.
+!>    \endverbatim
+!>
+!>    \param[out] Packed,OK
+!>    \verbatim
+!>        Packed is Type(MQC_R4Tensor); OK is Logical
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Build_Packed(Tensor,SymClass,IndexOrder,Packed,OK,Plain)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(In)::Tensor
+      Character(Len=*),Intent(In)::SymClass
+      Integer(kind=int64),Dimension(4),Intent(In)::IndexOrder
+      Type(MQC_R4Tensor),Intent(Out)::Packed
+      Logical,Intent(Out)::OK
+      Logical,Intent(In),Optional::Plain
+      Logical,Dimension(:),Allocatable::Filled
+      Integer(kind=int64)::I,J,K,L,S,IVal
+      Logical::DoConj,Fixed,SelfConj,FullIn
+      Real(kind=real64)::Thresh,RVal
+      Complex(kind=real64)::CVal
+      Type(MQC_Scalar)::V
+
+      If(MQC_very_small.gt.0.0) then
+        Thresh = MQC_very_small
+      Else
+        Thresh = 1e-10
+      EndIf
+      FullIn = MQC_R4Tensor_HaveFull(Tensor)
+      Call MQC_Allocate_R4Tensor(Tensor%I,Tensor%J,Tensor%K,Tensor%L,Packed, &
+        Tensor%Data_Type,SymClass,IndexOrder)
+      If(Present(Plain)) Packed%PlainSymm = Plain.and.Packed%Data_Type.eq.'Complex'
+      Allocate(Filled(symIndexSize(SymClass,MQC_R4Symm_ToChem(IndexOrder, &
+        [Tensor%I,Tensor%J,Tensor%K,Tensor%L]))))
+      Filled = .False.
+      OK = .True.
+      Scan: Do L = 1, Tensor%L
+        Do K = 1, Tensor%K
+          Do J = 1, Tensor%J
+            Do I = 1, Tensor%I
+              S = MQC_R4Tensor_Slot(Packed,I,J,K,L,DoConj)
+              If(.not.FullIn) V = Tensor%at(I,J,K,L)
+              Select Case(Tensor%Data_Type)
+              Case('Integer')
+                If(FullIn) then
+                  IVal = Tensor%ITen(I,J,K,L)
+                Else
+                  IVal = V%ival()
+                EndIf
+                If(.not.Filled(S)) then
+                  Packed%ITen(S,1,1,1) = IVal
+                ElseIf(Packed%ITen(S,1,1,1).ne.IVal) then
+                  OK = .False.
+                  Exit Scan
+                EndIf
+              Case('Real')
+                If(FullIn) then
+                  RVal = Tensor%RTen(I,J,K,L)
+                Else
+                  RVal = V%rval()
+                EndIf
+                If(.not.Filled(S)) then
+                  Packed%RTen(S,1,1,1) = RVal
+                ElseIf(Abs(Packed%RTen(S,1,1,1)-RVal).gt.Thresh) then
+                  OK = .False.
+                  Exit Scan
+                EndIf
+              Case('Complex')
+                If(FullIn) then
+                  CVal = Tensor%CTen(I,J,K,L)
+                Else
+                  CVal = V%cval()
+                EndIf
+                If(DoConj) CVal = Conjg(CVal)
+                If(.not.Filled(S)) then
+                  Call MQC_R4Symm_Element_Type(SymClass,I,J,K,L,Fixed,SelfConj,IndexOrder, &
+                    Packed%PlainSymm)
+                  If(SelfConj.and.Abs(Aimag(CVal)).gt.Thresh) then
+                    OK = .False.
+                    Exit Scan
+                  EndIf
+                  Packed%CTen(S,1,1,1) = CVal
+                ElseIf(Abs(Packed%CTen(S,1,1,1)-CVal).gt.Thresh) then
+                  OK = .False.
+                  Exit Scan
+                EndIf
+              End Select
+              Filled(S) = .True.
+            EndDo
+          EndDo
+        EndDo
+      EndDo Scan
+
+      End Subroutine MQC_R4Tensor_Build_Packed
+!
+!
+!     PROCEDURE MQC_R4Tensor_Slot
+!
+!>    \brief <b> MQC_R4Tensor_Slot returns the index in the packed array of an
+!>    MQC_R4Tensor that stores element (I,J,K,L)</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Maps (I,J,K,L) and the dimensions to chemist order through the tensor's
+!>    IndexOrder and calls MQC_R4Symm_Hash_Code with the tensor's storage code
+!>    (no label parsing per element). Conj includes a pending DoConjg. The
+!>    packed data is stored in Ten(Slot,1,1,1).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Tensor
+!>    \verbatim
+!>        Tensor is Class(MQC_R4Tensor)
+!>        The rank-4 tensor.
+!>    \endverbatim
+!>
+!>    \param[in] I,J,K,L
+!>    \verbatim
+!>        I,J,K,L are Integer(kind=int64)
+!>        The element indices.
+!>    \endverbatim
+!>
+!>    \param[out] Conj
+!>    \verbatim
+!>        Conj is Logical
+!>        TRUE when the stored value is the complex conjugate of the element.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Tensor_Slot(Tensor,I,J,K,L,Conj) Result(Slot)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(In)::Tensor
+      Integer(kind=int64),Intent(In)::I,J,K,L
+      Logical,Intent(Out)::Conj
+      Integer(kind=int64)::Slot
+      Integer(kind=int64),Dimension(4)::X,D
+
+      X = MQC_R4Symm_ToChem(Tensor%IndexOrder,[I,J,K,L])
+      D = MQC_R4Symm_ToChem(Tensor%IndexOrder,[Tensor%I,Tensor%J,Tensor%K,Tensor%L])
+      Slot = MQC_R4Symm_Hash_Code(Tensor%SymCode,X,D,Conj)
+      If(Tensor%PlainSymm) Conj = .False.
+      If(Tensor%DoConjg) Conj = .not.Conj
+
+      End Function MQC_R4Tensor_Slot
+!
+!
+!     PROCEDURE MQC_R4Symm_Element_Type
+!
+!>    \brief <b> MQC_R4Symm_Element_Type classifies element (I,J,K,L) under the
+!>    operations of an MQC_R4Tensor storage class</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Fixed is TRUE when every operation of the class maps (I,J,K,L) to itself.
+!>    SelfConj is TRUE when a conjugating operation maps (I,J,K,L) to itself,
+!>    so the element must be real for the class to hold.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Label
+!>    \verbatim
+!>        Label is Character(Len=*)
+!>        The storage label (any name accepted by MQC_R4Symm_Label).
+!>    \endverbatim
+!>
+!>    \param[in] I,J,K,L
+!>    \verbatim
+!>        I,J,K,L are Integer(kind=int64)
+!>        The element indices.
+!>    \endverbatim
+!>
+!>    \param[out] Fixed,SelfConj
+!>    \verbatim
+!>        Fixed, SelfConj are Logical
+!>    \endverbatim
+!>
+!>    \param[in] IndexOrder
+!>    \verbatim
+!>        IndexOrder is Integer(kind=int64),Dimension(4),Optional
+!>        View order of (I,J,K,L); overrides the one implied by Label.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_Element_Type(Label,I,J,K,L,Fixed,SelfConj,IndexOrder,Plain)
+
+      Implicit None
+      Character(Len=*),Intent(In)::Label
+      Integer(kind=int64),Intent(In)::I,J,K,L
+      Logical,Intent(Out)::Fixed,SelfConj
+      Integer(kind=int64),Dimension(4),Intent(In),Optional::IndexOrder
+      Logical,Intent(In),Optional::Plain
+      Integer(kind=int64),Dimension(4,7)::Perm
+      Logical,Dimension(7)::Conj
+      Integer(kind=int64),Dimension(4)::Idx
+      Integer(kind=int64)::NImg,N
+
+      Call MQC_R4Symm_UnpackSymmetry(Label,Perm,Conj,NImg,IndexOrder,Plain)
+      Idx = [I,J,K,L]
+      Fixed = .True.
+      SelfConj = .False.
+      Do N = 1, NImg
+        If(All(Idx(Perm(:,N)).eq.Idx)) then
+          If(Conj(N)) SelfConj = .True.
+        Else
+          Fixed = .False.
+        EndIf
+      EndDo
+
+      End Subroutine MQC_R4Symm_Element_Type
+!
+!
+!     PROCEDURE MQC_R4Tensor_Put_Raw
+!
+!>    \brief <b> MQC_R4Tensor_Put_Raw stores a value at element (I,J,K,L) of an
+!>    MQC_R4Tensor without any symmetry handling</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Writes Element at the full position (I,J,K,L), or at the packed slot of
+!>    (I,J,K,L), conjugated when the slot holds the conjugate. The tensor data
+!>    type must already hold the element type (no upcast is done here).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] Tensor
+!>    \verbatim
+!>        Tensor is Class(MQC_R4Tensor)
+!>        The rank-4 tensor.
+!>    \endverbatim
+!>
+!>    \param[in] Element
+!>    \verbatim
+!>        Element is Type(MQC_Scalar)
+!>        The value to store.
+!>    \endverbatim
+!>
+!>    \param[in] I,J,K,L
+!>    \verbatim
+!>        I,J,K,L are Integer(kind=int64)
+!>        The element indices.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Put_Raw(Tensor,Element,I,J,K,L)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(InOut)::Tensor
+      Type(MQC_Scalar),Intent(In)::Element
+      Integer(kind=int64),Intent(In)::I,J,K,L
+      Integer(kind=int64)::P,Q,R,S
+      Logical::DoConj
+      Complex(kind=real64)::CVal
+
+      If(MQC_R4Tensor_HaveSymmetric(Tensor)) then
+        P = MQC_R4Tensor_Slot(Tensor,I,J,K,L,DoConj)
+        Q = 1
+        R = 1
+        S = 1
+      Else
+        P = I
+        Q = J
+        R = K
+        S = L
+        DoConj = .False.
+      EndIf
+      Select Case(Tensor%Data_Type)
+      Case('Integer')
+        Tensor%ITen(P,Q,R,S) = Element%ScaI
+      Case('Real')
+        If(Element%Data_Type.eq.'Integer') then
+          Tensor%RTen(P,Q,R,S) = Element%ScaI
+        Else
+          Tensor%RTen(P,Q,R,S) = Element%ScaR
+        EndIf
+      Case('Complex')
+        Select Case(Element%Data_Type)
+        Case('Integer')
+          CVal = Element%ScaI
+        Case('Real')
+          CVal = Element%ScaR
+        Case('Complex')
+          CVal = Element%ScaC
+        Case Default
+          Call MQC_Error_A('Element type not defined in MQC_R4Tensor_Put_Raw', 6, &
+            'Element%Data_Type', Element%Data_Type)
+        End Select
+        If(DoConj) CVal = Conjg(CVal)
+        Tensor%CTen(P,Q,R,S) = CVal
+      End Select
+
+      End Subroutine MQC_R4Tensor_Put_Raw
+!
+!
+!     PROCEDURE MQC_R4Tensor_Resolve_Conjg
+!
+!>    \brief <b> MQC_R4Tensor_Resolve_Conjg applies a pending lazy conjugation to
+!>    the stored data of an MQC_R4Tensor</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    If DoConjg is set (packed complex tensors only), the stored array is
+!>    conjugated and DoConjg is cleared. The values seen through at() do not
+!>    change. Routines that read the raw array call it first.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] Tensor
+!>    \verbatim
+!>        Tensor is Class(MQC_R4Tensor)
+!>        The rank-4 tensor.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Resolve_Conjg(Tensor)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(InOut)::Tensor
+
+      If(Tensor%DoConjg) then
+        If(Tensor%Data_Type.eq.'Complex') Tensor%CTen = Conjg(Tensor%CTen)
+        Tensor%DoConjg = .False.
+      EndIf
+
+      End Subroutine MQC_R4Tensor_Resolve_Conjg
+!
+!
+!     PROCEDURE MQC_R4Tensor_Get_Symmetry
+!
+!>    \brief <b> MQC_R4Tensor_Get_Symmetry returns the storage label of an
+!>    MQC_R4Tensor</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Packed, zero and S_1 tensors: the canonical class label, followed by
+!>    '_Phys' for IndexOrder 1324 or '_Ord<4 digits>' for any other non-identity
+!>    IndexOrder (MQC_R4Symm_With_Order). StorFull: 'unknown' (no symmetry
+!>    known, as for MQC_Matrix). Unallocated: 'unallocated'. Any other storage
+!>    is an error.
+!>    The returned label can be passed back to MQC_Allocate_R4Tensor. A pending
+!>    lazy conjugation (DoConjg) is not part of the label.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Tensor
+!>    \verbatim
+!>        Tensor is Class(MQC_R4Tensor)
+!>        The rank-4 tensor.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Tensor_Get_Symmetry(Tensor) Result(Symmetry)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(In)::Tensor
+      Character(Len=64)::Symmetry
+
+      Select Case(Trim(Tensor%Storage))
+      Case('unallocated')
+        Symmetry = 'unallocated'
+      Case('StorFull')
+        Symmetry = 'unknown'
+      Case('R_8_1234','S_4_1234','R_4_12_34','S_2_12_34','S_2_13_24','R_2_12_3_4', &
+        'Z_24_1234','Z_6_123_4','Z_4_12_34','Z_2_12_3_4','Z_1_1_2_3_4', &
+        'S_1_12_3_4','S_1_1_2_3_4','S_1_1234','S_1_123_4','S_1_12_34')
+        Symmetry = MQC_R4Symm_With_Order(Tensor%Storage,Tensor%IndexOrder, &
+          Tensor%PlainSymm.and.Tensor%Data_Type.eq.'Complex')
+      Case Default
+        Call MQC_Error_A('Unrecognized storage in MQC_R4Tensor_Get_Symmetry', 6, &
+          'Tensor%Storage', Tensor%Storage)
+      End Select
+
+      End Function MQC_R4Tensor_Get_Symmetry
+!
+!
+!     PROCEDURE MQC_R4Tensor_Full2Symm
+!
+!>    \brief <b> MQC_R4Tensor_Full2Symm packs an MQC rank-4 tensor into a
+!>    symmetry class</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_R4Tensor_Full2Symm packs Tensor into the storage Class (default
+!>    R_8_1234; any label accepted by MQC_R4Symm_Label, including views). The
+!>    symmetry is checked while the packed tensor is built, in a single pass
+!>    (MQC_R4Tensor_Build_Packed). A zero tensor becomes zeros of the class; a
+!>    tensor already in that class and IndexOrder is unchanged; a tensor packed
+!>    in another class is repacked. A full-stored target label leaves the
+!>    tensor unchanged.
+!>    If the dimensions do not fit or the symmetry check fails, the tensor is
+!>    left unchanged: Success is set FALSE when present, otherwise it is an
+!>    error.
 !>
 !>    \endverbatim
 !
@@ -32515,107 +35432,86 @@
 !>    \param[in,out] Tensor
 !>    \verbatim
 !>        Tensor is Type(MQC_R4Tensor)
-!>        The MQC rank-4 tensor to be symmetric packed.
+!>        The rank-4 tensor to pack.
+!>    \endverbatim
+!>
+!>    \param[in] SymClass
+!>    \verbatim
+!>        SymClass is Character(Len=*),Optional
+!>        The target storage label (default R_8_1234).
+!>    \endverbatim
+!>
+!>    \param[out] Success
+!>    \verbatim
+!>        Success is Logical,Optional
+!>        TRUE if the tensor was packed (or already was).
 !>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
-!>    \date 2019
+!>    \date 2017
+!>    \author M. M. F. Moraes
+!>    \date 2026
 !
-      Subroutine MQC_R4Tensor_Full2Symm(Tensor)
-!
-!     Variable Declarations.
+      Subroutine MQC_R4Tensor_Full2Symm(Tensor,SymClass,Success)
+
       Implicit None
       Type(MQC_R4Tensor),Intent(InOut)::Tensor
-      Real(kind=real64),Dimension(:,:,:,:),Allocatable::Temp
-      Complex(Kind=real64),Dimension(:,:,:,:),Allocatable::TempC
-      Integer(kind=int64)::I,J,K,L,N
-!
-      If(.not.Tensor%Storage.eq.'StorFull') Call MQC_Error_A('Input rank-4 tensor must be full &
-     &  packed in MQC_R4Tensor_Full2Symm', 6, 'Tensor%Storage', Tensor%Storage )
-      N = MQC_R4Tensor_Size(Tensor)
-      If(MQC_R4Tensor_HaveReal(Tensor)) then
-        Allocate(Temp(N,N,N,N))
-        Temp = Tensor%RTen
-        Call MQC_Deallocate_R4Tensor(Tensor)
-        Call MQC_Allocate_R4Tensor(Size(Temp,1),Size(Temp,2),Size(Temp,3),Size(Temp,4),Tensor, &
-          'Real','StorSymm')
-        Do I = 1, Size(Temp,1)
-          Do J = 1, I
-            Do K = 1, Size(Temp,1)
-              Do L = 1, K
-                If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                If((Temp(I,J,K,L).ne.Temp(J,I,K,L)).or.(Temp(I,J,K,L).ne.Temp(I,J,L,K)).or.(Temp(I,J,K,L).ne. &
-                  Temp(J,I,L,K)).or.(Temp(I,J,K,L).ne.Temp(K,L,I,J)).or.(Temp(I,J,K,L).ne.Temp(K,L,J,I)).or. &
-                  (Temp(I,J,K,L).ne.Temp(L,K,I,J)).or.(Temp(I,J,K,L).ne.Temp(L,K,J,I))) &
-                  call mqc_error('Input rank-4 tensor is not symmetric')
-                Tensor%RTen(SymIndexHash(I,J,K,L),1,1,1) = Temp(I,J,K,L)
-              EndDo
-            EndDo
-          EndDo
-        EndDo
-        Deallocate(Temp)
-      ElseIf(MQC_R4Tensor_HaveInteger(Tensor)) then
-        Allocate(Temp(N,N,N,N))
-        Temp = Tensor%ITen
-        Call MQC_Deallocate_R4Tensor(Tensor)
-        Call MQC_Allocate_R4Tensor(Size(Temp,1),Size(Temp,2),Size(Temp,3),Size(Temp,4),Tensor, &
-          'Integer','StorSymm')
-        Do I = 1, Size(Temp,1)
-          Do J = 1, I
-            Do K = 1, Size(Temp,1)
-              Do L = 1, K
-                If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                If((Temp(I,J,K,L).ne.Temp(J,I,K,L)).or.(Temp(I,J,K,L).ne.Temp(I,J,L,K)).or.(Temp(I,J,K,L).ne. &
-                  Temp(J,I,L,K)).or.(Temp(I,J,K,L).ne.Temp(K,L,I,J)).or.(Temp(I,J,K,L).ne.Temp(K,L,J,I)).or. &
-                  (Temp(I,J,K,L).ne.Temp(L,K,I,J)).or.(Temp(I,J,K,L).ne.Temp(L,K,J,I))) &
-                  call mqc_error('Input rank-4 tensor is not symmetric')
-                Tensor%ITen(SymIndexHash(I,J,K,L),1,1,1) = Temp(I,J,K,L)
-              EndDo
-            EndDo
-          EndDo
-        EndDo
-        Deallocate(Temp)
-      ElseIf(MQC_R4Tensor_HaveComplex(Tensor)) then
-        Allocate(Temp(N,N,N,N))
-        Temp = Tensor%CTen
-        Call MQC_Deallocate_R4Tensor(Tensor)
-        Call MQC_Allocate_R4Tensor(Size(TempC,1),Size(TempC,2),Size(TempC,3),Size(TempC,4),Tensor, &
-          'Complex','StorSymm')
-        Do I = 1, Size(TempC,1)
-          Do J = 1, I
-            Do K = 1, Size(TempC,1)
-              Do L = 1, K
-                If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                If((Temp(I,J,K,L).ne.Temp(J,I,K,L)).or.(Temp(I,J,K,L).ne.Temp(I,J,L,K)).or.(Temp(I,J,K,L).ne. &
-                  Temp(J,I,L,K)).or.(Temp(I,J,K,L).ne.Temp(K,L,I,J)).or.(Temp(I,J,K,L).ne.Temp(K,L,J,I)).or. &
-                  (Temp(I,J,K,L).ne.Temp(L,K,I,J)).or.(Temp(I,J,K,L).ne.Temp(L,K,J,I))) &
-                  call mqc_error('Input rank-4 tensor is not symmetric')
-                Tensor%CTen(SymIndexHash(I,J,K,L),1,1,1) = TempC(I,J,K,L)
-              EndDo
-            EndDo
-          EndDo
-        EndDo
-        Deallocate(TempC)
+      Character(Len=*),Intent(In),Optional::SymClass
+      Logical,Intent(Out),Optional::Success
+      Type(MQC_R4Tensor)::Temp
+      Character(Len=64)::my_Class
+      Integer(kind=int64),Dimension(4)::my_Order
+      Logical::my_Plain
+      Logical::OK,Flip
+
+      If(Present(SymClass)) then
+        my_Class = MQC_R4Symm_Label(SymClass,my_Order,my_Plain)
+      Else
+        my_Class = 'R_8_1234'
+        my_Order = [1,2,3,4]
+        my_Plain = .False.
       EndIf
-!
-      Return
+      OK = .True.
+      If(.not.MQC_R4Symm_IsPacked(my_Class)) then
+        OK = .True.
+      ElseIf(.not.MQC_R4Symm_Dims_OK(my_Class,Tensor%I,Tensor%J,Tensor%K,Tensor%L, &
+        my_Order)) then
+        OK = .False.
+      ElseIf(MQC_R4Tensor_HaveZero(Tensor)) then
+        Call MQC_R4Tensor_Zero2Storage(Tensor,my_Class,my_Order,my_Plain)
+      ElseIf(MQC_R4Tensor_HaveSymmetric(Tensor).and.Tensor%Storage.eq.my_Class.and. &
+        All(Tensor%IndexOrder.eq.MQC_R4Symm_Packed_Order(my_Class,my_Order,Flip,my_Plain)).and. &
+        (Tensor%PlainSymm.eqv.(my_Plain.and.Tensor%Data_Type.eq.'Complex'))) then
+        OK = .True.
+      Else
+        Call MQC_R4Tensor_Build_Packed(Tensor,my_Class,my_Order,Temp,OK,my_Plain)
+        If(OK) Tensor = Temp
+      EndIf
+      If(Present(Success)) then
+        Success = OK
+      ElseIf(.not.OK) then
+        Call MQC_Error_A('Input rank-4 tensor is not symmetric in MQC_R4Tensor_Full2Symm', &
+          6, 'my_Class', my_Class)
+      EndIf
+
       End Subroutine MQC_R4Tensor_Full2Symm
 !
 !
 !     PROCEDURE MQC_R4Tensor_Symm2Full
 !
-!>    \brief <b> MQC_R4Tensor_Symm2Full is a subroutine that converts a symmetry-packed 
-!>    MQC rank-4 tensor to unpacked</b>
+!>    \brief <b> MQC_R4Tensor_Symm2Full unpacks an MQC rank-4 tensor to full
+!>    storage</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
-!>       
-!>    MQC_R4Tensor_Symm2Full is a subroutine that converts a symmetry-packed MQC rank-4 
-!>    to unpacked. 
+!>
+!>    MQC_R4Tensor_Symm2Full turns a packed tensor (any class, IndexOrder and
+!>    pending DoConjg) or a zero tensor into a StorFull tensor with the same
+!>    (view) dimensions and values. A full tensor is an error.
 !>
 !>    \endverbatim
 !
@@ -32624,98 +35520,56 @@
 !>    \param[in,out] Tensor
 !>    \verbatim
 !>        Tensor is Type(MQC_R4Tensor)
-!>        The MQC rank-4 tensor to unpack.
+!>        The rank-4 tensor to unpack.
 !>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
-!>    \date 2019
+!>    \date 2017
+!>    \author M. M. F. Moraes
+!>    \date 2026
 !
       Subroutine MQC_R4Tensor_Symm2Full(Tensor)
-!
-!     Variable Declarations.
+
       Implicit None
       Type(MQC_R4Tensor),Intent(InOut)::Tensor
-      Real(kind=real64),Dimension(:,:,:,:),Allocatable::Temp
-      Complex(Kind=real64),Dimension(:,:,:,:),Allocatable::TempC
-      Integer(kind=int64)::I,J,K,L,N
-!
-      If(.not.Tensor%Storage.eq.'StorSymm') Call MQC_Error_A('Input rank-4 tensor must be &
-     &  symmetric-packed in MQC_R4Tensor_Symm2Full',6,'Tensor%Storage',Tensor%Storage)
-      N = MQC_R4Tensor_Size(Tensor)
-      If(MQC_R4Tensor_HaveReal(Tensor)) then
-        Allocate(Temp((N**4+2*N**3+3*N**2+2*N)/8,1,1,1))
-        Temp = Tensor%RTen
-        Call MQC_Deallocate_R4Tensor(Tensor)
-        Call MQC_Allocate_R4Tensor(N,N,N,N,Tensor,'Real','StorFull')
-        Do I = 1, N
-          Do J = 1, I
-            Do K = 1, N
-              Do L = 1, K
-                If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                Tensor%RTen(I,J,K,L) = Temp(symIndexHash(I,J,K,L),1,1,1)
-                Tensor%RTen(J,I,K,L) = Tensor%RTen(I,J,K,L)
-                Tensor%RTen(I,J,L,K) = Tensor%RTen(I,J,K,L)
-                Tensor%RTen(J,I,L,K) = Tensor%RTen(I,J,K,L)
-                Tensor%RTen(K,L,I,J) = Tensor%RTen(I,J,K,L)
-                Tensor%RTen(K,L,J,I) = Tensor%RTen(I,J,K,L)
-                Tensor%RTen(L,K,I,J) = Tensor%RTen(I,J,K,L)
-                Tensor%RTen(L,K,J,I) = Tensor%RTen(I,J,K,L)
+      Type(MQC_R4Tensor)::Temp
+      Integer(kind=int64)::I,J,K,L,S
+      Logical::DoConj
+
+      If(MQC_R4Tensor_HaveZero(Tensor)) then
+        Call MQC_R4Tensor_Zero2Storage(Tensor,'StorFull',[1,2,3,4])
+      ElseIf(MQC_R4Tensor_HaveSymmetric(Tensor)) then
+        Temp = Tensor
+        Call MQC_Allocate_R4Tensor(Temp%I,Temp%J,Temp%K,Temp%L,Tensor,Temp%Data_Type, &
+          'StorFull')
+        Do L = 1, Temp%L
+          Do K = 1, Temp%K
+            Do J = 1, Temp%J
+              Do I = 1, Temp%I
+                S = MQC_R4Tensor_Slot(Temp,I,J,K,L,DoConj)
+                Select Case(Temp%Data_Type)
+                Case('Integer')
+                  Tensor%ITen(I,J,K,L) = Temp%ITen(S,1,1,1)
+                Case('Real')
+                  Tensor%RTen(I,J,K,L) = Temp%RTen(S,1,1,1)
+                Case('Complex')
+                  If(DoConj) then
+                    Tensor%CTen(I,J,K,L) = Conjg(Temp%CTen(S,1,1,1))
+                  Else
+                    Tensor%CTen(I,J,K,L) = Temp%CTen(S,1,1,1)
+                  EndIf
+                End Select
               EndDo
             EndDo
           EndDo
         EndDo
-        Deallocate(Temp)
-      ElseIf(MQC_R4Tensor_HaveInteger(Tensor)) then
-        Allocate(Temp((N**4+2*N**3+3*N**2+2*N)/8,1,1,1))
-        Temp = Tensor%ITen
-        Call MQC_Deallocate_R4Tensor(Tensor)
-        Call MQC_Allocate_R4Tensor(N,N,N,N,Tensor,'Integer','StorFull')
-        Do I = 1, N
-          Do J = 1, I
-            Do K = 1, N
-              Do L = 1, K
-                If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                Tensor%ITen(I,J,K,L) = Temp(symIndexHash(I,J,K,L),1,1,1)
-                Tensor%ITen(J,I,K,L) = Tensor%ITen(I,J,K,L)
-                Tensor%ITen(I,J,L,K) = Tensor%ITen(I,J,K,L)
-                Tensor%ITen(J,I,L,K) = Tensor%ITen(I,J,K,L)
-                Tensor%ITen(K,L,I,J) = Tensor%ITen(I,J,K,L)
-                Tensor%ITen(K,L,J,I) = Tensor%ITen(I,J,K,L)
-                Tensor%ITen(L,K,I,J) = Tensor%ITen(I,J,K,L)
-                Tensor%ITen(L,K,J,I) = Tensor%ITen(I,J,K,L)
-              EndDo
-            EndDo
-          EndDo
-        EndDo
-        Deallocate(Temp)
-      ElseIf(MQC_R4Tensor_HaveComplex(Tensor)) then
-        Allocate(Temp((N**4+2*N**3+3*N**2+2*N)/8,1,1,1))
-        Temp = Tensor%CTen
-        Call MQC_Deallocate_R4Tensor(Tensor)
-        Call MQC_Allocate_R4Tensor(N,N,N,N,Tensor,'Complex','StorFull')
-        Do I = 1, N
-          Do J = 1, I
-            Do K = 1, N
-              Do L = 1, K
-                If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                Tensor%CTen(I,J,K,L) = Temp(symIndexHash(I,J,K,L),1,1,1)
-                Tensor%CTen(J,I,K,L) = Tensor%CTen(I,J,K,L)
-                Tensor%CTen(I,J,L,K) = Tensor%CTen(I,J,K,L)
-                Tensor%CTen(J,I,L,K) = Tensor%CTen(I,J,K,L)
-                Tensor%CTen(K,L,I,J) = Tensor%CTen(I,J,K,L)
-                Tensor%CTen(K,L,J,I) = Tensor%CTen(I,J,K,L)
-                Tensor%CTen(L,K,I,J) = Tensor%CTen(I,J,K,L)
-                Tensor%CTen(L,K,J,I) = Tensor%CTen(I,J,K,L)
-              EndDo
-            EndDo
-          EndDo
-        EndDo
-        Deallocate(TempC)
+      Else
+        Call MQC_Error_A('Input rank-4 tensor must be packed or zero in &
+     &    MQC_R4Tensor_Symm2Full', 6, 'Tensor%Storage', Tensor%Storage)
       EndIf
-!
-      Return
+
       End Subroutine MQC_R4Tensor_Symm2Full
 !
 !
@@ -32824,6 +35678,7 @@
       If(Allocated(Tensor%RTen)) isAllocated = .True.
       If(Allocated(Tensor%ITen)) isAllocated = .True.
       If(Allocated(Tensor%CTen)) isAllocated = .True.
+      If(MQC_R4Tensor_HaveZero(Tensor)) isAllocated = .True.
 !
       Return
       End Function MQC_R4Tensor_isAllocated
@@ -32865,7 +35720,7 @@
 !
       If(.not.MQC_R4Tensor_HaveInteger(Tensor)) Call MQC_Error_L('Incoming tensor not integer in MQC_R4Tensor_Copy_Int2Real', 6, &
            'MQC_R4Tensor_HaveInteger(Tensor)', MQC_R4Tensor_HaveInteger(Tensor) )
-      Tensor%RTen = Tensor%ITen
+      If(Allocated(Tensor%ITen)) Tensor%RTen = Tensor%ITen
       If(Allocated(Tensor%ITen)) Deallocate(Tensor%ITen)
       Tensor%Data_Type = 'Real'
 !
@@ -32909,7 +35764,7 @@
 !
       If(.not.MQC_R4Tensor_HaveInteger(Tensor)) Call MQC_Error_L('Incoming tensor not integer in MQC_R4Tensor_Copy_Int2Complex',6,&
            'MQC_R4Tensor_HaveInteger(Tensor)', MQC_R4Tensor_HaveInteger(Tensor) )
-      Tensor%CTen = Tensor%ITen
+      If(Allocated(Tensor%ITen)) Tensor%CTen = Tensor%ITen
       If(Allocated(Tensor%ITen)) Deallocate(Tensor%ITen)
       Tensor%Data_Type = 'Complex'
 !
@@ -32953,7 +35808,7 @@
 !
       If(.not.MQC_R4Tensor_HaveReal(Tensor)) Call MQC_Error_L('Incoming tensor not real in MQC_R4Tensor_Copy_Real2Int', 6, &
            'MQC_R4Tensor_HaveReal(Tensor)', MQC_R4Tensor_HaveReal(Tensor) )
-      Tensor%ITen = Tensor%RTen
+      If(Allocated(Tensor%RTen)) Tensor%ITen = Tensor%RTen
       If(Allocated(Tensor%RTen)) Deallocate(Tensor%RTen)
       Tensor%Data_Type = 'Integer'
 !
@@ -32997,7 +35852,7 @@
 !
       If(.not.MQC_R4Tensor_HaveReal(Tensor)) Call MQC_Error_L('Incoming tensor not real in MQC_R4Tensor_Copy_Real2Complex', 6, &
            'MQC_R4Tensor_HaveReal(Tensor)', MQC_R4Tensor_HaveReal(Tensor) )
-      Tensor%CTen = Tensor%RTen
+      If(Allocated(Tensor%RTen)) Tensor%CTen = Tensor%RTen
       If(Allocated(Tensor%RTen)) Deallocate(Tensor%RTen)
       Tensor%Data_Type = 'Complex'
 !
@@ -33041,7 +35896,7 @@
 !
       If(.not.MQC_R4Tensor_HaveComplex(Tensor)) Call MQC_Error_L('Incoming tensor not complex in MQC_R4Tensor_Copy_Complex2Int',6,&
            'MQC_R4Tensor_HaveComplex(Tensor)', MQC_R4Tensor_HaveComplex(Tensor) )
-      Tensor%ITen = Tensor%CTen
+      If(Allocated(Tensor%CTen)) Tensor%ITen = Tensor%CTen
       If(Allocated(Tensor%CTen)) Deallocate(Tensor%CTen)
       Tensor%Data_Type = 'Integer'
 !
@@ -33085,7 +35940,7 @@
 !
       If(.not.MQC_R4Tensor_HaveComplex(Tensor)) Call MQC_Error_L('Incoming tensor not complex in MQC_R4Tensor_Copy_Complex2Real',6,&
            'MQC_R4Tensor_HaveComplex(Tensor)', MQC_R4Tensor_HaveComplex(Tensor) )
-      Tensor%RTen = Tensor%CTen
+      If(Allocated(Tensor%CTen)) Tensor%RTen = Tensor%CTen
       If(Allocated(Tensor%CTen)) Deallocate(Tensor%CTen)
       Tensor%Data_Type = 'Real'
 !
@@ -33095,16 +35950,36 @@
 !
 !     PROCEDURE MQC_R4Tensor_R4Tensor_Contraction
 !
-!>    \brief <b> MQC_R4Tensor_R4Tensor_Contraction is a function that returns the 
+!>    \brief <b> MQC_R4Tensor_R4Tensor_Contraction is a function that returns the
 !>    contraction of two MQC rank-4 tensors</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
-!>       
-!>    MQC_R4Tensor_R4Tensor_Contraction is a function that returns the contraction of two 
-!>    MQC rank-4 tensors.
+!>
+!>    MQC_R4Tensor_R4Tensor_Contraction returns the full contraction
+!>    Sum_{ijkl} A(i,j,k,l)*B(i,j,k,l) of two MQC rank-4 tensors (no complex
+!>    conjugation) in the promoted data type. The dimensions must be equal.
+!>    The storages of A and B select the method:
+!>
+!>    | case | storages                                | method                          |
+!>    |------+-----------------------------------------+---------------------------------|
+!>    | 1    | dimensions differ                       | error                           |
+!>    | 2    | A or B zero                             | 0                               |
+!>    | 3    | same packed class, IndexOrder and plain | weighted sum of the stored      |
+!>    |      | flag                                    | arrays, one term per slot       |
+!>    | 4    | both full (StorFull, S_1)               | sum of the stored arrays        |
+!>    | 5    | both packed, common group contains a    | one term per slot of that class |
+!>    |      | class (MQC_R4Symm_Best_Class)           | (one read of A and B per orbit) |
+!>    | 5b   | one full, one packed                    | element loop, raw reads         |
+!>    | 6    | both packed, common layout S_1          | element loop, raw reads         |
+!>    |      | otherwise                               | error                           |
+!>
+!>    Slot weights: W0(s) and W1(s) count the elements stored in slot s without
+!>    and with conjugation (MQC_R4Symm_Slot_Weights). With p = a(s)*b(s) the
+!>    product of the stored values, the slot contributes W0(s)*p+W1(s)*conjg(p)
+!>    (for real and integer data (W0(s)+W1(s))*p).
 !>
 !>    \endverbatim
 !
@@ -33125,7 +36000,7 @@
 !     Authors:
 !     ========
 !>    \author L. M. Thompson, M. M. F. Moraes
-!>    \date 2019, 2025
+!>    \date 2019, 2025, 2026
 !
       Function MQC_R4Tensor_R4Tensor_Contraction(R4Tensor1,R4Tensor2) Result(Contraction)
 !
@@ -33134,35 +36009,1376 @@
       Implicit None
       Type(MQC_R4Tensor),Intent(In)::R4Tensor1,R4Tensor2
       Type(MQC_Scalar)::Contraction
-      Type(MQC_Scalar),dimension(:),allocatable::ContractionVec
-      Integer(kind=int64)::M,N,O,P,i,j,k,l
+      Type(MQC_R4Tensor)::TA,TB,Ref
+      Character(Len=64)::my_Type,NewClass
+      Character(Len=64)::ShapeA,ShapeB
+      Integer(kind=int64),Dimension(4,48)::GPA,GPB,GP
+      Logical,Dimension(48)::GCA,GCB,GC
+      Integer(kind=int64)::NGA,NGB,NG,N,I,J,K,L,S,TypeCode
+      Integer(kind=int64),Dimension(4)::Ord,Dims
+      Integer(kind=int64),Dimension(:),Allocatable::W0,W1
+      Integer(kind=int64)::NS,X,SS
+      Integer(kind=int64),Dimension(:),Allocatable::Rep
+      Logical::IsReal,NewPlain,Found,DoConj,FullA,FullB
+      Integer,Dimension(4)::GIDA,GIDB
+      Integer(kind=int64)::AccI
+      Real(kind=real64)::AccR
+      Complex(kind=real64)::AccC,P
+      Complex(kind=real64),Dimension(:),Allocatable::PV
 !
-      Contraction = 0.0
-      M = Min(size(R4Tensor1,1),size(R4Tensor2,1))
-      N = Min(size(R4Tensor1,2),size(R4Tensor2,2))
-      O = Min(size(R4Tensor1,3),size(R4Tensor2,3))
-      P = Min(size(R4Tensor1,4),size(R4Tensor2,4))
-      allocate(ContractionVec(M))
-!$OMP PARALLEL DO DEFAULT(NONE), &
-!$OMP SHARED(M,N,O,P,ContractionVec,R4Tensor1,R4Tensor2),&
-!$OMP PRIVATE(j,k,l,i)
-      Do i = 1,M
-        ContractionVec(i) = 0.0
-        Do j = 1,N
-          Do k = 1,O
-            Do l = 1,P
-              ContractionVec(i) = ContractionVec(i) + R4Tensor1%at(i,j,k,l)*R4Tensor2%at(i,j,k,l)
-            EndDo
+      If(.not.MQC_R4Tensor_isAllocated(R4Tensor1).or..not.MQC_R4Tensor_isAllocated(R4Tensor2)) &
+        Call MQC_Error_A('Unallocated rank-4 tensor in MQC_R4Tensor_R4Tensor_Contraction', 6, &
+        'R4Tensor1%Storage', R4Tensor1%Storage, 'R4Tensor2%Storage', R4Tensor2%Storage)
+      Dims = [R4Tensor1%I,R4Tensor1%J,R4Tensor1%K,R4Tensor1%L]
+      If(Any(Dims.ne.[R4Tensor2%I,R4Tensor2%J,R4Tensor2%K,R4Tensor2%L])) then
+        Write(ShapeA,'(4(1x,I0))') Dims
+        Write(ShapeB,'(4(1x,I0))') R4Tensor2%I,R4Tensor2%J,R4Tensor2%K,R4Tensor2%L
+        Call MQC_Error_A('R4Tensors not conformable in MQC_R4Tensor_R4Tensor_Contraction', 6, &
+          'Shape of R4Tensor1', ShapeA, 'Shape of R4Tensor2', ShapeB)
+      EndIf
+      If(R4Tensor1%Data_Type.eq.'Complex'.or.R4Tensor2%Data_Type.eq.'Complex') then
+        my_Type = 'Complex'
+        TypeCode = 3
+      ElseIf(R4Tensor1%Data_Type.eq.'Real'.or.R4Tensor2%Data_Type.eq.'Real') then
+        my_Type = 'Real'
+        TypeCode = 2
+      Else
+        my_Type = 'Integer'
+        TypeCode = 1
+      EndIf
+      IsReal = my_Type.ne.'Complex'
+      AccI = 0
+      AccR = 0.0
+      AccC = Cmplx(0.0,0.0,kind=real64)
+!
+      If(MQC_R4Tensor_HaveZero(R4Tensor1).or.MQC_R4Tensor_HaveZero(R4Tensor2)) then
+!       case 2: zero operand, the accumulators stay 0
+        Continue
+      Else
+        TA = R4Tensor1
+        TB = R4Tensor2
+        Call MQC_R4Tensor_Resolve_Conjg(TA)
+        Call MQC_R4Tensor_Resolve_Conjg(TB)
+        Call MQC_R4Tensor_Promote(TA,my_Type)
+        Call MQC_R4Tensor_Promote(TB,my_Type)
+        FullA = MQC_R4Tensor_HaveFull(TA)
+        FullB = MQC_R4Tensor_HaveFull(TB)
+        If(.not.FullA.and.TA%Storage.eq.TB%Storage.and.All(TA%IndexOrder.eq.TB%IndexOrder).and. &
+          (TA%PlainSymm.eqv.TB%PlainSymm)) then
+!         case 3: same packed storage, weighted sum of the stored arrays
+          Call MQC_R4Symm_Slot_Weights(TA,W0,W1)
+          Select Case(TypeCode)
+          Case(1)
+            AccI = Sum((W0+W1)*TA%ITen(:,1,1,1)*TB%ITen(:,1,1,1))
+          Case(2)
+            AccR = Sum(Real(W0+W1,kind=real64)*TA%RTen(:,1,1,1)*TB%RTen(:,1,1,1))
+          Case(3)
+            PV = TA%CTen(:,1,1,1)*TB%CTen(:,1,1,1)
+            AccC = Sum(Real(W0,kind=real64)*PV)+Sum(Real(W1,kind=real64)*Conjg(PV))
+          Case Default
+            Call MQC_Error_I('MQC_R4Tensor_R4Tensor_Contraction: unknown case in case number 3', 6, &
+              'TypeCode', TypeCode)
+          End Select
+        ElseIf(FullA.and.FullB) then
+!         case 4: both full, sum of the stored arrays
+          Select Case(TypeCode)
+          Case(1)
+            AccI = Sum(TA%ITen*TB%ITen)
+          Case(2)
+            AccR = Sum(TA%RTen*TB%RTen)
+          Case(3)
+            AccC = Sum(TA%CTen*TB%CTen)
+          Case Default
+            Call MQC_Error_I('MQC_R4Tensor_R4Tensor_Contraction: unknown case in case number 4', 6, &
+              'TypeCode', TypeCode)
+          End Select
+        ElseIf(FullA.or.FullB) then
+!         case 5b: one full, one packed
+          Call MQC_R4Tensor_Raw_Dot(TA,TB,FullA,FullB,Dims,TypeCode,AccI,AccR,AccC)
+        Else
+!         both packed: common group of A and B
+          Call MQC_R4Symm_View_Group(TA%Storage,TA%IndexOrder,TA%PlainSymm,IsReal,GPA,GCA,NGA)
+          Call MQC_R4Symm_View_Group(TB%Storage,TB%IndexOrder,TB%PlainSymm,IsReal,GPB,GCB,NGB)
+          NG = 0
+          Do N = 1, NGA
+            If(MQC_R4Symm_In_Group(GPA(:,N),GCA(N),GPB,GCB,NGB)) then
+              NG = NG+1
+              GP(:,NG) = GPA(:,N)
+              GC(NG) = GCA(N)
+            EndIf
           EndDo
-        EndDo
-      EndDo
+          Call MQC_R4Symm_Best_Class(GP,GC,NG,IsReal,Dims,NewClass,Ord,NewPlain,Found)
+          If(Found) then
+!           case 5: one term per slot of the common class
+            Call MQC_Allocate_R4Tensor(Dims(1),Dims(2),Dims(3),Dims(4),Ref,my_Type, &
+              MQC_R4Symm_With_Order(NewClass,Ord,NewPlain))
+            Ref%DoConjg = .False.
+            Call MQC_R4Symm_Slot_Weights(Ref,W0,W1,Rep)
+            NS = Size(W0)
+!$OMP PARALLEL DO DEFAULT(NONE), &
+!$OMP SHARED(NS,Rep,Ref,TA,TB,W0,W1,Dims,TypeCode),&
+!$OMP PRIVATE(S,X,SS,I,J,K,L,DoConj,P),&
+!$OMP REDUCTION(+:AccI,AccR,AccC)
+            Do S = 1, NS
+!             first element of the slot (column-major linear index)
+              X = Rep(S)-1
+              I = Mod(X,Dims(1))+1
+              X = X/Dims(1)
+              J = Mod(X,Dims(2))+1
+              X = X/Dims(2)
+              K = Mod(X,Dims(3))+1
+              L = X/Dims(3)+1
+              Select Case(TypeCode)
+              Case(1)
+                AccI = AccI+(W0(S)+W1(S))*MQC_R4Tensor_Raw_I(TA,.False.,I,J,K,L)* &
+                  MQC_R4Tensor_Raw_I(TB,.False.,I,J,K,L)
+              Case(2)
+                AccR = AccR+Real(W0(S)+W1(S),kind=real64)*MQC_R4Tensor_Raw_R(TA,.False.,I,J,K,L)* &
+                  MQC_R4Tensor_Raw_R(TB,.False.,I,J,K,L)
+              Case(3)
+!               p relative to the slot value of the common class
+                SS = MQC_R4Tensor_Slot(Ref,I,J,K,L,DoConj)
+                P = MQC_R4Tensor_Raw_C(TA,.False.,I,J,K,L)*MQC_R4Tensor_Raw_C(TB,.False.,I,J,K,L)
+                If(DoConj) P = Conjg(P)
+                AccC = AccC+Real(W0(S),kind=real64)*P+Real(W1(S),kind=real64)*Conjg(P)
+              Case Default
+                Call MQC_Error_I('MQC_R4Tensor_R4Tensor_Contraction: unknown case in Found', 6, &
+                  'TypeCode', TypeCode)
+              End Select
+            EndDo
 !$OMP END PARALLEL DO
-      Do i = 1,M
-        Contraction = Contraction + ContractionVec(i)
-      EndDo
+          Else
+            GIDA = MQC_R4Symm_Layout_Groups(TA%Storage,TA%IndexOrder)
+            GIDB = MQC_R4Symm_Layout_Groups(TB%Storage,TB%IndexOrder)
+            Call MQC_R4Symm_Layout_Class(GIDA,GIDB,NewClass,Ord)
+            Select Case(Trim(NewClass))
+            Case('S_1_1234','S_1_123_4','S_1_12_34','S_1_12_3_4','S_1_1_2_3_4')
+!             case 6: no common class
+              Call MQC_R4Tensor_Raw_Dot(TA,TB,FullA,FullB,Dims,TypeCode,AccI,AccR,AccC)
+            Case Default
+              Call MQC_Error_A('No common storage in MQC_R4Tensor_R4Tensor_Contraction', 6, &
+                'TA%Storage', TA%Storage, 'TB%Storage', TB%Storage, 'NewClass', NewClass)
+            End Select
+          EndIf
+        EndIf
+      EndIf
+!
+      Select Case(TypeCode)
+      Case(1)
+        Contraction = AccI
+      Case(2)
+        Contraction = AccR
+      Case(3)
+        Contraction = AccC
+      Case Default
+        Call MQC_Error_I('MQC_R4Tensor_R4Tensor_Contraction: unknown case in Result', 6, &
+          'TypeCode', TypeCode)
+      End Select
 !
       End Function MQC_R4Tensor_R4Tensor_Contraction
 !
+!
+!     PROCEDURE MQC_R4Symm_Slot_Weights
+!
+!>    \brief <b> MQC_R4Symm_Slot_Weights counts the elements stored in each slot of
+!>    a packed MQC_R4Tensor</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    W0(s) and W1(s) are the numbers of view elements stored in slot s without
+!>    and with conjugation (MQC_R4Tensor_Slot; a pending DoConjg is ignored).
+!>    Only the storage is used (class, IndexOrder, plain flag, dimensions), not
+!>    the data. Rep(s), if present, is the column-major linear index
+!>    I+I0*(J-1)+I0*J0*(K-1)+I0*J0*K0*(L-1) of the first element of slot s.
+!>    The last result is kept and reused while the storage does not change.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Tensor
+!>    \verbatim
+!>        Tensor is Type(MQC_R4Tensor), packed
+!>    \endverbatim
+!>
+!>    \param[out] W0,W1,Rep
+!>    \verbatim
+!>        W0, W1 are Integer(kind=int64),Dimension(:),Allocatable; Rep is
+!>        Integer(kind=int64),Dimension(:),Allocatable,Optional
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_Slot_Weights(Tensor,W0,W1,Rep)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(In)::Tensor
+      Integer(kind=int64),Dimension(:),Allocatable,Intent(Out)::W0,W1
+      Integer(kind=int64),Dimension(:),Allocatable,Intent(Out),Optional::Rep
+      Character(Len=64),Save::CacheStorage='unallocated'
+      Integer(kind=int64),Dimension(4),Save::CacheOrder=0,CacheDims=0
+      Logical,Save::CachePlain=.False.
+      Integer(kind=int64),Dimension(:),Allocatable,Save::CacheW0,CacheW1,CacheRep
+      Integer(kind=int64),Dimension(4)::Dims
+      Integer(kind=int64)::I,J,K,L,S,X
+      Logical::Conj
+
+      If(.not.MQC_R4Tensor_HaveSymmetric(Tensor)) &
+        Call MQC_Error_A('Storage is not packed in MQC_R4Symm_Slot_Weights', 6, &
+        'Tensor%Storage', Tensor%Storage)
+      Dims = [Tensor%I,Tensor%J,Tensor%K,Tensor%L]
+!$OMP CRITICAL (MQC_R4Symm_Slot_Weights_Cache)
+      If(CacheStorage.ne.Tensor%Storage.or.Any(CacheOrder.ne.Tensor%IndexOrder).or. &
+        (CachePlain.neqv.Tensor%PlainSymm).or.Any(CacheDims.ne.Dims)) then
+        If(Allocated(CacheW0)) Deallocate(CacheW0,CacheW1,CacheRep)
+        S = symIndexSize(Tensor%Storage,MQC_R4Symm_ToChem(Tensor%IndexOrder,Dims))
+        Allocate(CacheW0(S),CacheW1(S),CacheRep(S))
+        CacheW0 = 0
+        CacheW1 = 0
+        X = 0
+        Do L = 1, Dims(4)
+          Do K = 1, Dims(3)
+            Do J = 1, Dims(2)
+              Do I = 1, Dims(1)
+                X = X+1
+                S = MQC_R4Tensor_Slot(Tensor,I,J,K,L,Conj)
+                If(Tensor%DoConjg) Conj = .not.Conj
+                If(CacheW0(S)+CacheW1(S).eq.0) CacheRep(S) = X
+                If(Conj) then
+                  CacheW1(S) = CacheW1(S)+1
+                Else
+                  CacheW0(S) = CacheW0(S)+1
+                EndIf
+              EndDo
+            EndDo
+          EndDo
+        EndDo
+        CacheStorage = Tensor%Storage
+        CacheOrder = Tensor%IndexOrder
+        CachePlain = Tensor%PlainSymm
+        CacheDims = Dims
+      EndIf
+      W0 = CacheW0
+      W1 = CacheW1
+      If(Present(Rep)) Rep = CacheRep
+!$OMP END CRITICAL (MQC_R4Symm_Slot_Weights_Cache)
+
+      End Subroutine MQC_R4Symm_Slot_Weights
+!
+!
+!     PROCEDURE MQC_R4Tensor_Raw_I, MQC_R4Tensor_Raw_R, MQC_R4Tensor_Raw_C
+!
+!>    \brief <b> MQC_R4Tensor_Raw_I/_R/_C read element (I,J,K,L) of an
+!>    MQC_R4Tensor from its stored array</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Full = TRUE: the full array at (I,J,K,L); otherwise the packed slot, with
+!>    conjugation (complex). No MQC_Scalar and no data type check: the array of
+!>    the routine's type must be the allocated one, and the tensor must not be
+!>    a zero tensor.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] T,Full,I,J,K,L
+!>    \verbatim
+!>        T is Type(MQC_R4Tensor); Full is Logical; I,J,K,L are Integer(kind=int64)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Tensor_Raw_I(T,Full,I,J,K,L) Result(V)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(In)::T
+      Logical,Intent(In)::Full
+      Integer(kind=int64),Intent(In)::I,J,K,L
+      Integer(kind=int64)::V,S
+      Logical::Cj
+
+      If(Full) then
+        V = T%ITen(I,J,K,L)
+      Else
+        S = MQC_R4Tensor_Slot(T,I,J,K,L,Cj)
+        V = T%ITen(S,1,1,1)
+      EndIf
+
+      End Function MQC_R4Tensor_Raw_I
+!
+      Function MQC_R4Tensor_Raw_R(T,Full,I,J,K,L) Result(V)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(In)::T
+      Logical,Intent(In)::Full
+      Integer(kind=int64),Intent(In)::I,J,K,L
+      Real(kind=real64)::V
+      Integer(kind=int64)::S
+      Logical::Cj
+
+      If(Full) then
+        V = T%RTen(I,J,K,L)
+      Else
+        S = MQC_R4Tensor_Slot(T,I,J,K,L,Cj)
+        V = T%RTen(S,1,1,1)
+      EndIf
+
+      End Function MQC_R4Tensor_Raw_R
+!
+      Function MQC_R4Tensor_Raw_C(T,Full,I,J,K,L) Result(V)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(In)::T
+      Logical,Intent(In)::Full
+      Integer(kind=int64),Intent(In)::I,J,K,L
+      Complex(kind=real64)::V
+      Integer(kind=int64)::S
+      Logical::Cj
+
+      If(Full) then
+        V = T%CTen(I,J,K,L)
+      Else
+        S = MQC_R4Tensor_Slot(T,I,J,K,L,Cj)
+        V = T%CTen(S,1,1,1)
+        If(Cj) V = Conjg(V)
+      EndIf
+
+      End Function MQC_R4Tensor_Raw_C
+!
+!
+!
+!     PROCEDURE MQC_R4Symm_View_Group
+!
+!>    \brief <b> MQC_R4Symm_View_Group returns the complete symmetry group of a
+!>    storage class in view coordinates</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Returns the identity and the operations of MQC_R4Symm_UnpackSymmetry
+!>    (class SymClass read through IndexOrder, Plain dropping conjugations).
+!>    For real or integer data (IsReal) a conjugation is trivial, so every
+!>    operation is listed with both conjugation flags. NG <= 48.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] SymClass,IndexOrder,Plain,IsReal
+!>    \verbatim
+!>        SymClass is Character(Len=*); IndexOrder is Integer(kind=int64),Dimension(4);
+!>        Plain, IsReal are Logical
+!>    \endverbatim
+!>
+!>    \param[out] GP,GC,NG
+!>    \verbatim
+!>        GP is Integer(kind=int64),Dimension(4,48); GC is Logical,Dimension(48);
+!>        NG is Integer(kind=int64). Operation n is (GP(:,n),GC(n)).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_View_Group(SymClass,IndexOrder,Plain,IsReal,GP,GC,NG)
+
+      Implicit None
+      Character(Len=*),Intent(In)::SymClass
+      Integer(kind=int64),Dimension(4),Intent(In)::IndexOrder
+      Logical,Intent(In)::Plain,IsReal
+      Integer(kind=int64),Dimension(4,48),Intent(Out)::GP
+      Logical,Dimension(48),Intent(Out)::GC
+      Integer(kind=int64),Intent(Out)::NG
+      Integer(kind=int64),Dimension(4,7)::Perm
+      Logical,Dimension(7)::Conj
+      Integer(kind=int64)::NImg,N,M
+
+      Call MQC_R4Symm_UnpackSymmetry(SymClass,Perm,Conj,NImg,IndexOrder,Plain)
+      GP = 0
+      GC = .False.
+      NG = 1
+      GP(:,1) = [1,2,3,4]
+      Do N = 1, NImg
+        NG = NG+1
+        GP(:,NG) = Perm(:,N)
+        GC(NG) = Conj(N)
+      EndDo
+      If(IsReal) then
+        M = NG
+        Do N = 1, M
+          NG = NG+1
+          GP(:,NG) = GP(:,N)
+          GC(NG) = .not.GC(N)
+        EndDo
+      EndIf
+
+      End Subroutine MQC_R4Symm_View_Group
+!
+!
+!     PROCEDURE MQC_R4Symm_In_Group
+!
+!>    \brief <b> MQC_R4Symm_In_Group returns TRUE if operation (P,C) belongs to the
+!>    group (GP,GC,NG)</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Membership test used by the group intersections of the R4 algebra.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] P,C,GP,GC,NG
+!>    \verbatim
+!>        P is Integer(kind=int64),Dimension(4); C is Logical; GP, GC, NG as
+!>        returned by MQC_R4Symm_View_Group.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_In_Group(P,C,GP,GC,NG) Result(InGroup)
+
+      Implicit None
+      Integer(kind=int64),Dimension(4),Intent(In)::P
+      Logical,Intent(In)::C
+      Integer(kind=int64),Dimension(4,48),Intent(In)::GP
+      Logical,Dimension(48),Intent(In)::GC
+      Integer(kind=int64),Intent(In)::NG
+      Logical::InGroup
+      Integer(kind=int64)::N
+
+      InGroup = .False.
+      Do N = 1, NG
+        If(All(GP(:,N).eq.P).and.(GC(N).eqv.C)) then
+          InGroup = .True.
+          Exit
+        EndIf
+      EndDo
+
+      End Function MQC_R4Symm_In_Group
+!
+!
+!     PROCEDURE MQC_R4Symm_Best_Class
+!
+!>    \brief <b> MQC_R4Symm_Best_Class returns the largest packed class contained
+!>    in a symmetry group</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Searches the packed classes by decreasing fold (R_8_1234; S_4_1234,
+!>    S_4_1234_plain, R_4_12_34; S_2_12_34, S_2_13_24, R_2_12_3_4) and, for
+!>    each fold, first the identity IndexOrder and then all 24 orders, for the
+!>    first view whose group is contained in (GP,GC,NG) and whose dimensions
+!>    fit Dims. S_4_1234_plain is skipped for real data (it is S_4_1234).
+!>    Found is FALSE when no class fits.
+!>
+!>    Result of A + B and A - B (MQC_R4Tensor_Combine, which uses this routine on the
+!>    common group of A and B), for operands in canonical order and equal dimensions.
+!>    R8 R_8_1234, S4 S_4_1234, Kl S_4_1234_plain (Klein), R4 R_4_12_34, SP S_2_12_34,
+!>    S2 S_2_13_24, R2 R_2_12_3_4; packed classes come from this routine. L4 S_1_1234,
+!>    L31 S_1_123_4, L22 S_1_12_34, L211 S_1_12_3_4, L1 S_1_1_2_3_4: no common class, full
+!>    storage with the common basis layout (MQC_R4Symm_Layout_Class). Suffix p = _Phys.
+!>    Not shown: unallocated -> error; StorFull -> StorFull; zero tensor -> the other
+!>    operand. Equal storages keep that storage.
+!>
+!>    Complex result:
+!>    | A\B  | L4   | L31   | L22  | L211 | L1 | R8   | S4   | Kl   | R4   | SP   | S2    | R2   |
+!>    |------+------+-------+------+------+----+------+------+------+------+------+-------+------|
+!>    | L4   | L4   | L31   | L22  | L211 | L1 | L4   | L4   | L4   | L22  | L22  | L22p  | L211 |
+!>    | L31  | L31  | L31   | L211 | L211 | L1 | L31  | L31  | L31  | L211 | L211 | L211p | L211 |
+!>    | L22  | L22  | L211  | L22  | L211 | L1 | L22  | L22  | L22  | L22  | L22  | L1    | L211 |
+!>    | L211 | L211 | L211  | L211 | L211 | L1 | L211 | L211 | L211 | L211 | L211 | L1    | L211 |
+!>    | L1   | L1   | L1    | L1   | L1   | L1 | L1   | L1   | L1   | L1   | L1   | L1    | L1   |
+!>    | R8   | L4   | L31   | L22  | L211 | L1 | R8   | S2   | Kl   | R4   | L22  | S2    | R2   |
+!>    | S4   | L4   | L31   | L22  | L211 | L1 | S2   | S4   | S2   | L22  | SP   | S2    | L211 |
+!>    | Kl   | L4   | L31   | L22  | L211 | L1 | Kl   | S2   | Kl   | S2p  | L22  | S2    | L211 |
+!>    | R4   | L22  | L211  | L22  | L211 | L1 | R4   | L22  | S2p  | R4   | L22  | L1    | R2   |
+!>    | SP   | L22  | L211  | L22  | L211 | L1 | L22  | SP   | L22  | L22  | SP   | L1    | L211 |
+!>    | S2   | L22p | L211p | L1   | L1   | L1 | S2   | S2   | S2   | L1   | L1   | S2    | L1   |
+!>    | R2   | L211 | L211  | L211 | L211 | L1 | R2   | L211 | L211 | R2   | L211 | L1    | R2   |
+!>
+!>    Real or integer result (Kl is S4):
+!>    | A\B  | L4   | L31   | L22  | L211 | L1 | R8   | S4   | R4   | SP   | S2    | R2   |
+!>    |------+------+-------+------+------+----+------+------+------+------+-------+------|
+!>    | L4   | L4   | L31   | L22  | L211 | L1 | L4   | L4   | L22  | L22  | L22p  | L211 |
+!>    | L31  | L31  | L31   | L211 | L211 | L1 | L31  | L31  | L211 | L211 | L211p | L211 |
+!>    | L22  | L22  | L211  | L22  | L211 | L1 | L22  | L22  | L22  | L22  | L1    | L211 |
+!>    | L211 | L211 | L211  | L211 | L211 | L1 | L211 | L211 | L211 | L211 | L1    | L211 |
+!>    | L1   | L1   | L1    | L1   | L1   | L1 | L1   | L1   | L1   | L1   | L1    | L1   |
+!>    | R8   | L4   | L31   | L22  | L211 | L1 | R8   | S4   | R4   | SP   | S2    | R2   |
+!>    | S4   | L4   | L31   | L22  | L211 | L1 | S4   | S4   | SP   | SP   | S2    | L211 |
+!>    | R4   | L22  | L211  | L22  | L211 | L1 | R4   | SP   | R4   | SP   | L1    | R2   |
+!>    | SP   | L22  | L211  | L22  | L211 | L1 | SP   | SP   | SP   | SP   | L1    | L211 |
+!>    | S2   | L22p | L211p | L1   | L1   | L1 | S2   | S2   | L1   | L1   | S2    | L1   |
+!>    | R2   | L211 | L211  | L211 | L211 | L1 | R2   | L211 | R2   | L211 | L1    | R2   |
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] GP,GC,NG,IsReal,Dims
+!>    \verbatim
+!>        The group (see MQC_R4Symm_View_Group), whether the data is real or
+!>        integer, and the view dimensions.
+!>    \endverbatim
+!>
+!>    \param[out] SymClass,IndexOrder,Plain,Found
+!>    \verbatim
+!>        The class found, its view order, its plain flag, and whether one was
+!>        found.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_Best_Class(GP,GC,NG,IsReal,Dims,SymClass,IndexOrder,Plain,Found)
+
+      Implicit None
+      Integer(kind=int64),Dimension(4,48),Intent(In)::GP
+      Logical,Dimension(48),Intent(In)::GC
+      Integer(kind=int64),Intent(In)::NG
+      Logical,Intent(In)::IsReal
+      Integer(kind=int64),Dimension(4),Intent(In)::Dims
+      Character(Len=64),Intent(Out)::SymClass
+      Integer(kind=int64),Dimension(4),Intent(Out)::IndexOrder
+      Logical,Intent(Out)::Plain,Found
+      Character(Len=10),Dimension(7)::Cand
+      Logical,Dimension(7)::CandPlain
+      Integer,Dimension(7)::CandFold
+      Integer(kind=int64),Dimension(4,48)::HP
+      Logical,Dimension(48)::HC
+      Integer(kind=int64)::NH,N
+      Integer(kind=int64),Dimension(4)::Ord
+      Integer::Fold,Pass,C,A,B,P,Q
+      Logical::Sub
+
+      Cand = [Character(Len=10)::'R_8_1234','S_4_1234','S_4_1234','R_4_12_34','S_2_12_34', &
+        'S_2_13_24','R_2_12_3_4']
+      CandPlain = [.False.,.False.,.True.,.False.,.False.,.False.,.False.]
+      CandFold = [8,4,4,4,2,2,2]
+      SymClass = 'StorFull'
+      IndexOrder = [1,2,3,4]
+      Plain = .False.
+      Found = .False.
+      Search: Do Fold = 8, 2, -1
+        Do Pass = 1, 2
+          Do C = 1, 7
+            If(CandFold(C).ne.Fold) Cycle
+            If(CandPlain(C).and.IsReal) Cycle
+            Do A = 1, 4
+              Do B = 1, 4
+                Do P = 1, 4
+                  Do Q = 1, 4
+                    Ord = [A,B,P,Q]
+                    If(.not.MQC_R4Symm_Is_Order(Ord)) Cycle
+                    If(Pass.eq.1.and.Any(Ord.ne.[1,2,3,4])) Cycle
+                    If(.not.MQC_R4Symm_Dims_OK(Cand(C),Dims(1),Dims(2),Dims(3),Dims(4),Ord)) Cycle
+                    Call MQC_R4Symm_View_Group(Cand(C),Ord,CandPlain(C),IsReal,HP,HC,NH)
+                    Sub = .True.
+                    Do N = 1, NH
+                      If(.not.MQC_R4Symm_In_Group(HP(:,N),HC(N),GP,GC,NG)) then
+                        Sub = .False.
+                        Exit
+                      EndIf
+                    EndDo
+                    If(Sub) then
+                      SymClass = Cand(C)
+                      IndexOrder = Ord
+                      Plain = CandPlain(C)
+                      Found = .True.
+                      Exit Search
+                    EndIf
+                  EndDo
+                EndDo
+              EndDo
+            EndDo
+          EndDo
+        EndDo
+      EndDo Search
+
+      End Subroutine MQC_R4Symm_Best_Class
+!
+!
+!     PROCEDURE MQC_R4Symm_Layout_Groups
+!
+!>    \brief <b> MQC_R4Symm_Layout_Groups returns the basis group of each view
+!>    position of a storage</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Positions with equal numbers share a basis. Packed classes use their
+!>    minimal layout (R_8_1234, S_4_1234: 1111; R_4_12_34, S_2_12_34: 1122;
+!>    S_2_13_24: 1212; R_2_12_3_4: 1123); zero and S_1 classes their canonical
+!>    groups (MQC_R4Symm_Canon_Groups); all read through IndexOrder. StorFull
+!>    has no layout (error).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] SymClass,IndexOrder
+!>    \verbatim
+!>        SymClass is Character(Len=*); IndexOrder is Integer(kind=int64),Dimension(4)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Layout_Groups(SymClass,IndexOrder) Result(GID)
+
+      Implicit None
+      Character(Len=*),Intent(In)::SymClass
+      Integer(kind=int64),Dimension(4),Intent(In)::IndexOrder
+      Integer,Dimension(4)::GID,CG
+      Integer::Q
+
+      Select Case(Trim(SymClass))
+      Case('R_8_1234','S_4_1234')
+        CG = [1,1,1,1]
+      Case('R_4_12_34','S_2_12_34')
+        CG = [1,1,2,2]
+      Case('S_2_13_24')
+        CG = [1,2,1,2]
+      Case('R_2_12_3_4')
+        CG = [1,1,2,3]
+      Case('Z_24_1234','Z_6_123_4','Z_4_12_34','Z_2_12_3_4','Z_1_1_2_3_4', &
+        'S_1_1234','S_1_123_4','S_1_12_34','S_1_12_3_4','S_1_1_2_3_4')
+        CG = MQC_R4Symm_Canon_Groups(SymClass)
+      Case Default
+        Call MQC_Error_A('No basis layout for this storage in MQC_R4Symm_Layout_Groups', 6, &
+          'SymClass', SymClass)
+      End Select
+      Do Q = 1, 4
+        GID(Q) = CG(IndexOrder(Q))
+      EndDo
+
+      End Function MQC_R4Symm_Layout_Groups
+!
+!
+!     PROCEDURE MQC_R4Symm_Layout_Class
+!
+!>    \brief <b> MQC_R4Symm_Layout_Class returns the S_1 class and IndexOrder of
+!>    the common layout of two storages</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Two view positions share a basis in the result when they share it in both
+!>    layouts GIDA and GIDB (the meet). The group sizes give the class
+!>    (4: S_1_1234, 3+1: S_1_123_4, 2+2: S_1_12_34, 2+1+1: S_1_12_3_4,
+!>    1+1+1+1: S_1_1_2_3_4) and IndexOrder the lexicographically first order
+!>    that places the groups.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] GIDA,GIDB
+!>    \verbatim
+!>        GIDA, GIDB are Integer,Dimension(4) (see MQC_R4Symm_Layout_Groups).
+!>    \endverbatim
+!>
+!>    \param[out] SymClass,IndexOrder
+!>    \verbatim
+!>        SymClass is Character(Len=64); IndexOrder is Integer(kind=int64),Dimension(4)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_Layout_Class(GIDA,GIDB,SymClass,IndexOrder)
+
+      Implicit None
+      Integer,Dimension(4),Intent(In)::GIDA,GIDB
+      Character(Len=64),Intent(Out)::SymClass
+      Integer(kind=int64),Dimension(4),Intent(Out)::IndexOrder
+      Logical,Dimension(4,4)::Same
+      Integer(kind=int64),Dimension(4)::Cand
+      Integer,Dimension(4)::CG,NSame
+      Integer::A,B,C,D,P,Q
+      Logical::Match
+
+      Do P = 1, 4
+        Do Q = 1, 4
+          Same(P,Q) = (GIDA(P).eq.GIDA(Q)).and.(GIDB(P).eq.GIDB(Q))
+        EndDo
+        NSame(P) = Count(Same(P,:))
+      EndDo
+      If(All(NSame.eq.4)) then
+        SymClass = 'S_1_1234'
+      ElseIf(Any(NSame.eq.3)) then
+        SymClass = 'S_1_123_4'
+      ElseIf(All(NSame.eq.2)) then
+        SymClass = 'S_1_12_34'
+      ElseIf(Any(NSame.eq.2)) then
+        SymClass = 'S_1_12_3_4'
+      Else
+        SymClass = 'S_1_1_2_3_4'
+      EndIf
+      CG = MQC_R4Symm_Canon_Groups(SymClass)
+      IndexOrder = [1,2,3,4]
+      Search: Do A = 1, 4
+        Do B = 1, 4
+          Do C = 1, 4
+            Do D = 1, 4
+              Cand = [A,B,C,D]
+              If(MQC_R4Symm_Is_Order(Cand)) then
+                Match = .True.
+                Compare: Do P = 1, 4
+                  Do Q = 1, 4
+                    If((CG(Cand(P)).eq.CG(Cand(Q))).neqv.Same(P,Q)) then
+                      Match = .False.
+                      Exit Compare
+                    EndIf
+                  EndDo
+                EndDo Compare
+                If(Match) then
+                  IndexOrder = Cand
+                  Exit Search
+                EndIf
+              EndIf
+            EndDo
+          EndDo
+        EndDo
+      EndDo Search
+
+      End Subroutine MQC_R4Symm_Layout_Class
+!
+!
+!     PROCEDURE MQC_R4Tensor_Has_Conj
+!
+!>    \brief <b> MQC_R4Tensor_Has_Conj returns TRUE if a packed MQC_R4Tensor has
+!>    equalities with complex conjugation</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    TRUE for S_4_1234 (not plain) and S_2_12_34. Such equalities do not
+!>    survive a complex scalar factor or the imaginary part.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Tensor
+!>    \verbatim
+!>        Tensor is Class(MQC_R4Tensor)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Tensor_Has_Conj(Tensor) Result(HasConj)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(In)::Tensor
+      Logical::HasConj
+
+      HasConj = (Tensor%Storage.eq.'S_4_1234'.and..not.Tensor%PlainSymm).or. &
+        Tensor%Storage.eq.'S_2_12_34'
+
+      End Function MQC_R4Tensor_Has_Conj
+!
+!
+!     PROCEDURE MQC_R4Tensor_Repack_Plain
+!
+!>    \brief <b> MQC_R4Tensor_Repack_Plain stores a packed MQC_R4Tensor in the
+!>    largest class of its equalities without conjugation</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The values do not change. The new storage keeps only the equalities
+!>    without conjugation (S_4_1234 -> S_2_13_24; S_2_12_34 -> S_1_12_34 full),
+!>    so the tensor can then be scaled by a complex number or have its
+!>    imaginary part taken. With RealValues (complex data holding real values,
+!>    e.g. a promoted real tensor) the conjugated equalities count as plain
+!>    ones (S_4_1234 -> S_4_1234_plain; S_2_12_34 -> S_2_13_24_Phys).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] Tensor
+!>    \verbatim
+!>        Tensor is Type(MQC_R4Tensor)
+!>    \endverbatim
+!>
+!>    \param[in] RealValues
+!>    \verbatim
+!>        RealValues is Logical,Optional (default FALSE)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Repack_Plain(Tensor,RealValues)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(InOut)::Tensor
+      Logical,Intent(In),Optional::RealValues
+      Logical::my_RealValues
+      Type(MQC_R4Tensor)::Temp
+      Integer(kind=int64),Dimension(4,48)::GP,HP
+      Logical,Dimension(48)::GC,HC
+      Integer(kind=int64)::NG,NH,N
+      Integer(kind=int64),Dimension(4)::Ord
+      Character(Len=64)::NewClass
+      Logical::NewPlain,Found,OK
+      Integer,Dimension(4)::GID
+
+      my_RealValues = .False.
+      If(Present(RealValues)) my_RealValues = RealValues
+!     real values: a conjugated equality is also a plain one
+      Call MQC_R4Symm_View_Group(Tensor%Storage,Tensor%IndexOrder,Tensor%PlainSymm,my_RealValues, &
+        GP,GC,NG)
+      NH = 0
+      Do N = 1, NG
+        If(.not.GC(N)) then
+          NH = NH+1
+          HP(:,NH) = GP(:,N)
+          HC(NH) = .False.
+        EndIf
+      EndDo
+      Call MQC_R4Symm_Best_Class(HP,HC,NH,.False.,[Tensor%I,Tensor%J,Tensor%K,Tensor%L], &
+        NewClass,Ord,NewPlain,Found)
+      GID = MQC_R4Symm_Layout_Groups(Tensor%Storage,Tensor%IndexOrder)
+      Temp = Tensor
+      Call MQC_R4Tensor_Symm2Full(Temp)
+      If(Found) then
+        Call MQC_R4Tensor_Full2Symm(Temp,MQC_R4Symm_With_Order(NewClass,Ord,NewPlain),OK)
+        If(.not.OK) Call MQC_Error_A('Repacking failed in MQC_R4Tensor_Repack_Plain', 6, &
+          'NewClass', NewClass)
+        Tensor = Temp
+      Else
+        Call MQC_R4Symm_Layout_Class(GID,GID,NewClass,Ord)
+        Call MQC_Allocate_R4Tensor(Temp%I,Temp%J,Temp%K,Temp%L,Tensor,Temp%Data_Type, &
+          NewClass,Ord)
+        Select Case(Temp%Data_Type)
+        Case('Integer')
+          Tensor%ITen = Temp%ITen
+        Case('Real')
+          Tensor%RTen = Temp%RTen
+        Case('Complex')
+          Tensor%CTen = Temp%CTen
+        Case Default
+          Call MQC_Error_A('Data type not defined in MQC_R4Tensor_Repack_Plain', 6, &
+            'Temp%Data_Type', Temp%Data_Type)
+        End Select
+      EndIf
+
+      End Subroutine MQC_R4Tensor_Repack_Plain
+!
+!
+!     PROCEDURE MQC_R4Tensor_Combine
+!
+!>    \brief <b> MQC_R4Tensor_Combine returns A + BSign*B for two MQC_R4Tensors
+!>    </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Shared core of the sum (BSign = 1) and the difference (BSign = -1). The
+!>    data type is the promoted one. The storage follows the intersection
+!>    rule: an equality holds for A + BSign*B when it holds for both A and B,
+!>    and the result is stored in the largest packed class contained in that
+!>    common group (MQC_R4Symm_Best_Class); with no such class it is stored
+!>    full with the S_1 label of the common basis layout. A zero tensor gives
+!>    the other operand; StorFull on either side gives StorFull. Equal class,
+!>    IndexOrder and plain flag add the stored arrays directly.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] A,B
+!>    \verbatim
+!>        A, B are Type(MQC_R4Tensor), with equal dimensions.
+!>    \endverbatim
+!>
+!>    \param[in] BSign
+!>    \verbatim
+!>        BSign is Integer(kind=int64), 1 or -1.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Tensor_Combine(A,B,BSign) Result(C)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(In)::A,B
+      Integer(kind=int64),Intent(In)::BSign
+      Type(MQC_R4Tensor)::C,TA,TB
+      Character(Len=64)::my_Type,NewClass
+      Integer(kind=int64),Dimension(4,48)::GPA,GPB,GP
+      Logical,Dimension(48)::GCA,GCB,GC
+      Integer(kind=int64)::NGA,NGB,NG,N,I,J,K,L,S
+      Integer(kind=int64),Dimension(4)::Ord,Dims
+      Logical::IsReal,NewPlain,Found,DoConj
+      Logical,Dimension(:),Allocatable::Filled
+      Integer,Dimension(4)::GIDA,GIDB
+      Type(MQC_Scalar)::VA,VB,V
+
+      If(.not.MQC_R4Tensor_isAllocated(A).or..not.MQC_R4Tensor_isAllocated(B)) &
+        Call MQC_Error_A('Unallocated rank-4 tensor in MQC_R4Tensor_Combine', 6, &
+        'A%Storage', A%Storage, 'B%Storage', B%Storage)
+      Dims = [A%I,A%J,A%K,A%L]
+      If(Any(Dims.ne.[B%I,B%J,B%K,B%L])) &
+        Call MQC_Error('R4Tensors not conformable in MQC_R4Tensor_Combine',6)
+      If(A%Data_Type.eq.'Complex'.or.B%Data_Type.eq.'Complex') then
+        my_Type = 'Complex'
+      ElseIf(A%Data_Type.eq.'Real'.or.B%Data_Type.eq.'Real') then
+        my_Type = 'Real'
+      Else
+        my_Type = 'Integer'
+      EndIf
+      IsReal = my_Type.ne.'Complex'
+      TA = A
+      TB = B
+      Call MQC_R4Tensor_Resolve_Conjg(TA)
+      Call MQC_R4Tensor_Resolve_Conjg(TB)
+
+      If(MQC_R4Tensor_HaveZero(TA).and.MQC_R4Tensor_HaveZero(TB)) then
+        Call MQC_Allocate_R4Tensor(Dims(1),Dims(2),Dims(3),Dims(4),C,my_Type,'Z')
+      ElseIf(MQC_R4Tensor_HaveZero(TA)) then
+        C = MQC_ScalarR4TensorProduct(BSign,TB)
+        Call MQC_R4Tensor_Promote(C,my_Type)
+      ElseIf(MQC_R4Tensor_HaveZero(TB)) then
+        C = TA
+        Call MQC_R4Tensor_Promote(C,my_Type)
+      ElseIf(TA%Storage.eq.'StorFull'.or.TB%Storage.eq.'StorFull') then
+!       no layout known: full sum
+        If(.not.MQC_R4Tensor_HaveFull(TA)) Call MQC_R4Tensor_Symm2Full(TA)
+        If(.not.MQC_R4Tensor_HaveFull(TB)) Call MQC_R4Tensor_Symm2Full(TB)
+        Call MQC_Allocate_R4Tensor(Dims(1),Dims(2),Dims(3),Dims(4),C,my_Type,'StorFull')
+        Call MQC_R4Tensor_Add_Arrays(C,TA,TB,BSign)
+      ElseIf(MQC_R4Tensor_HaveSymmetric(TA).and.TA%Storage.eq.TB%Storage.and. &
+        All(TA%IndexOrder.eq.TB%IndexOrder).and.(TA%PlainSymm.eqv.TB%PlainSymm)) then
+!       same packed storage: add the stored arrays
+        Call MQC_Allocate_R4Tensor(Dims(1),Dims(2),Dims(3),Dims(4),C,my_Type, &
+          MQC_R4Symm_With_Order(TA%Storage,TA%IndexOrder,TA%PlainSymm))
+        Call MQC_R4Tensor_Add_Arrays(C,TA,TB,BSign)
+      Else
+        Call MQC_R4Symm_View_Group(TA%Storage,TA%IndexOrder,TA%PlainSymm,IsReal,GPA,GCA,NGA)
+        Call MQC_R4Symm_View_Group(TB%Storage,TB%IndexOrder,TB%PlainSymm,IsReal,GPB,GCB,NGB)
+        NG = 0
+        Do N = 1, NGA
+          If(MQC_R4Symm_In_Group(GPA(:,N),GCA(N),GPB,GCB,NGB)) then
+            NG = NG+1
+            GP(:,NG) = GPA(:,N)
+            GC(NG) = GCA(N)
+          EndIf
+        EndDo
+        Found = .False.
+        If(MQC_R4Tensor_HaveSymmetric(TA).and.MQC_R4Tensor_HaveSymmetric(TB)) &
+          Call MQC_R4Symm_Best_Class(GP,GC,NG,IsReal,Dims,NewClass,Ord,NewPlain,Found)
+        If(Found) then
+!         packed result: each slot once from the two operands
+          Call MQC_Allocate_R4Tensor(Dims(1),Dims(2),Dims(3),Dims(4),C,my_Type, &
+            MQC_R4Symm_With_Order(NewClass,Ord,NewPlain))
+          Allocate(Filled(symIndexSize(C%Storage,MQC_R4Symm_ToChem(C%IndexOrder,Dims))))
+          Filled = .False.
+          Do L = 1, Dims(4)
+            Do K = 1, Dims(3)
+              Do J = 1, Dims(2)
+                Do I = 1, Dims(1)
+                  S = MQC_R4Tensor_Slot(C,I,J,K,L,DoConj)
+                  If(.not.Filled(S)) then
+                    VA = TA%at(I,J,K,L)
+                    VB = TB%at(I,J,K,L)
+                    Select Case(my_Type)
+                    Case('Integer')
+                      V = VA%ival()+BSign*VB%ival()
+                    Case('Real')
+                      V = Real(VA%cval())+BSign*Real(VB%cval())
+                    Case('Complex')
+                      V = VA%cval()+BSign*VB%cval()
+                    Case Default
+                      Call MQC_Error_A('Data type not defined in MQC_R4Tensor_Combine', 6, &
+                        'my_Type', my_Type)
+                    End Select
+                    Call MQC_R4Tensor_Put_Raw(C,V,I,J,K,L)
+                    Filled(S) = .True.
+                  EndIf
+                EndDo
+              EndDo
+            EndDo
+          EndDo
+        Else
+!         no common symmetry: full result with the common basis layout
+          GIDA = MQC_R4Symm_Layout_Groups(TA%Storage,TA%IndexOrder)
+          GIDB = MQC_R4Symm_Layout_Groups(TB%Storage,TB%IndexOrder)
+          Call MQC_R4Symm_Layout_Class(GIDA,GIDB,NewClass,Ord)
+          If(.not.MQC_R4Tensor_HaveFull(TA)) Call MQC_R4Tensor_Symm2Full(TA)
+          If(.not.MQC_R4Tensor_HaveFull(TB)) Call MQC_R4Tensor_Symm2Full(TB)
+          Call MQC_Allocate_R4Tensor(Dims(1),Dims(2),Dims(3),Dims(4),C,my_Type,NewClass,Ord)
+          Call MQC_R4Tensor_Add_Arrays(C,TA,TB,BSign)
+        EndIf
+      EndIf
+
+      End Function MQC_R4Tensor_Combine
+!
+!
+!     PROCEDURE MQC_R4Tensor_Has_Op
+!
+!>    \brief <b> MQC_R4Tensor_Has_Op returns TRUE if the stored symmetry of an
+!>    MQC_R4Tensor contains the operation (Order,Conj)</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The operation is T(y) = conj^Conj T(x) with y(q) = x(Order(q)). Only the
+!>    group of a packed tensor is checked (its class, IndexOrder and plain
+!>    flag; real data hold both conj flags). Full-stored and zero tensors give
+!>    FALSE: no numeric test is made.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] T
+!>    \verbatim
+!>        T is Type(MQC_R4Tensor).
+!>    \endverbatim
+!>
+!>    \param[in] Order
+!>    \verbatim
+!>        Order is Integer(kind=int64),Dimension(4), a permutation of 1..4.
+!>    \endverbatim
+!>
+!>    \param[in] Conj
+!>    \verbatim
+!>        Conj is Logical, TRUE for a conjugating operation.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Tensor_Has_Op(T,Order,Conj) Result(HasOp)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(In)::T
+      Integer(kind=int64),Dimension(4),Intent(In)::Order
+      Logical,Intent(In)::Conj
+      Logical::HasOp
+      Integer(kind=int64),Dimension(4,48)::GP
+      Logical,Dimension(48)::GC
+      Integer(kind=int64)::NG
+
+      HasOp = .False.
+      If(MQC_R4Tensor_HaveSymmetric(T)) then
+        Call MQC_R4Tensor_Group(T,T%Data_Type.ne.'Complex',GP,GC,NG)
+        HasOp = MQC_R4Symm_In_Group(Order,Conj,GP,GC,NG)
+      EndIf
+
+      End Function MQC_R4Tensor_Has_Op
+!
+!
+!     PROCEDURE MQC_R4Tensor_Add_Image
+!
+!>    \brief <b> MQC_R4Tensor_Add_Image returns X plus its image under an
+!>    involution Order</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Y(y) = X(y) + X(x), x(Order(q)) = y(q) (the element of
+!>    Permute(X,Order) at y). Order must be an involution (Order(Order) =
+!>    1234) with Dims(Order) = Dims. Y is symmetric under (Order,F) and under
+!>    every operation g of X with Order g Order also in X; it is stored in
+!>    the best packed class of the group they generate (a full-stored X has
+!>    only the identity). Without such a class (or for a zero X),
+!>    Y = X + Permute(X,Order).
+!>    Example: X = S_2_12_34, Order = 3412 gives S_4_1234; a full X with
+!>    Order = 3412 gives S_2_13_24.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] X
+!>    \verbatim
+!>        X is Type(MQC_R4Tensor).
+!>    \endverbatim
+!>
+!>    \param[in] Order
+!>    \verbatim
+!>        Order is Integer(kind=int64),Dimension(4), an involution of 1..4.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Tensor_Add_Image(X,Order) Result(Y)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(In)::X
+      Integer(kind=int64),Dimension(4),Intent(In)::Order
+      Type(MQC_R4Tensor)::Y
+      Integer(kind=int64),Dimension(4,48)::GPX,GP
+      Logical,Dimension(48)::GCX,GC
+      Integer(kind=int64)::NGX,NG,N,I,J,K,L,S
+      Integer(kind=int64),Dimension(4)::Dims,Ord,E,Z
+      Logical::IsReal,Plain,Found,Cj,FullX
+      Character(Len=64)::NewClass
+      Logical,Dimension(:),Allocatable::Filled
+      Type(MQC_Scalar)::V
+
+      If(.not.MQC_R4Tensor_isAllocated(X)) Call MQC_Error_A('Unallocated rank-4 tensor in &
+        &MQC_R4Tensor_Add_Image', 6, 'X%Storage', X%Storage)
+      Dims = [X%I,X%J,X%K,X%L]
+      If(Any(Order(Order).ne.[1,2,3,4]).or.Any(Dims(Order).ne.Dims)) Call MQC_Error_I( &
+        'Order is not an involution conformable with X in MQC_R4Tensor_Add_Image', 6, &
+        'Order(1)', Order(1), 'Order(2)', Order(2), 'Order(3)', Order(3), 'Order(4)', Order(4))
+      IsReal = X%Data_Type.ne.'Complex'
+      Found = .False.
+      If(MQC_R4Tensor_HaveSymmetric(X).or.MQC_R4Tensor_HaveFull(X)) then
+        If(MQC_R4Tensor_HaveSymmetric(X)) then
+          Call MQC_R4Tensor_Group(X,IsReal,GPX,GCX,NGX)
+        Else
+          NGX = 1
+          GPX(:,1) = [1,2,3,4]
+          GCX(1) = .False.
+        EndIf
+        NG = 0
+        Do N = 1, NGX
+          If(MQC_R4Symm_In_Group(Order(GPX(Order,N)),GCX(N),GPX,GCX,NGX)) &
+            Call MQC_R4Symm_Add_Op(GPX(:,N),GCX(N),GP,GC,NG)
+        EndDo
+        Call MQC_R4Symm_Add_Op(Order,.False.,GP,GC,NG)
+        Call MQC_R4Symm_Close_Group(GP,GC,NG)
+        Call MQC_R4Symm_Best_Class(GP,GC,NG,IsReal,Dims,NewClass,Ord,Plain,Found)
+      EndIf
+      If(Found) then
+        Call MQC_Allocate_R4Tensor(Dims(1),Dims(2),Dims(3),Dims(4),Y,X%Data_Type, &
+          MQC_R4Symm_With_Order(NewClass,Ord,Plain))
+        Allocate(Filled(symIndexSize(Y%Storage,MQC_R4Symm_ToChem(Y%IndexOrder,Dims))))
+        Filled = .False.
+        FullX = MQC_R4Tensor_HaveFull(X)
+        Do L = 1, Dims(4)
+          Do K = 1, Dims(3)
+            Do J = 1, Dims(2)
+              Do I = 1, Dims(1)
+                S = MQC_R4Tensor_Slot(Y,I,J,K,L,Cj)
+                If(.not.Filled(S)) then
+                  E = [I,J,K,L]
+                  Z = E(Order)
+                  Select Case(X%Data_Type)
+                  Case('Integer')
+                    V = MQC_R4Tensor_Raw_I(X,FullX,I,J,K,L)+MQC_R4Tensor_Raw_I(X,FullX,Z(1),Z(2),Z(3),Z(4))
+                  Case('Real')
+                    V = MQC_R4Tensor_Raw_R(X,FullX,I,J,K,L)+MQC_R4Tensor_Raw_R(X,FullX,Z(1),Z(2),Z(3),Z(4))
+                  Case('Complex')
+                    V = MQC_R4Tensor_Raw_C(X,FullX,I,J,K,L)+MQC_R4Tensor_Raw_C(X,FullX,Z(1),Z(2),Z(3),Z(4))
+                  Case Default
+                    Call MQC_Error_A('Data type not defined in MQC_R4Tensor_Add_Image', 6, &
+                      'X%Data_Type', X%Data_Type)
+                  End Select
+                  Call MQC_R4Tensor_Put_Raw(Y,V,I,J,K,L)
+                  Filled(S) = .True.
+                EndIf
+              EndDo
+            EndDo
+          EndDo
+        EndDo
+      Else
+        Y = MQC_R4Tensor_Combine(X,MQC_R4Tensor_Permute(X,Order,.False.),1)
+      EndIf
+
+      End Function MQC_R4Tensor_Add_Image
+!
+!
+!     PROCEDURE MQC_R4Tensor_Add_Arrays
+!
+!>    \brief <b> MQC_R4Tensor_Add_Arrays sets the stored array of C to
+!>    A + BSign*B</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    C is already allocated with the promoted data type and a storage whose
+!>    array has the shape of the stored arrays of A and B (same packed class
+!>    and order, or all three full). No lazy conjugation may be pending.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] C
+!>    \verbatim
+!>        C is Type(MQC_R4Tensor)
+!>    \endverbatim
+!>
+!>    \param[in] A,B,BSign
+!>    \verbatim
+!>        A, B are Type(MQC_R4Tensor); BSign is Integer(kind=int64)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Add_Arrays(C,A,B,BSign)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(InOut)::C
+      Type(MQC_R4Tensor),Intent(In)::A,B
+      Integer(kind=int64),Intent(In)::BSign
+
+      Select Case(C%Data_Type)
+      Case('Integer')
+        C%ITen = A%ITen+BSign*B%ITen
+      Case('Real')
+        C%RTen = R4_Real_Data(A)+BSign*R4_Real_Data(B)
+      Case('Complex')
+        C%CTen = R4_Complex_Data(A)+BSign*R4_Complex_Data(B)
+      Case Default
+        Call MQC_Error_A('Data type not defined in MQC_R4Tensor_Add_Arrays', 6, &
+          'C%Data_Type', C%Data_Type)
+      End Select
+
+      Contains
+
+        Function R4_Real_Data(T) Result(X)
+        Type(MQC_R4Tensor),Intent(In)::T
+        Real(kind=real64),Dimension(:,:,:,:),Allocatable::X
+        Select Case(T%Data_Type)
+        Case('Integer')
+          X = Real(T%ITen,kind=real64)
+        Case('Real')
+          X = T%RTen
+        Case Default
+          Call MQC_Error_A('Data type not defined in MQC_R4Tensor_Add_Arrays', 6, &
+            'T%Data_Type', T%Data_Type)
+        End Select
+        End Function R4_Real_Data
+
+        Function R4_Complex_Data(T) Result(X)
+        Type(MQC_R4Tensor),Intent(In)::T
+        Complex(kind=real64),Dimension(:,:,:,:),Allocatable::X
+        Select Case(T%Data_Type)
+        Case('Integer')
+          X = Cmplx(T%ITen,0,kind=real64)
+        Case('Real')
+          X = Cmplx(T%RTen,0.0,kind=real64)
+        Case('Complex')
+          X = T%CTen
+        Case Default
+          Call MQC_Error_A('Data type not defined in MQC_R4Tensor_Add_Arrays', 6, &
+            'T%Data_Type', T%Data_Type)
+        End Select
+        End Function R4_Complex_Data
+
+      End Subroutine MQC_R4Tensor_Add_Arrays
+!
+!
+!     PROCEDURE MQC_R4Tensor_Promote
+!
+!>    \brief <b> MQC_R4Tensor_Promote raises the data type of an MQC_R4Tensor
+!>    </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Converts Integer -> Real/Complex or Real -> Complex as needed to reach
+!>    my_Type; the values and the storage do not change.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] Tensor
+!>    \verbatim
+!>        Tensor is Type(MQC_R4Tensor)
+!>    \endverbatim
+!>
+!>    \param[in] my_Type
+!>    \verbatim
+!>        my_Type is Character(Len=*): 'Integer', 'Real' or 'Complex'
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Promote(Tensor,my_Type)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(InOut)::Tensor
+      Character(Len=*),Intent(In)::my_Type
+
+      If(Tensor%Data_Type.eq.'Integer'.and.my_Type.eq.'Real') then
+        Call MQC_R4Tensor_Copy_Int2Real(Tensor)
+      ElseIf(Tensor%Data_Type.eq.'Integer'.and.my_Type.eq.'Complex') then
+        Call MQC_R4Tensor_Copy_Int2Complex(Tensor)
+      ElseIf(Tensor%Data_Type.eq.'Real'.and.my_Type.eq.'Complex') then
+        Call MQC_R4Tensor_Copy_Real2Complex(Tensor)
+      EndIf
+
+      End Subroutine MQC_R4Tensor_Promote
 !
 !     PROCEDURE MQC_R4Tensor_R4Tensor_Sum
 !
@@ -33175,7 +37391,8 @@
 !>    \verbatim
 !>       
 !>    MQC_R4Tensor_R4Tensor_Sum is a function that returns the sum of two 
-!>    MQC rank-4 tensors.
+!>    MQC rank-4 tensors. The storage of the result follows the intersection
+!>    rule of MQC_R4Tensor_Combine.
 !>
 !>    \endverbatim
 !
@@ -33204,104 +37421,10 @@
 !
       Implicit None
       Type(MQC_R4Tensor),Intent(In)::R4Tensor1,R4Tensor2
-      Type(MQC_R4Tensor)::Summation,Tmp1,Tmp2
-      Integer(kind=int64)::M,N,O,P,i,j,k,l
-      character(len=8)::storage
-!
-      M = size(R4Tensor1,1)
-      N = size(R4Tensor1,2)
-      O = size(R4Tensor1,3)
-      P = size(R4Tensor1,4)
+      Type(MQC_R4Tensor)::Summation
 
-      if(M.ne.size(R4Tensor2,1).or.N.ne.size(R4Tensor2,2).or.O.ne.size(R4Tensor2,3).or. &
-        P.ne.size(R4Tensor2,4)) &
-        call MQC_Error('R4Tensors not conformable in MQC_R4Tensor_R4Tensor_Sum',6)
+      Summation = MQC_R4Tensor_Combine(R4Tensor1,R4Tensor2,1)
 
-      Tmp1 = R4Tensor1
-      Tmp2 = R4Tensor2
-
-      select case(Tmp1%Storage) 
-      case('StorFull')
-        storage = 'StorFull'
-        select case(Tmp2%storage)
-        case('StorSymm')
-          call MQC_R4Tensor_Symm2Full(Tmp2)
-        case('StorFull')
-          !-Empty Case-!
-        case default
-          call mqc_error_A('Unkown storage type in MQC_R4Tensor_R4Tensor_Sum',6, &
-            'Tmp2%Storage',Tmp2%Storage)
-        end select
-      case('StorSymm')
-        select case (Tmp2%storage)
-        case('StorSymm')
-          storage = 'StorSymm'
-        case('StorFull')
-          call MQC_R4Tensor_Symm2Full(Tmp1)
-          storage = 'StorFull'
-        case default 
-          call mqc_error_A('Unkown storage type in MQC_R4Tensor_R4Tensor_Sum',6, &
-            'Tmp2%Storage',Tmp2%Storage)
-        end select
-      case default
-        call mqc_error_A('Unkown storage type in MQC_R4Tensor_R4Tensor_Sum',6, &
-          'Tmp1%Storage',Tmp1%Storage)
-      end select
-
-
-      select case(Tmp1%data_type)
-      case('Real')
-        select case(Tmp2%data_type)
-        case('Real')
-          summation = Tmp2
-          summation%RTen = Tmp1%RTen + Tmp2%RTen
-        case('Integer')
-          summation = Tmp1
-          summation%RTen = Tmp1%RTen + Tmp2%ITen
-        case('Complex')
-          summation = Tmp2
-          summation%CTen = Tmp1%RTen + Tmp2%CTen
-        case default
-          call mqc_error_A('UNKNOWN matrix type in MQC_R4Tensor_R4Tensor_Sum.', 6, &
-               'Tmp2%data_type', Tmp2%data_type) 
-        end select
-      case('Integer')
-        select case(Tmp2%data_type)
-        case('Real')
-          summation = Tmp2
-          summation%RTen = Tmp1%ITen + Tmp2%RTen
-        case('Integer')
-          summation = Tmp2
-          summation%ITen = Tmp1%ITen + Tmp2%ITen
-        case('Complex')
-          summation = Tmp2
-          summation%CTen = Tmp1%ITen + Tmp2%CTen
-        case default
-          call mqc_error_A('UNKNOWN matrix type in MQC_R4Tensor_R4Tensor_Sum.', 6, &
-               'Tmp2%data_type', Tmp2%data_type) 
-        end select
-      case('Complex')
-        select case(Tmp2%data_type)
-        case('Real')
-          summation = Tmp1
-          summation%CTen = Tmp1%CTen + Tmp2%RTen
-        case('Integer')
-          summation = Tmp1
-          summation%CTen = Tmp1%CTen + Tmp2%ITen
-        case('Complex')
-          summation = Tmp2
-          summation%CTen = Tmp1%CTen + Tmp2%CTen
-        case default
-          call mqc_error_A('UNKNOWN matrix type in MQC_R4Tensor_R4Tensor_Sum.', 6, &
-               'Tmp2%data_type', Tmp2%data_type) 
-        end select
-      case default
-        call mqc_error_A('UNKNOWN matrix type in MQC_R4Tensor_R4Tensor_Sum.', 6, &
-             'Tmp1%data_type', Tmp1%data_type) 
-      end select
-
-      summation%storage = storage
-!
       End Function MQC_R4Tensor_R4Tensor_Sum
 !
 !
@@ -33316,7 +37439,8 @@
 !>    \verbatim
 !>       
 !>    MQC_R4Tensor_R4Tensor_Difference is a function that returns the difference of 
-!>    two MQC rank-4 tensors.
+!>    two MQC rank-4 tensors. The storage of the result follows the intersection
+!>    rule of MQC_R4Tensor_Combine.
 !>
 !>    \endverbatim
 !
@@ -33346,28 +37470,9 @@
       Implicit None
       Type(MQC_R4Tensor),Intent(In)::R4Tensor1,R4Tensor2
       Type(MQC_R4Tensor)::Difference
-      Integer(kind=int64)::M,N,O,P,i,j,k,l
-!
-      M = size(R4Tensor1,1)
-      N = size(R4Tensor1,2)
-      O = size(R4Tensor1,3)
-      P = size(R4Tensor1,4)
 
-      if(M.ne.size(R4Tensor2,1).or.N.ne.size(R4Tensor2,2).or.O.ne.size(R4Tensor2,3).or.P.ne.size(R4Tensor2,4)) &
-        call MQC_Error('R4Tensors not conformable in MQC_R4Tensor_R4Tensor_Subtract',6)
+      Difference = MQC_R4Tensor_Combine(R4Tensor1,R4Tensor2,-1)
 
-      call difference%init(M,N,O,P)
-
-      do i = 1,M
-        do j = 1,N
-          do k = 1,O
-            do l = 1,P
-              call difference%put(R4Tensor1%at(i,j,k,l)-R4Tensor2%at(i,j,k,l),i,j,k,l)
-            endDo
-          endDo
-        endDo
-      endDo
-!
       End Function MQC_R4Tensor_R4Tensor_Difference
 !
 !
@@ -34313,7 +38418,9 @@
            &in MQC_R4Tensor_R4Tensor_At',6,'IndP',IndP,'Len4',Len4,'Size(TensorIn,4)', &
            Size(TensorIn,4))
 
-      If (MQC_R4Tensor_HaveFull(TensorIn)) then
+      If (MQC_R4Tensor_HaveZero(TensorIn)) then
+        Call MQC_Allocate_R4Tensor(Len1,Len2,Len3,Len4,TensorOut,TensorIn%Data_Type,'Z')
+      ElseIf (MQC_R4Tensor_HaveFull(TensorIn)) then
         If (MQC_R4Tensor_HaveInteger(TensorIn)) then
           Call MQC_Allocate_R4Tensor(Len1,Len2,Len3,Len4,TensorOut,'Integer','StorFull')
           TensorOut%ITen = TensorIn%ITen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP)
@@ -34352,7 +38459,6 @@
           EndDo
           Q = Q + 1
         EndDo
-        If(MQC_R4Tensor_Test_Symmetric(TensorOut)) Call MQC_R4Tensor_Full2Symm(TensorOut)
       Else
         Call MQC_Error_A('R4Tensor type not recognised in MQC_R4Tensor_R4Tensor_At', 6, &
              'TensorIn%Storage', TensorIn%Storage )
@@ -34439,7 +38545,7 @@
 !>    \author L. M. Thompson
 !>    \date 2019
 !
-      Recursive Subroutine MQC_R4Tensor_R4Tensor_Put(Ten,TensorIn,D1,D2,D3,D4) 
+      Subroutine MQC_R4Tensor_R4Tensor_Put(Ten,TensorIn,D1,D2,D3,D4)
 !
       Implicit None
       Class(MQC_R4Tensor),Intent(InOut)::Ten
@@ -34447,6 +38553,8 @@
       Integer(kind=int64),Dimension(:),Intent(In)::D1,D2,D3,D4
       Integer(kind=int64)::Len1,Len2,Len3,Len4,IndI,IndJ,IndK,IndL,IndM,IndN,IndO,IndP
       Integer(kind=int64)::I,J,K,L,M,N,O,P
+      Type(MQC_R4Tensor)::TmpIn
+      Character(Len=64)::my_Type
 
       If(Size(D1).eq.1.and.D1(1).eq.0) then
         I = 1
@@ -34542,255 +38650,47 @@
       If (IndP.gt.Size(Ten,4)) Call MQC_Error_I('Index P out of bounds in &
         & MQC_R4Tensor_R4Tensor_Put',6,'IndP',IndP,'Len4',Len4,'Size(Ten,4)', Size(Ten,4))
 
-      If (MQC_R4Tensor_HaveFull(Ten)) then
-        If (MQC_R4Tensor_HaveInteger(Ten)) then
-          If (MQC_R4Tensor_HaveFull(TensorIn)) then
-            If (MQC_R4Tensor_HaveInteger(TensorIn)) then
-              Ten%ITen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%ITen
-            ElseIf (MQC_R4Tensor_HaveReal(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Int2Real(Ten)  
-              Ten%RTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%RTen
-            ElseIf (MQC_R4Tensor_HaveComplex(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Int2Complex(Ten)  
-              Ten%CTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%CTen
-            Else
-              Call MQC_Error_A('R4Tensor type not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
-               'TensorIn%Data_Type', TensorIn%Data_Type )
-            EndIf
-          ElseIf (MQC_R4Tensor_HaveSymmetric(TensorIn)) then
-            If (MQC_R4Tensor_HaveInteger(TensorIn)) then
-              Do I = 1, Len1
-                Do J = 1, I
-                  Do K = 1, Len3
-                    Do L = 1, K
-                      If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                      Ten%ITen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) = TensorIn%ITen(symIndexHash(I,J,K,L),1,1,1)
-                      Ten%ITen(Indk+J-1,IndI+I-1,IndM+K-1,IndO+L-1) = Ten%ITen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%ITen(IndI+I-1,Indk+J-1,IndO+L-1,IndM+K-1) = Ten%ITen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%ITen(Indk+J-1,IndI+I-1,IndO+L-1,IndM+K-1) = Ten%ITen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%ITen(IndM+K-1,IndO+L-1,IndI+I-1,Indk+J-1) = Ten%ITen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%ITen(IndO+L-1,IndM+K-1,IndI+I-1,Indk+J-1) = Ten%ITen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%ITen(IndM+K-1,IndO+L-1,Indk+J-1,IndI+I-1) = Ten%ITen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%ITen(IndO+L-1,IndM+K-1,Indk+J-1,IndI+I-1) = Ten%ITen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                    EndDo
-                  EndDo
-                EndDo
-              EndDo
-            ElseIf (MQC_R4Tensor_HaveReal(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Int2Real(Ten)  
-              Do I = 1, Len1
-                Do J = 1, I
-                  Do K = 1, Len3
-                    Do L = 1, K
-                      If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                      Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) = TensorIn%RTen(symIndexHash(I,J,K,L),1,1,1)
-                      Ten%RTen(Indk+J-1,IndI+I-1,IndM+K-1,IndO+L-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndI+I-1,Indk+J-1,IndO+L-1,IndM+K-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(Indk+J-1,IndI+I-1,IndO+L-1,IndM+K-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndM+K-1,IndO+L-1,IndI+I-1,Indk+J-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndO+L-1,IndM+K-1,IndI+I-1,Indk+J-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndM+K-1,IndO+L-1,Indk+J-1,IndI+I-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndO+L-1,IndM+K-1,Indk+J-1,IndI+I-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                    EndDo
-                  EndDo
-                EndDo
-              EndDo
-            ElseIf (MQC_R4Tensor_HaveComplex(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Int2Complex(Ten)  
-              Do I = 1, Len1
-                Do J = 1, I
-                  Do K = 1, Len3
-                    Do L = 1, K
-                      If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                      Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) = TensorIn%CTen(symIndexHash(I,J,K,L),1,1,1)
-                      Ten%CTen(Indk+J-1,IndI+I-1,IndM+K-1,IndO+L-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndI+I-1,Indk+J-1,IndO+L-1,IndM+K-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(Indk+J-1,IndI+I-1,IndO+L-1,IndM+K-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndM+K-1,IndO+L-1,IndI+I-1,Indk+J-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndO+L-1,IndM+K-1,IndI+I-1,Indk+J-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndM+K-1,IndO+L-1,Indk+J-1,IndI+I-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndO+L-1,IndM+K-1,Indk+J-1,IndI+I-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                    EndDo
-                  EndDo
-                EndDo
-              EndDo
-            Else
-              Call MQC_Error_A('R4Tensor type not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
-               'TensorIn%Data_Type', TensorIn%Data_Type )
-            EndIf
-          Else
-            Call MQC_Error_A('R4Tensor storage not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
-             'TensorIn%Storage', TensorIn%Storage )
-          EndIf
-        ElseIf (MQC_R4Tensor_HaveReal(Ten)) then
-          If (MQC_R4Tensor_HaveFull(TensorIn)) then
-            If (MQC_R4Tensor_HaveInteger(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Int2Real(TensorIn)  
-              Ten%RTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%RTen
-            ElseIf (MQC_R4Tensor_HaveReal(TensorIn)) then
-              Ten%RTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%RTen
-            ElseIf (MQC_R4Tensor_HaveComplex(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Real2Complex(Ten)  
-              Ten%CTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%CTen
-            Else
-              Call MQC_Error_A('R4Tensor type not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
-               'TensorIn%Data_Type', TensorIn%Data_Type )
-            EndIf
-          ElseIf (MQC_R4Tensor_HaveSymmetric(TensorIn)) then
-            If (MQC_R4Tensor_HaveInteger(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Int2Real(TensorIn)  
-              Do I = 1, Len1
-                Do J = 1, I
-                  Do K = 1, Len3
-                    Do L = 1, K
-                      If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                      Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) = TensorIn%RTen(symIndexHash(I,J,K,L),1,1,1)
-                      Ten%RTen(Indk+J-1,IndI+I-1,IndM+K-1,IndO+L-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndI+I-1,Indk+J-1,IndO+L-1,IndM+K-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(Indk+J-1,IndI+I-1,IndO+L-1,IndM+K-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndM+K-1,IndO+L-1,IndI+I-1,Indk+J-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndO+L-1,IndM+K-1,IndI+I-1,Indk+J-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndM+K-1,IndO+L-1,Indk+J-1,IndI+I-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndO+L-1,IndM+K-1,Indk+J-1,IndI+I-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                    EndDo
-                  EndDo
-                EndDo
-              EndDo
-            ElseIf (MQC_R4Tensor_HaveReal(TensorIn)) then
-              Do I = 1, Len1
-                Do J = 1, I
-                  Do K = 1, Len3
-                    Do L = 1, K
-                      If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                      Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) = TensorIn%RTen(symIndexHash(I,J,K,L),1,1,1)
-                      Ten%RTen(Indk+J-1,IndI+I-1,IndM+K-1,IndO+L-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndI+I-1,Indk+J-1,IndO+L-1,IndM+K-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(Indk+J-1,IndI+I-1,IndO+L-1,IndM+K-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndM+K-1,IndO+L-1,IndI+I-1,Indk+J-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndO+L-1,IndM+K-1,IndI+I-1,Indk+J-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndM+K-1,IndO+L-1,Indk+J-1,IndI+I-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%RTen(IndO+L-1,IndM+K-1,Indk+J-1,IndI+I-1) = Ten%RTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                    EndDo
-                  EndDo
-                EndDo
-              EndDo
-            ElseIf (MQC_R4Tensor_HaveComplex(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Int2Complex(Ten)  
-              Do I = 1, Len1
-                Do J = 1, I
-                  Do K = 1, Len3
-                    Do L = 1, K
-                      If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                      Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) = TensorIn%CTen(symIndexHash(I,J,K,L),1,1,1)
-                      Ten%CTen(Indk+J-1,IndI+I-1,IndM+K-1,IndO+L-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndI+I-1,Indk+J-1,IndO+L-1,IndM+K-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(Indk+J-1,IndI+I-1,IndO+L-1,IndM+K-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndM+K-1,IndO+L-1,IndI+I-1,Indk+J-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndO+L-1,IndM+K-1,IndI+I-1,Indk+J-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndM+K-1,IndO+L-1,Indk+J-1,IndI+I-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndO+L-1,IndM+K-1,Indk+J-1,IndI+I-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                    EndDo
-                  EndDo
-                EndDo
-              EndDo
-            Else
-              Call MQC_Error_A('R4Tensor type not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
-               'TensorIn%Data_Type', TensorIn%Data_Type )
-            EndIf
-          Else
-            Call MQC_Error_A('R4Tensor storage not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
-             'TensorIn%Storage', TensorIn%Storage )
-          EndIf
-        ElseIf (MQC_R4Tensor_HaveComplex(Ten)) then
-          If (MQC_R4Tensor_HaveFull(TensorIn)) then
-            If (MQC_R4Tensor_HaveInteger(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Int2Complex(TensorIn)  
-              Ten%CTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%CTen
-            ElseIf (MQC_R4Tensor_HaveReal(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Real2Complex(TensorIn)  
-              Ten%CTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%CTen
-            ElseIf (MQC_R4Tensor_HaveComplex(TensorIn)) then
-              Ten%CTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%CTen
-            Else
-              Call MQC_Error_A('R4Tensor type not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
-               'TensorIn%Data_Type', TensorIn%Data_Type )
-            EndIf
-          ElseIf (MQC_R4Tensor_HaveSymmetric(TensorIn)) then
-            If (MQC_R4Tensor_HaveInteger(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Int2Complex(TensorIn)  
-              Do I = 1, Len1
-                Do J = 1, I
-                  Do K = 1, Len3
-                    Do L = 1, K
-                      If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                      Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) = TensorIn%CTen(symIndexHash(I,J,K,L),1,1,1)
-                      Ten%CTen(Indk+J-1,IndI+I-1,IndM+K-1,IndO+L-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndI+I-1,Indk+J-1,IndO+L-1,IndM+K-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(Indk+J-1,IndI+I-1,IndO+L-1,IndM+K-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndM+K-1,IndO+L-1,IndI+I-1,Indk+J-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndO+L-1,IndM+K-1,IndI+I-1,Indk+J-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndM+K-1,IndO+L-1,Indk+J-1,IndI+I-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndO+L-1,IndM+K-1,Indk+J-1,IndI+I-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                    EndDo
-                  EndDo
-                EndDo
-              EndDo
-            ElseIf (MQC_R4Tensor_HaveReal(TensorIn)) then
-              Call MQC_R4Tensor_Copy_Real2Complex(TensorIn)  
-              Do I = 1, Len1
-                Do J = 1, I
-                  Do K = 1, Len3
-                    Do L = 1, K
-                      If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                      Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) = TensorIn%CTen(symIndexHash(I,J,K,L),1,1,1)
-                      Ten%CTen(Indk+J-1,IndI+I-1,IndM+K-1,IndO+L-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndI+I-1,Indk+J-1,IndO+L-1,IndM+K-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(Indk+J-1,IndI+I-1,IndO+L-1,IndM+K-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndM+K-1,IndO+L-1,IndI+I-1,Indk+J-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndO+L-1,IndM+K-1,IndI+I-1,Indk+J-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndM+K-1,IndO+L-1,Indk+J-1,IndI+I-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndO+L-1,IndM+K-1,Indk+J-1,IndI+I-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                    EndDo
-                  EndDo
-                EndDo
-              EndDo
-            ElseIf (MQC_R4Tensor_HaveComplex(TensorIn)) then
-              Do I = 1, Len1
-                Do J = 1, I
-                  Do K = 1, Len3
-                    Do L = 1, K
-                      If(I*(I-1)/2+J.lt.K*(K-1)/2+L) Cycle
-                      Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) = TensorIn%CTen(symIndexHash(I,J,K,L),1,1,1)
-                      Ten%CTen(Indk+J-1,IndI+I-1,IndM+K-1,IndO+L-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndI+I-1,Indk+J-1,IndO+L-1,IndM+K-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(Indk+J-1,IndI+I-1,IndO+L-1,IndM+K-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndM+K-1,IndO+L-1,IndI+I-1,Indk+J-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndO+L-1,IndM+K-1,IndI+I-1,Indk+J-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndM+K-1,IndO+L-1,Indk+J-1,IndI+I-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                      Ten%CTen(IndO+L-1,IndM+K-1,Indk+J-1,IndI+I-1) = Ten%CTen(IndI+I-1,Indk+J-1,IndM+K-1,IndO+L-1) 
-                    EndDo
-                  EndDo
-                EndDo
-              EndDo
-            Else
-              Call MQC_Error_A('R4Tensor type not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
-               'TensorIn%Data_Type', TensorIn%Data_Type )
-            EndIf
-          Else
-            Call MQC_Error_A('R4Tensor storage not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
-             'TensorIn%Storage', TensorIn%Storage )
-          EndIf
-        Else
-          Call MQC_Error_A('R4Tensor type not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
-           'Ten%Data_Type', Ten%Data_Type )
-        EndIf
-      ElseIf (MQC_R4Tensor_HaveSymmetric(Ten)) then
-        Call MQC_R4Tensor_Symm2Full(Ten)
-        Call MQC_R4Tensor_R4Tensor_Put(Ten,TensorIn,[IndI,IndJ],[IndK,IndL],[IndM,IndN],[IndO,IndP])
-        If(MQC_R4Tensor_Test_Symmetric(Ten)) Call MQC_R4Tensor_Full2Symm(Ten)
+!     target: packed or zero storage expanded in place, then promoted to the common type
+      If(MQC_R4Tensor_HaveSymmetric(Ten).or.MQC_R4Tensor_HaveZero(Ten)) Call MQC_R4Tensor_Symm2Full(Ten)
+      If(.not.MQC_R4Tensor_HaveFull(Ten)) Call MQC_Error_A('R4Tensor storage not defined in '// &
+        'MQC_R4Tensor_R4Tensor_Put', 6, 'Ten%Storage', Ten%Storage)
+      If(Ten%Data_Type.eq.'Complex'.or.TensorIn%Data_Type.eq.'Complex') then
+        my_Type = 'Complex'
+      ElseIf(Ten%Data_Type.eq.'Real'.or.TensorIn%Data_Type.eq.'Real') then
+        my_Type = 'Real'
       Else
-        Call MQC_Error_A('R4Tensor storage not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
-         'Ten%Storage', Ten%Storage )
+        my_Type = 'Integer'
+      EndIf
+      Call MQC_R4Tensor_Promote(Ten,my_Type)
+!     source: TensorIn itself when full and of that type, otherwise a converted local
+!     copy (TensorIn is not modified)
+      If(MQC_R4Tensor_HaveFull(TensorIn).and.TensorIn%Data_Type.eq.my_Type) then
+        Select Case(Trim(my_Type))
+        Case('Integer')
+          Ten%ITen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%ITen
+        Case('Real')
+          Ten%RTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%RTen
+        Case('Complex')
+          Ten%CTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TensorIn%CTen
+        Case Default
+          Call MQC_Error_A('R4Tensor type not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
+            'my_Type', my_Type)
+        End Select
+      Else
+        TmpIn = TensorIn
+        If(.not.MQC_R4Tensor_HaveFull(TmpIn)) Call MQC_R4Tensor_Symm2Full(TmpIn)
+        Call MQC_R4Tensor_Promote(TmpIn,my_Type)
+        Select Case(Trim(my_Type))
+        Case('Integer')
+          Ten%ITen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TmpIn%ITen
+        Case('Real')
+          Ten%RTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TmpIn%RTen
+        Case('Complex')
+          Ten%CTen(IndI:IndJ,IndK:IndL,IndM:IndN,IndO:IndP) = TmpIn%CTen
+        Case Default
+          Call MQC_Error_A('R4Tensor type not defined in MQC_R4Tensor_R4Tensor_Put', 6, &
+            'my_Type', my_Type)
+        End Select
       EndIf
 
       End Subroutine MQC_R4Tensor_R4Tensor_Put
@@ -34798,17 +38698,21 @@
 !
 !     PROCEDURE MQC_R4Tensor_Test_Symmetric
 !
-!>    \brief <b> MQC_R4Tensor_Test_Symmetric is a function that tests a MQC tensor for
-!>    symmetry</b>
+!>    \brief <b> MQC_R4Tensor_Test_Symmetric tests if an MQC rank-4 tensor has the
+!>    symmetry of a class</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
-!>       
-!>    MQC_R4Tensor_Test_Symmetric is a function that tests a MQC tensor for symmetry. 
-!>    Note that this function differs from haveSymmetric subroutine which tests how a 
-!>    matrix is packed.
+!>
+!>    Returns TRUE if R4Tensor satisfies every equality of the storage Class
+!>    (default R_8_1234; any label accepted by MQC_R4Symm_Label, including
+!>    views). A full-stored label imposes nothing (TRUE). Dimensions that do
+!>    not fit give FALSE. A zero tensor, or a tensor stored in that class and
+!>    IndexOrder, gives TRUE without testing; otherwise the one-pass check of
+!>    MQC_R4Tensor_Build_Packed is used (threshold MQC_very_small, 1e-10 if not
+!>    set).
 !>
 !>    \endverbatim
 !
@@ -34816,93 +38720,56 @@
 !     ==========
 !>    \param[in] R4Tensor
 !>    \verbatim
-!>        R4Tensor is Class(mqc_r4tensor)
-!>        The rank-4 tensor to be tested for symmetry.
+!>        R4Tensor is Class(MQC_R4Tensor)
+!>        The rank-4 tensor to test.
+!>    \endverbatim
+!>
+!>    \param[in] SymClass
+!>    \verbatim
+!>        SymClass is Character(Len=*),Optional
+!>        The storage label to test against (default R_8_1234).
 !>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
-!>    \date 2019
+!>    \date 2017
+!>    \author M. M. F. Moraes
+!>    \date 2026
 !
-      Function MQC_R4Tensor_Test_Symmetric(R4Tensor) Result(Symmetric)
-!
+      Function MQC_R4Tensor_Test_Symmetric(R4Tensor,SymClass) Result(Symmetric)
+
       Implicit None
       Class(MQC_R4Tensor),Intent(In)::R4Tensor
-      Logical::Symmetric
-      Integer(kind=int64)::I,J,K,L
-      Real(kind=real64)::Thresh=1e-10
+      Character(Len=*),Intent(In),Optional::SymClass
+      Logical::Symmetric,Flip
+      Type(MQC_R4Tensor)::Temp
+      Character(Len=64)::my_Class
+      Integer(kind=int64),Dimension(4)::my_Order
+      Logical::my_Plain
 
-      Symmetric = .True.
-        If(Size(R4Tensor,1).ne.Size(R4Tensor,2)) then
-          Symmetric = .False.
-          Return
-        ElseIf(Size(R4Tensor,3).ne.Size(R4Tensor,4)) then
-          Symmetric = .False.
-          Return
-        ElseIf(Size(R4Tensor,1).ne.Size(R4Tensor,3)) then
-          Symmetric = .False.
-          Return
-        Else
-          If(MQC_R4Tensor_HaveSymmetric(R4Tensor)) then
-            Return
-          ElseIf(MQC_R4Tensor_HaveFull(R4Tensor)) then
-            Do I = 1, Size(R4Tensor,1)
-              Do J = 1, I-1
-                Do K = 1, Size(R4Tensor,3)
-                  Do L = 1, K-1
-                    If(MQC_R4Tensor_HaveInteger(R4Tensor)) then
-                      If((R4Tensor%at(I,J,K,L)-R4Tensor%at(I,J,L,K)).ne.0.or. &
-                        (R4Tensor%at(I,J,K,L)-R4Tensor%at(J,I,K,L)).ne.0.or. &
-                        (R4Tensor%at(I,J,K,L)-R4Tensor%at(J,I,L,K)).ne.0.or. &
-                        (R4Tensor%at(I,J,K,L)-R4Tensor%at(K,L,I,J)).ne.0.or. &
-                        (R4Tensor%at(I,J,K,L)-R4Tensor%at(K,L,J,I)).ne.0.or. &
-                        (R4Tensor%at(I,J,K,L)-R4Tensor%at(L,K,I,J)).ne.0.or. &
-                        (R4Tensor%at(I,J,K,L)-R4Tensor%at(L,K,J,I)).ne.0) then
-                        Symmetric = .False.
-                        Return
-                      EndIf
-                    elseIf(MQC_R4Tensor_HaveReal(R4Tensor)) then
-                      If(abs(R4Tensor%at(I,J,K,L)-R4Tensor%at(I,J,L,K)).gt.Thresh.or. &
-                        abs(R4Tensor%at(I,J,K,L)-R4Tensor%at(J,I,K,L)).gt.Thresh.or. &
-                        abs(R4Tensor%at(I,J,K,L)-R4Tensor%at(J,I,L,K)).gt.Thresh.or. &
-                        abs(R4Tensor%at(I,J,K,L)-R4Tensor%at(K,L,I,J)).gt.Thresh.or. &
-                        abs(R4Tensor%at(I,J,K,L)-R4Tensor%at(K,L,J,I)).gt.Thresh.or. &
-                        abs(R4Tensor%at(I,J,K,L)-R4Tensor%at(L,K,I,J)).gt.Thresh.or. &
-                        abs(R4Tensor%at(I,J,K,L)-R4Tensor%at(L,K,J,I)).gt.Thresh) then
-                        Symmetric = .False.
-                        Return
-                      EndIf
-                    elseIf(MQC_R4Tensor_HaveComplex(R4Tensor)) then
-                      If(abs(Real(R4Tensor%at(I,J,K,L))-Real(R4Tensor%at(I,J,L,K))).gt.Thresh.or.&
-                        abs(Real(R4Tensor%at(I,J,K,L))-Real(R4Tensor%at(J,I,K,L))).gt.Thresh.or.&
-                        abs(Real(R4Tensor%at(I,J,K,L))-Real(R4Tensor%at(J,I,L,K))).gt.Thresh.or.&
-                        abs(Real(R4Tensor%at(I,J,K,L))-Real(R4Tensor%at(K,L,I,J))).gt.Thresh.or.&
-                        abs(Real(R4Tensor%at(I,J,K,L))-Real(R4Tensor%at(K,L,J,I))).gt.Thresh.or.&
-                        abs(Real(R4Tensor%at(I,J,K,L))-Real(R4Tensor%at(L,K,I,J))).gt.Thresh.or.&
-                        abs(Real(R4Tensor%at(I,J,K,L))-Real(R4Tensor%at(L,K,J,I))).gt.Thresh.or.&
-                        abs(Aimag(R4Tensor%at(I,J,K,L))-Aimag(R4Tensor%at(I,J,L,K))).gt.Thresh.or.&
-                        abs(Aimag(R4Tensor%at(I,J,K,L))-Aimag(R4Tensor%at(J,I,K,L))).gt.Thresh.or.&
-                        abs(Aimag(R4Tensor%at(I,J,K,L))-Aimag(R4Tensor%at(J,I,L,K))).gt.Thresh.or.&
-                        abs(Aimag(R4Tensor%at(I,J,K,L))-Aimag(R4Tensor%at(K,L,I,J))).gt.Thresh.or.&
-                        abs(Aimag(R4Tensor%at(I,J,K,L))-Aimag(R4Tensor%at(K,L,J,I))).gt.Thresh.or.&
-                        abs(Aimag(R4Tensor%at(I,J,K,L))-Aimag(R4Tensor%at(L,K,I,J))).gt.Thresh.or.&
-                        abs(Aimag(R4Tensor%at(I,J,K,L))-Aimag(R4Tensor%at(L,K,J,I))).gt.Thresh) then
-                        Symmetric = .False.
-                        Return
-                      EndIf
-                    EndIf
-                  EndDo
-                EndDo
-              EndDo
-            EndDo
-          Else
-            Call MQC_Error_A('R4Tensor type not identified in MQC_R4Tensor_Test_Symmetric', 6, &
-                 'R4Tensor%Storage', R4Tensor%Storage )
-          EndIf
-        EndIf
+      If(Present(SymClass)) then
+        my_Class = MQC_R4Symm_Label(SymClass,my_Order,my_Plain)
+      Else
+        my_Class = 'R_8_1234'
+        my_Order = [1,2,3,4]
+        my_Plain = .False.
+      EndIf
+      If(.not.MQC_R4Symm_IsPacked(my_Class)) then
+        Symmetric = .True.
+      ElseIf(.not.MQC_R4Symm_Dims_OK(my_Class,R4Tensor%I,R4Tensor%J,R4Tensor%K, &
+        R4Tensor%L,my_Order)) then
+        Symmetric = .False.
+      ElseIf(MQC_R4Tensor_HaveZero(R4Tensor)) then
+        Symmetric = .True.
+      ElseIf(MQC_R4Tensor_HaveSymmetric(R4Tensor).and.R4Tensor%Storage.eq.my_Class.and. &
+        All(R4Tensor%IndexOrder.eq.MQC_R4Symm_Packed_Order(my_Class,my_Order,Flip,my_Plain)).and. &
+        (R4Tensor%PlainSymm.eqv.(my_Plain.and.R4Tensor%Data_Type.eq.'Complex'))) then
+        Symmetric = .True.
+      Else
+        Call MQC_R4Tensor_Build_Packed(R4Tensor,my_Class,my_Order,Temp,Symmetric,my_Plain)
+      EndIf
 
-      Return
       End Function MQC_R4Tensor_Test_Symmetric
 !
 !
@@ -34988,7 +38855,29 @@
 !>    \verbatim
 !>       
 !>    MQC_ScalarR4TensorProduct is a function that computes the product of a MQC R4 
-!>    tensor and a scalar.
+!>    tensor and a scalar. The data type is the promoted one and a pending
+!>    DoConjg is applied first. Plain equalities survive any scalar; an equality
+!>    with conjugation, T(x) = T(img)*, survives only a real scalar, so for
+!>    Im(c) /= 0 the conjugated classes keep their plain part
+!>    (MQC_R4Tensor_Repack_Plain). A pure imaginary c behaves as any c with
+!>    Im(c) /= 0: i*T(x) = -(i*T(img))* is an anti-conjugate equality, which no
+!>    class stores. c = 0 gives a zero tensor.
+!>
+!>    Storage of c*T (R8 R_8_1234, S4 S_4_1234, Kl S_4_1234_plain, R4 R_4_12_34,
+!>    SP S_2_12_34, S2 S_2_13_24, R2 R_2_12_3_4, S2p S_2_13_24_Phys,
+!>    L22 S_1_12_34, Z zero tensor):
+!>    | T                    | c = 0 | c real, or Im(c) = 0 | Im(c) /= 0, T complex | Im(c) /= 0, T real |
+!>    |----------------------+-------+----------------------+-----------------------+--------------------|
+!>    | R8                   | Z     | R8                   | R8                    | R8                 |
+!>    | S4                   | Z     | S4                   | S2                    | Kl                 |
+!>    | Kl (complex only)    | Z     | Kl                   | Kl                    | -                  |
+!>    | R4                   | Z     | R4                   | R4                    | R4                 |
+!>    | SP                   | Z     | SP                   | L22                   | S2p                |
+!>    | S2                   | Z     | S2                   | S2                    | S2                 |
+!>    | R2                   | Z     | R2                   | R2                    | R2                 |
+!>    | S_1_*, StorFull      | Z     | kept                 | kept                  | kept               |
+!>    | Z                    | Z     | Z                    | Z                     | Z                  |
+!>    An unallocated tensor is an error.
 !>
 !>    \endverbatim
 !
@@ -35017,7 +38906,8 @@
       class(*),intent(in)::scalarIn
       Type(MQC_R4Tensor),Intent(In)::tensor
       Type(MQC_Scalar)::Scalar
-      Type(MQC_R4Tensor)::Tensor_Res
+      Type(MQC_R4Tensor)::Tensor_Res,Tmp
+      Logical::ScalZero
 
       select type (scalarIn)
       type is (integer)
@@ -35032,48 +38922,86 @@
         call mqc_error('ScalarIn data type not recognized in MQC_R4TensorScalarProduct')
       end select
 
+      If(.not.MQC_R4Tensor_isAllocated(Tensor)) Call MQC_Error_A('Unallocated rank-4 &
+     &  tensor in MQC_ScalarR4TensorProduct', 6, 'Tensor%Storage', Tensor%Storage)
+      Select Case(Scalar%Data_Type)
+      Case('Integer')
+        ScalZero = Scalar%ScaI.eq.0
+      Case('Real')
+        ScalZero = Scalar%ScaR.eq.0.0
+      Case('Complex')
+        ScalZero = Scalar%ScaC.eq.(0.0,0.0)
+      Case Default
+        Call MQC_Error_A('Scalar type not defined in MQC_ScalarR4TensorProduct', 6, &
+          'Scalar%Data_Type', Scalar%Data_Type)
+      End Select
+      Tmp = Tensor
+      Call MQC_R4Tensor_Resolve_Conjg(Tmp)
+!     c*T keeps only the equalities without conjugation when Im(c) /= 0
+      If(.not.ScalZero.and.Scalar%Data_Type.eq.'Complex'.and.MQC_R4Tensor_HaveSymmetric(Tmp)) then
+        If(Aimag(Scalar%ScaC).ne.0.0.and.MQC_R4Tensor_Has_Conj(Tmp)) then
+          If(Tmp%Data_Type.eq.'Complex') then
+            Call MQC_R4Tensor_Repack_Plain(Tmp)
+          Else
+!           real values: their conjugated equalities are plain ones and survive
+            Call MQC_R4Tensor_Promote(Tmp,'Complex')
+            Call MQC_R4Tensor_Repack_Plain(Tmp,RealValues=.True.)
+          EndIf
+        EndIf
+      EndIf
       Call MQC_Deallocate_R4Tensor(Tensor_Res)
-      If (Tensor%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Integer') then
-        Call MQC_Allocate_R4Tensor(Tensor%I,Tensor%J,Tensor%K,Tensor%L,Tensor_Res, &
-          'Integer',Tensor%Storage)
-        Tensor_Res%ITen = Scalar%ScaI * Tensor%ITen
-      ElseIf (Tensor%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Real') then
-        Call MQC_Allocate_R4Tensor(Tensor%I,Tensor%J,Tensor%K,Tensor%L,Tensor_Res, &
-        'Real',Tensor%Storage)
-        Tensor_Res%RTen = Scalar%ScaR * Tensor%ITen
-      ElseIf (Tensor%Data_Type.eq.'Real' .and. Scalar%Data_Type.eq.'Integer') then
-        Call MQC_Allocate_R4Tensor(Tensor%I,Tensor%J,Tensor%K,Tensor%L,Tensor_Res, &
-        'Real',Tensor%Storage)
-        Tensor_Res%RTen = Scalar%ScaI * Tensor%RTen
-      Else If (Tensor%Data_Type.eq.'Real' .and. Scalar%Data_Type.eq.'Real') then
-        Call MQC_Allocate_R4Tensor(Tensor%I,Tensor%J,Tensor%K,Tensor%L,Tensor_Res, &
-        'Real',Tensor%Storage)
-        Tensor_Res%RTen = Scalar%ScaR * Tensor%RTen
-      ElseIf (Tensor%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Complex') then
-        Call MQC_Allocate_R4Tensor(Tensor%I,Tensor%J,Tensor%K,Tensor%L,Tensor_Res, &
-        'Complex',Tensor%Storage)
-        Tensor_Res%CTen = Scalar%ScaC * Tensor%ITen
-      Else If (Tensor%Data_Type.eq.'Real' .and. Scalar%Data_Type.eq.'Complex') then
-        Call MQC_Allocate_R4Tensor(Tensor%I,Tensor%J,Tensor%K,Tensor%L,Tensor_Res, &
-        'Complex',Tensor%Storage)
-        Tensor_Res%CTen = Scalar%ScaC * Tensor%RTen
-      ElseIf (Tensor%Data_Type.eq.'Complex' .and. Scalar%Data_Type.eq.'Integer') then
-        Call MQC_Allocate_R4Tensor(Tensor%I,Tensor%J,Tensor%K,Tensor%L,Tensor_Res, &
-        'Complex',Tensor%Storage)
-        Tensor_Res%CTen = Scalar%ScaI * Tensor%CTen
-      Else If (Tensor%Data_Type.eq.'Complex' .and. Scalar%Data_Type.eq.'Real') then
-        Call MQC_Allocate_R4Tensor(Tensor%I,Tensor%J,Tensor%K,Tensor%L,Tensor_Res, &
-        'Complex',Tensor%Storage)
-        Tensor_Res%CTen = Scalar%ScaR * Tensor%CTen
-      Else If (Tensor%Data_Type.eq.'Complex' .and. Scalar%Data_Type.eq.'Complex') then
-        Call MQC_Allocate_R4Tensor(Tensor%I,Tensor%J,Tensor%K,Tensor%L,Tensor_Res, &
-        'Complex',Tensor%Storage)
-        Tensor_Res%CTen = Scalar%ScaC * Tensor%CTen
+      If (MQC_R4Tensor_HaveZero(Tmp).or.ScalZero) then
+!       zero tensor: zero result with the promoted data type
+        If(Tmp%Data_Type.eq.'Complex'.or.Scalar%Data_Type.eq.'Complex') then
+          Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res,'Complex','Z')
+        ElseIf(Tmp%Data_Type.eq.'Real'.or.Scalar%Data_Type.eq.'Real') then
+          Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res,'Real','Z')
+        Else
+          Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res,'Integer','Z')
+        EndIf
+      ElseIf (Tmp%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Integer') then
+        Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res, &
+          'Integer',Tmp%Storage,Tmp%IndexOrder)
+        Tensor_Res%ITen = Scalar%ScaI * Tmp%ITen
+      ElseIf (Tmp%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Real') then
+        Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res, &
+        'Real',Tmp%Storage,Tmp%IndexOrder)
+        Tensor_Res%RTen = Scalar%ScaR * Tmp%ITen
+      ElseIf (Tmp%Data_Type.eq.'Real' .and. Scalar%Data_Type.eq.'Integer') then
+        Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res, &
+        'Real',Tmp%Storage,Tmp%IndexOrder)
+        Tensor_Res%RTen = Scalar%ScaI * Tmp%RTen
+      Else If (Tmp%Data_Type.eq.'Real' .and. Scalar%Data_Type.eq.'Real') then
+        Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res, &
+        'Real',Tmp%Storage,Tmp%IndexOrder)
+        Tensor_Res%RTen = Scalar%ScaR * Tmp%RTen
+      ElseIf (Tmp%Data_Type.eq.'Integer' .and. Scalar%Data_Type.eq.'Complex') then
+        Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res, &
+        'Complex',Tmp%Storage,Tmp%IndexOrder)
+        Tensor_Res%CTen = Scalar%ScaC * Tmp%ITen
+      Else If (Tmp%Data_Type.eq.'Real' .and. Scalar%Data_Type.eq.'Complex') then
+        Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res, &
+        'Complex',Tmp%Storage,Tmp%IndexOrder)
+        Tensor_Res%CTen = Scalar%ScaC * Tmp%RTen
+      ElseIf (Tmp%Data_Type.eq.'Complex' .and. Scalar%Data_Type.eq.'Integer') then
+        Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res, &
+        'Complex',Tmp%Storage,Tmp%IndexOrder)
+        Tensor_Res%CTen = Scalar%ScaI * Tmp%CTen
+      Else If (Tmp%Data_Type.eq.'Complex' .and. Scalar%Data_Type.eq.'Real') then
+        Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res, &
+        'Complex',Tmp%Storage,Tmp%IndexOrder)
+        Tensor_Res%CTen = Scalar%ScaR * Tmp%CTen
+      Else If (Tmp%Data_Type.eq.'Complex' .and. Scalar%Data_Type.eq.'Complex') then
+        Call MQC_Allocate_R4Tensor(Tmp%I,Tmp%J,Tmp%K,Tmp%L,Tensor_Res, &
+        'Complex',Tmp%Storage,Tmp%IndexOrder)
+        Tensor_Res%CTen = Scalar%ScaC * Tmp%CTen
       Else
         Call MQC_Error_A('unrecognised data type in mqc_scalarr4tensorproduct', 6, &
-             'Tensor%Data_Type', Tensor%Data_Type, &
+             'Tmp%Data_Type', Tmp%Data_Type, &
              'Scalar%Data_Type', Scalar%Data_Type )
       EndIf
+!     the plain flag of S_4_1234 survives any scalar (its equalities are linear)
+      Tensor_Res%PlainSymm = Tmp%PlainSymm.and.Tensor_Res%Data_Type.eq.'Complex'
 
       End Function MQC_ScalarR4TensorProduct
 !
@@ -35168,16 +39096,18 @@
 !
       Function MQC_R4Tensor_Complex_Conjugate(R4TensorIn) Result(R4TensorOut)
 !
-!     Variable Declarations.
       Implicit None
       Type(MQC_R4Tensor),Intent(In)::R4TensorIn
       Type(MQC_R4Tensor)::R4TensorOut
 !
       R4TensorOut = R4TensorIn
       If(R4TensorIn%Data_Type.eq.'Complex') then
-        R4TensorOut%CTen = conjg(R4TensorIn%CTen)
+        If(MQC_R4Tensor_HaveSymmetric(R4TensorIn)) then
+          R4TensorOut%DoConjg = .not.R4TensorIn%DoConjg
+        ElseIf(MQC_R4Tensor_HaveFull(R4TensorIn)) then
+          R4TensorOut%CTen = conjg(R4TensorIn%CTen)
+        EndIf
       EndIf
-!
       Return
       End Function MQC_R4Tensor_Complex_Conjugate
 !
@@ -35260,23 +39190,31 @@
       Implicit None
       class(mqc_R4Tensor),intent(in)::A
       type(mqc_R4Tensor)::output
-      integer(kind=int64)::i
+      Complex(kind=real64),Dimension(:,:,:,:),Allocatable::TmpC
 !
 !     Do the work.
 !
       output = A
+      if(MQC_R4Tensor_HaveZero(A)) then
+        if(A%Data_Type.eq.'Complex') call MQC_R4Tensor_Copy_Complex2Real(output)
+      else
       select case (A%Data_Type)
       case('Integer')
         output%ITen = 0
       case('Real')
         output%RTen = 0.0
       case('Complex')
+!       Im of a conjugation relation is an anti-relation: keep the plain ones.
+        if(MQC_R4Tensor_Has_Conj(output)) call MQC_R4Tensor_Repack_Plain(output)
+        call MQC_R4Tensor_Resolve_Conjg(output)
+        TmpC = output%CTen
         call MQC_R4Tensor_Copy_Complex2Real(output)
-        output%RTen = aimag(A%CTen)
+        output%RTen = aimag(TmpC)
       case default
         call mqc_error_a('Unrecognized MQC_R4Tensor data type in mqc_matrix_complex_realPart',&
           6,'A%Data_Type',A%Data_Type)
       end select
+      endif
 !
       end function mqc_R4Tensor_complex_imagPart
 !
@@ -35286,15 +39224,63 @@
 !
 !     PROCEDURE MQC_R4Tensor_Matrix_Contraction
 !
-!>    \brief <b> MQC_R4Tensor_Matrix_Contraction 
-!>    </b>
+!>    \brief <b> MQC_R4Tensor_Matrix_Contraction contracts two indexes of an MQC
+!>    rank-4 tensor with an MQC matrix</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
-!>       
-!>    MQC_R4Tensor_Matrix_Contraction
+!>
+!>    MC(c,d) = Sum_{a,b} RA(..a..b..c..d..)*MB(a,b): a at position ia, b at
+!>    position ib (inorder, default [1,2]) and c < d the free positions
+!>    (view positions of RA). No complex conjugation. The data type is the
+!>    promoted one.
+!>
+!>    Symmetry of MC: from the class operations of RA (view group) that map
+!>    the contracted pair onto itself, combined with the symmetry label of MB
+!>    (MQC_Matrix_Get_Symmetry; with TestSymm an 'unknown' MB is tested
+!>    numerically). f swaps only the free pair, c only the contracted pair,
+!>    fc both; * = with conjugation (for real RA every operation also counts
+!>    without conjugation):
+!>    | operation | MB sym  | MB asym  | MB herm | MB aherm | MB general |
+!>    |-----------+---------+----------+---------+----------+------------|
+!>    | f         | MC sym  | MC sym   | MC sym  | MC sym   | MC sym     |
+!>    | f*        | MB real: MC herm                                       |
+!>    | c         | -       | MC = 0   | -       | -        | -          |
+!>    | c*        | -       | -        | MC real | -        | -          |
+!>    | fc        | MC sym  | MC asym  | -       | -        | -          |
+!>    | fc*       | -       | -        | MC herm | MC aherm | -          |
+!>    For a real MB sym also counts as herm and asym as aherm.
+!>
+!>    Result for common cases (chemist positions of the contracted pair):
+!>    | RA                 | pair            | MB                  | MC                    |
+!>    |--------------------+-----------------+---------------------+-----------------------|
+!>    | real R8, R4        | 12, 34 (J)      | sym                 | real sym              |
+!>    | real R8, R4        | 12, 34          | herm (complex)      | real sym              |
+!>    | real R8, R4        | 12, 34          | asym                | 0                     |
+!>    | real R8, R4        | 12, 34          | general             | sym                   |
+!>    | real R8            | 13,24,14,23 (K) | sym/asym/herm/aherm | same as MB            |
+!>    | complex R8 (plain) | 13,24,14,23     | herm                | -                     |
+!>    | complex S4         | 12,34,14,23     | herm/aherm          | herm/aherm            |
+!>    | complex S4         | 13, 24          | sym/asym            | sym/asym              |
+!>    | complex S4         | any             | real sym            | herm (12,34,14,23),   |
+!>    |                    |                 |                     | sym (13,24)           |
+!>    | S2Pair             | 12, 34          | herm                | herm                  |
+!>    | S2                 | 13, 24          | sym/asym            | same as MB            |
+!>    | R2                 | 12              | asym                | 0                     |
+!>    | R2                 | 34              | any                 | sym                   |
+!>    | S_1, StorFull      | any             | any                 | -                     |
+!>
+!>    Storage of MC: zero matrix (MC = 0); a real result is built as a real
+!>    matrix (real symmetric stored as StorHerm, real antisymmetric as StorAhrm);
+!>    then StorSymm / StorAsym / StorHerm / StorAhrm when the symmetry
+!>    is known (only the lower triangle is computed); otherwise the full
+!>    result is tested numerically by the array assignment and packed if it
+!>    has a symmetry. TestSymm only concerns the input MB.
+!>    Method: RA packed - one read per slot, scattered over the orbit of the
+!>    slot (OpenMP over the slots); RA full - loop over the stored array
+!>    (OpenMP over the columns of MC).
 !>
 !>    \endverbatim
 !
@@ -35318,27 +39304,51 @@
 !>        Ex: if inorder=[3,2], the thrid and second indexes of RA is contacted
 !>            with the first and second of MB, respectivelly.
 !>    \endverbatim
+!>
+!>    \param[in] TestSymm
+!>    \verbatim
+!>        TestSymm is Logical,optional (default FALSE)
+!>        TRUE: if MB has no symmetry label ('unknown'), test it numerically
+!>        (MQC_Matrix_Test_Symmetric) for symmetric, hermitian, antisymmetric
+!>        and antihermitian, in this order.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
-!>    \date 2024
+!>    \date 2024, 2026
 !
-      Function MQC_R4Tensor_Matrix_Contraction(RA,MB,inorder) Result(MC)
+      Function MQC_R4Tensor_Matrix_Contraction(RA,MB,inorder,TestSymm) Result(MC)
 !
       Implicit None
       Type(MQC_R4Tensor),Intent(In)::RA
       Type(MQC_Matrix),Intent(In)::MB
       Integer(kind=int64),dimension(2),Intent(In),optional::inorder
-      Type(MQC_R4Tensor)::RAreal
-      Type(MQC_Matrix)::MC,MCreal,MBreal
-      Type(MQC_Matrix)::tmpM,tmpR
-      Integer(kind=int64)::ia,ib,ic,id,i,j,k
+      Logical,Intent(In),Optional::TestSymm
+      Type(MQC_Matrix)::MC
+      Type(MQC_R4Tensor)::TA
+      Integer(kind=int64)::ia,ib,ic,id,i,j,n,S,X0,TypeCode,NG,NImg,M,Ia2,Ib2,Ic2,Id2
       Integer(kind=int64)::dima,dimb,dimc,dimd
-      Integer(kind=int64),dimension(2)::va,vb
-      logical::skipZero
+      Integer(kind=int64),Dimension(4)::X,Y
+      Integer(kind=int64),Dimension(4,48)::GP,Img
+      Logical,Dimension(48)::GC
+      Integer(kind=int64),Dimension(:),Allocatable::W0,W1,Rep
+      Character(Len=64)::my_Type,OutType,OutStor,MSymm
+      Logical::my_TestSymm,skipZero,MReal,MSym,MAsym,MHerm,MAherm
+      Logical::CSym,CAsym,CHerm,CAherm,CZero,CReal,SwapC,SwapF,Tri,Dup,Cj
       type(mqc_scalar)::mbNorm
+      Integer(kind=int64),Dimension(:,:),Allocatable::MBI,AccI,LocI
+      Real(kind=real64),Dimension(:,:),Allocatable::MBR,AccR,LocR
+      Complex(kind=real64),Dimension(:,:),Allocatable::MBC,AccC,LocC
+      Integer(kind=int64),Dimension(:),Allocatable::PackI
+      Real(kind=real64),Dimension(:),Allocatable::PackR
+      Complex(kind=real64),Dimension(:),Allocatable::PackC
+      Complex(kind=real64)::VC
 
+      If(.not.MQC_R4Tensor_isAllocated(RA)) Call MQC_Error_A( &
+        'Unallocated rank-4 tensor in MQC_R4Tensor_Matrix_Contraction', 6, 'RA%Storage', RA%Storage)
+      If(.not.MQC_Matrix_isAllocated(MB)) Call MQC_Error_A( &
+        'Unallocated matrix in MQC_R4Tensor_Matrix_Contraction', 6, 'MB%Storage', MB%Storage)
       if(present(inorder)) then
         ia=inorder(1)
         ib=inorder(2)
@@ -35373,88 +39383,340 @@
              'MB%NRow', MB%NRow,'MQC_R4Tensor_Size(RA%ia)',dima,&
              'MB%NCol', MB%NCol,'MQC_R4Tensor_Size(RA%ib)',dimb)
       EndIf
-
-      If (MQC_R4Tensor_HaveInteger(RA)) RAreal = MQC_Cast_Real(RA)
-      If (MQC_Matrix_HaveInteger(MB)) MBreal = MQC_Cast_Real(MB)
-      If (MQC_R4Tensor_HaveComplex(RA) .or. MQC_Matrix_HaveComplex(MB)) then
-        Call MQC_Allocate_Matrix(dimc,dimd,MC,'Complex','StorFull')
-      ElseIf (MQC_R4Tensor_HaveReal(RA) .or. MQC_Matrix_HaveReal(MB)) then
-        Call MQC_Allocate_Matrix(dimc,dimd,MC,'Real','StorFull')
-       !!TODO:Consider symm
+      my_TestSymm = .False.
+      If(Present(TestSymm)) my_TestSymm = TestSymm
+      If(MQC_R4Tensor_HaveComplex(RA).or.MQC_Matrix_HaveComplex(MB)) then
+        my_Type = 'Complex'
+        TypeCode = 3
+      ElseIf(MQC_R4Tensor_HaveReal(RA).or.MQC_Matrix_HaveReal(MB)) then
+        my_Type = 'Real'
+        TypeCode = 2
       Else
-        Call MQC_Allocate_Matrix(dimc,dimd,MC,'Integer','StorFull')
+        my_Type = 'Integer'
+        TypeCode = 1
       EndIf
 
-      skipZero = dima.eq.0.or.dimb.eq.0
+      skipZero = dima.eq.0.or.dimb.eq.0.or.MQC_R4Tensor_HaveZero(RA)
       if (.not.skipZero.and.MQC_very_small.ge.0.0) then
         if (MQC_Matrix_HaveReal(MB).or.MQC_Matrix_HaveComplex(MB)) then
           mbNorm = MB%norm('M')
           skipZero = mbNorm.le.MQC_very_small
         end if
       end if
-      if (skipZero) then
-        if (MQC_R4Tensor_HaveComplex(RA).or.MQC_Matrix_HaveComplex(MB)) then
-          call MC%init(dimc,dimd,(0.0,0.0))
-        elseif (MQC_R4Tensor_HaveReal(RA).or.MQC_Matrix_HaveReal(MB)) then
-          call MC%init(dimc,dimd,0.0)
-        else
-          call MC%init(dimc,dimd,0)
-        end if
-        return
-      end if
-      
-      va=[1,dima]
-      vb=[1,dimb]
-      do i=1,dimc
-        do j=1,dimd
-          select case(ia)
-          case(1)      
-            select case(ib)
-            case(2)      
-              tmpR = RA%mat(va,vb,[i],[j])
-            case(3)      
-              tmpR = RA%mat(va,[i],vb,[j])
-            case(4)
-              tmpR = RA%mat(va,[i],[j],vb)
-            end select      
-          case(2)      
-            select case(ib)
-            case(1)      
-              tmpR = transpose(RA%mat(vb,va,[i],[j]))
-              !tmpR = dagger(RA%mat(vb,va,[i],[j]))
-            case(3)      
-              tmpR = RA%mat([i],va,vb,[j])
-            case(4)
-              tmpR = RA%mat([i],va,[j],vb)
-            end select      
-          case(3)      
-            select case(ib)
-            case(1)      
-              tmpR = transpose(RA%mat(vb,[i],va,[j]))
-              !tmpR = dagger(RA%mat(vb,[i],va,[j]))
-            case(2)      
-              tmpR = transpose(RA%mat([i],vb,va,[j]))
-              !tmpR = dagger(RA%mat([i],vb,va,[j]))
-            case(4)
-              tmpR = RA%mat([i],[j],va,vb)
-            end select      
-          case(4)
-            select case(ib)
-            case(1)      
-              tmpR = transpose(RA%mat(vb,[i],[j],va))
-              !tmpR = dagger(RA%mat(vb,[i],[j],va))
-            case(2)       
-              tmpR = transpose(RA%mat([i],vb,[j],va))
-              !tmpR = dagger(RA%mat([i],vb,[j],va))
-            case(3)       
-              tmpR = transpose(RA%mat([i],[j],vb,va))
-              !tmpR = dagger(RA%mat([i],[j],vb,va))
-            end select      
-          end select      
-          call MC%put(Contraction(tmpR,MB),i,j)
-        enddo
-      enddo
 
+!     symmetry of MB
+      MReal = .not.MQC_Matrix_HaveComplex(MB)
+      MSymm = MQC_Matrix_Get_Symmetry(MB)
+      If(MSymm.eq.'unknown'.and.my_TestSymm) then
+        If(MQC_Matrix_Test_Symmetric(MB,'symmetric')) then
+          MSymm = 'symmetric'
+        ElseIf(MQC_Matrix_Test_Symmetric(MB,'hermitian')) then
+          MSymm = 'hermitian'
+        ElseIf(MQC_Matrix_Test_Symmetric(MB,'antisymmetric')) then
+          MSymm = 'antisymmetric'
+        ElseIf(MQC_Matrix_Test_Symmetric(MB,'antihermitian')) then
+          MSymm = 'antihermitian'
+        EndIf
+      EndIf
+      MSym = .False.
+      MAsym = .False.
+      MHerm = .False.
+      MAherm = .False.
+      Select Case(Trim(MSymm))
+      Case('symmetric','diagonal')
+        MSym = .True.
+      Case('antisymmetric')
+        MAsym = .True.
+      Case('hermitian')
+        MHerm = .True.
+      Case('antihermitian')
+        MAherm = .True.
+      Case('unknown')
+        Continue
+      Case Default
+        Call MQC_Error_A('Unrecognized matrix symmetry in MQC_R4Tensor_Matrix_Contraction', 6, &
+          'MSymm', MSymm)
+      End Select
+      If(MReal) then
+        MSym = MSym.or.MHerm
+        MHerm = MSym
+        MAsym = MAsym.or.MAherm
+        MAherm = MAsym
+      EndIf
+
+!     symmetry of MC from the operations of RA that keep the contracted pair
+      CSym = .False.
+      CAsym = .False.
+      CHerm = .False.
+      CAherm = .False.
+      CZero = .False.
+      CReal = my_Type.ne.'Complex'
+      If(.not.skipZero.and.MQC_R4Tensor_HaveSymmetric(RA)) then
+        Call MQC_R4Symm_View_Group(RA%Storage,RA%IndexOrder,RA%PlainSymm, &
+          .not.MQC_R4Tensor_HaveComplex(RA),GP,GC,NG)
+        Do n = 1, NG
+          If(All(GP(:,n).eq.[1,2,3,4]).and..not.GC(n)) Cycle
+          If(.not.((GP(ia,n).eq.ia.or.GP(ia,n).eq.ib).and.(GP(ib,n).eq.ia.or.GP(ib,n).eq.ib))) Cycle
+          SwapC = GP(ia,n).eq.ib
+          SwapF = GP(ic,n).eq.id
+          If(SwapF.and..not.SwapC) then
+            If(.not.GC(n)) CSym = .True.
+            If(GC(n).and.MReal) CHerm = .True.
+          ElseIf(SwapC.and..not.SwapF) then
+            If(.not.GC(n).and.MAsym) CZero = .True.
+            If(GC(n).and.MHerm) CReal = .True.
+          ElseIf(SwapC.and.SwapF) then
+            If(.not.GC(n)) then
+              If(MSym) CSym = .True.
+              If(MAsym) CAsym = .True.
+            Else
+              If(MHerm) CHerm = .True.
+              If(MAherm) CAherm = .True.
+            EndIf
+          Else
+!           conjugation only (identity of a real RA)
+            If(MReal) CReal = .True.
+          EndIf
+        EndDo
+      EndIf
+      If(CSym.and.CAsym) CZero = .True.
+      If(CHerm.and.CAherm) CZero = .True.
+      If(CSym.and.CHerm) CReal = .True.
+      If(CAsym.and.CAherm) CReal = .True.
+!     real matrices: symmetric is stored as hermitian, antisymmetric as antihermitian
+      If(CReal) then
+        CHerm = CSym.or.CHerm
+        CAherm = CAsym.or.CAherm
+        CSym = .False.
+        CAsym = .False.
+      EndIf
+      OutType = my_Type
+      If(CReal.and.my_Type.eq.'Complex') OutType = 'Real'
+      If(CSym) then
+        OutStor = 'symmetric'
+      ElseIf(CAsym) then
+        OutStor = 'antisymmetric'
+      ElseIf(CHerm) then
+        OutStor = 'hermitian'
+      ElseIf(CAherm) then
+        OutStor = 'antihermitian'
+      Else
+        OutStor = 'full'
+      EndIf
+      Tri = OutStor.ne.'full'
+
+      If(skipZero) then
+        Select Case(TypeCode)
+        Case(1)
+          call MC%init(dimc,dimd,0)
+        Case(2)
+          call MC%init(dimc,dimd,0.0)
+        Case(3)
+          call MC%init(dimc,dimd,(0.0,0.0))
+        Case Default
+          Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in skipZero', 6, &
+            'TypeCode', TypeCode)
+        End Select
+      ElseIf(CZero) then
+        Select Case(Trim(OutType))
+        Case('Integer')
+          call MC%init(dimc,dimd,0)
+        Case('Real')
+          call MC%init(dimc,dimd,0.0)
+        Case('Complex')
+          call MC%init(dimc,dimd,(0.0,0.0))
+        Case Default
+          Call MQC_Error_A('MQC_R4Tensor_Matrix_Contraction: unknown case in CZero', 6, &
+            'OutType', OutType)
+        End Select
+      Else
+        TA = RA
+        Call MQC_R4Tensor_Resolve_Conjg(TA)
+        Call MQC_R4Tensor_Promote(TA,my_Type)
+        Select Case(TypeCode)
+        Case(1)
+          Call MQC_Matrix_To_Array(MBI,MB,Unpack=.True.)
+          Allocate(AccI(dimc,dimd))
+          AccI = 0
+        Case(2)
+          Call MQC_Matrix_To_Array(MBR,MB,Unpack=.True.)
+          Allocate(AccR(dimc,dimd))
+          AccR = 0.0
+        Case(3)
+          Call MQC_Matrix_To_Array(MBC,MB,Unpack=.True.)
+          Allocate(AccC(dimc,dimd))
+          AccC = (0.0,0.0)
+        Case Default
+          Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Setup', 6, &
+            'TypeCode', TypeCode)
+        End Select
+        If(MQC_R4Tensor_HaveFull(TA)) then
+!         full RA: loop over the stored array, each thread owns columns of MC
+!$OMP PARALLEL DO DEFAULT(NONE), &
+!$OMP SHARED(TA,MBI,MBR,MBC,AccI,AccR,AccC,ia,ib,ic,id,dima,dimb,dimc,dimd,Tri,TypeCode),&
+!$OMP PRIVATE(Ic2,Ia2,Ib2,X)
+          Do Id2 = 1, dimd
+            Do Ic2 = 1, dimc
+              If(Tri.and.Ic2.lt.Id2) Cycle
+              X(ic) = Ic2
+              X(id) = Id2
+              Do Ib2 = 1, dimb
+                X(ib) = Ib2
+                Do Ia2 = 1, dima
+                  X(ia) = Ia2
+                  Select Case(TypeCode)
+                  Case(1)
+                    AccI(Ic2,Id2) = AccI(Ic2,Id2)+TA%ITen(X(1),X(2),X(3),X(4))*MBI(Ia2,Ib2)
+                  Case(2)
+                    AccR(Ic2,Id2) = AccR(Ic2,Id2)+TA%RTen(X(1),X(2),X(3),X(4))*MBR(Ia2,Ib2)
+                  Case(3)
+                    AccC(Ic2,Id2) = AccC(Ic2,Id2)+TA%CTen(X(1),X(2),X(3),X(4))*MBC(Ia2,Ib2)
+                  Case Default
+                    Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Full', 6, &
+                      'TypeCode', TypeCode)
+                  End Select
+                EndDo
+              EndDo
+            EndDo
+          EndDo
+!$OMP END PARALLEL DO
+        Else
+!         packed RA: each slot read once and scattered over its orbit
+          Call MQC_R4Symm_Slot_Weights(TA,W0,W1,Rep)
+          Call MQC_R4Symm_View_Group(TA%Storage,TA%IndexOrder,TA%PlainSymm,.False.,GP,GC,NG)
+!$OMP PARALLEL DEFAULT(NONE), &
+!$OMP SHARED(TA,Rep,GP,GC,NG,MBI,MBR,MBC,AccI,AccR,AccC,ia,ib,ic,id,dimc,dimd,Tri,TypeCode),&
+!$OMP PRIVATE(S,X0,X,Y,Img,NImg,M,n,Dup,Cj,VC,LocI,LocR,LocC)
+          Select Case(TypeCode)
+          Case(1)
+            Allocate(LocI(dimc,dimd))
+            LocI = 0
+          Case(2)
+            Allocate(LocR(dimc,dimd))
+            LocR = 0.0
+          Case(3)
+            Allocate(LocC(dimc,dimd))
+            LocC = (0.0,0.0)
+          Case Default
+            Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Packed setup', 6, &
+              'TypeCode', TypeCode)
+          End Select
+!$OMP DO
+          Do S = 1, Size(Rep)
+!           first element of the slot (column-major linear index)
+            X0 = Rep(S)-1
+            X(1) = Mod(X0,TA%I)+1
+            X0 = X0/TA%I
+            X(2) = Mod(X0,TA%J)+1
+            X0 = X0/TA%J
+            X(3) = Mod(X0,TA%K)+1
+            X(4) = X0/TA%K+1
+            M = MQC_R4Tensor_Slot(TA,X(1),X(2),X(3),X(4),Cj)
+            NImg = 0
+            Orbit: Do n = 1, NG
+              Y = X(GP(:,n))
+              Dup = .False.
+              Do M = 1, NImg
+                If(All(Img(:,M).eq.Y)) then
+                  Dup = .True.
+                  Exit
+                EndIf
+              EndDo
+              If(Dup) Cycle Orbit
+              NImg = NImg+1
+              Img(:,NImg) = Y
+              If(Tri.and.Y(ic).lt.Y(id)) Cycle Orbit
+              Select Case(TypeCode)
+              Case(1)
+                LocI(Y(ic),Y(id)) = LocI(Y(ic),Y(id))+TA%ITen(S,1,1,1)*MBI(Y(ia),Y(ib))
+              Case(2)
+                LocR(Y(ic),Y(id)) = LocR(Y(ic),Y(id))+TA%RTen(S,1,1,1)*MBR(Y(ia),Y(ib))
+              Case(3)
+!               T(y) = conjg^(GC) T(x), T(x) = conjg^(Cj) of the stored value
+                VC = TA%CTen(S,1,1,1)
+                If(Cj.neqv.GC(n)) VC = Conjg(VC)
+                LocC(Y(ic),Y(id)) = LocC(Y(ic),Y(id))+VC*MBC(Y(ia),Y(ib))
+              Case Default
+                Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Packed', 6, &
+                  'TypeCode', TypeCode)
+              End Select
+            EndDo Orbit
+          EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Tensor_Matrix_Contraction_Acc)
+          Select Case(TypeCode)
+          Case(1)
+            AccI = AccI+LocI
+          Case(2)
+            AccR = AccR+LocR
+          Case(3)
+            AccC = AccC+LocC
+          Case Default
+            Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Packed sum', 6, &
+              'TypeCode', TypeCode)
+          End Select
+!$OMP END CRITICAL (MQC_R4Tensor_Matrix_Contraction_Acc)
+!$OMP END PARALLEL
+        EndIf
+!       real result of complex data: built as a real matrix
+        If(TypeCode.eq.3.and.OutType.eq.'Real') then
+          AccR = Real(AccC,kind=real64)
+          Deallocate(AccC)
+          TypeCode = 2
+        EndIf
+        If(Tri) then
+          Select Case(TypeCode)
+          Case(1)
+            Allocate(PackI(dimc*(dimc+1)/2))
+          Case(2)
+            Allocate(PackR(dimc*(dimc+1)/2))
+          Case(3)
+            Allocate(PackC(dimc*(dimc+1)/2))
+          Case Default
+            Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Pack setup', 6, &
+              'TypeCode', TypeCode)
+          End Select
+          Do j = 1, dimd
+            Do i = j, dimc
+              Select Case(TypeCode)
+              Case(1)
+                PackI(i*(i-1)/2+j) = AccI(i,j)
+              Case(2)
+                PackR(i*(i-1)/2+j) = AccR(i,j)
+              Case(3)
+                PackC(i*(i-1)/2+j) = AccC(i,j)
+              Case Default
+                Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Pack', 6, &
+                  'TypeCode', TypeCode)
+              End Select
+            EndDo
+          EndDo
+          Select Case(TypeCode)
+          Case(1)
+            Call MQC_Matrix_SymmMatrix_Put(MC,PackI,OutStor)
+          Case(2)
+            Call MQC_Matrix_SymmMatrix_Put(MC,PackR,OutStor)
+          Case(3)
+            Call MQC_Matrix_SymmMatrix_Put(MC,PackC,OutStor)
+          Case Default
+            Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Result', 6, &
+              'TypeCode', TypeCode)
+          End Select
+        Else
+!         no derived symmetry: the array assignment tests the result and packs it
+          Select Case(TypeCode)
+          Case(1)
+            MC = AccI
+          Case(2)
+            MC = AccR
+          Case(3)
+            MC = AccC
+          Case Default
+            Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Result', 6, &
+              'TypeCode', TypeCode)
+          End Select
+        EndIf
+      EndIf
 
       EndFunction MQC_R4Tensor_Matrix_Contraction
 
@@ -35462,15 +39724,23 @@
 !
 !     PROCEDURE MQC_R4Tensor_R4Tensor_Partial_Contraction
 !
-!>    \brief <b> MQC_R4Tensor_R4Tensor_Partial_Contraction 
-!>    </b>
+!>    \brief <b> MQC_R4Tensor_R4Tensor_Partial_Contraction contracts two indexes of
+!>    two MQC rank-4 tensors and multiplies the other two into a matrix</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
 !>       
-!>    MQC_R4Tensor_R4Tensor_Partial_Contraction
+!>    MC(k,l) = Sum_{i,j} RA(..)*RB(..), with i,j,k,l at the view positions
+!>    orderA(1..4) of RA and orderB(1..4) of RB.
+!>
+!>    STALE (2026-10-30): not reached by SNOWMAN. Its only caller,
+!>    mqc_eri_eri_partial_contraction (mqc_est), is used by dead SNOWMAN code
+!>    (wick_two_e_partial_contraction, sort_v_jb_full) and by the 'r4_r4'
+!>    branch of mqc_nefset_nefset_partial_contraction, which SNOWMAN does not
+!>    take (its NEF sets are collapsed to matrices). It still reads slices
+!>    through at() and returns StorFull (no symmetry handling).
 !>
 !>    \endverbatim
 !
@@ -35527,23 +39797,24 @@
       Integer(kind=int64)::ia,ja,ka,la,ib,jb,kb,lb,i,j,k,l
       Integer(kind=int64)::dimAi,dimAj,dimAk,dimAl,dimBi,dimBj,dimBk,dimBl
       Integer(kind=int64),dimension(2)::vi,vj
+      Character(Len=64)::ShapeA,ShapeB
 
       if(present(orderA)) then
         ia=orderA(1)
         ja=orderA(2)
         ka=orderA(3)
         la=orderA(4)
-        if (ia.eq.ja) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction',&
+        if (ia.eq.ja) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction',&
                                         6,'ia', ia,'ja',ja)             
-        if (ia.eq.ka) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction',&
+        if (ia.eq.ka) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction',&
                                         6,'ia', ia,'ka',ka)             
-        if (ia.eq.la) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction',&
+        if (ia.eq.la) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction',&
                                         6,'ia', ia,'la',la)             
-        if (ja.eq.ka) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction',&
+        if (ja.eq.ka) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction',&
                                         6,'ja', ja,'ka',ka)             
-        if (ja.eq.la) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction',&
+        if (ja.eq.la) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction',&
                                         6,'ja', ja,'la',la)             
-        if (ka.eq.la) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction',&
+        if (ka.eq.la) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction',&
                                         6,'ka', ka,'la',la)
       else
         ia=1
@@ -35590,8 +39861,12 @@
       dimBl = MQC_R4Tensor_Size(RB,lb)
 
       If (dimAi.ne.dimBi.or.dimAj.ne.dimBj.or.&
-          dimAk.ne.dimBk.or.dimAl.ne.dimBl) Call MQC_Error(&
-             'R4Tensor are not conformable for partial contraction', 6)
+          dimAk.ne.dimBk.or.dimAl.ne.dimBl) then
+        Write(ShapeA,'(4(1x,I0))') dimAi,dimAj,dimAk,dimAl
+        Write(ShapeB,'(4(1x,I0))') dimBi,dimBj,dimBk,dimBl
+        Call MQC_Error_A('R4Tensors not conformable in MQC_R4Tensor_R4Tensor_Partial_Contraction', 6, &
+          'RA sizes (orderA)', ShapeA, 'RB sizes (orderB)', ShapeB)
+      EndIf
 
       If (MQC_R4Tensor_HaveInteger(RA)) RAreal = MQC_Cast_Real(RA)
       If (MQC_R4Tensor_HaveInteger(RB)) RBreal = MQC_Cast_Real(RB)
@@ -35650,7 +39925,7 @@
               if(ka.eq.2) tmpRA = RA%mat([l],[k],vi,vj)
             end select      
           case(4)
-            select case(ib)
+            select case(ja)
             case(1)      
               if(ka.eq.2) tmpRA = transpose(RA%mat(vj,[k],[l],vi))
               if(ka.eq.3) tmpRA = transpose(RA%mat(vj,[l],[k],vi))
@@ -35722,16 +39997,19 @@
 !
 !     PROCEDURE MQC_R4Tensor_Conjugate_Transpose
 !
-!>    \brief <b> MQC_R4Tensor_Conjugate_Transpose is a function that returns the 
+!>    \brief <b> MQC_R4Tensor_Conjugate_Transpose is a function that returns the
 !>    conjugate transpose of a MQC R4Tensor</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
-!>       
-!>    MQC_R4Tensor_Conjugate_Transpose is a function that returns the conjugate 
-!>    transpose of a MQC R4Tensor.
+!>
+!>    MQC_R4Tensor_Conjugate_Transpose is a function that returns the conjugate
+!>    transpose of a MQC R4Tensor, T'(i,j,k,l) = T(l,k,j,i)*. It is
+!>    MQC_R4Tensor_Permute(R4Tensor,[4,3,2,1],.true.): a view change plus a
+!>    DoConjg toggle for packed tensors, reversed dimensions for zero tensors,
+!>    and reversed (conjugated) data for full tensors.
 !>
 !>    \endverbatim
 !
@@ -35739,7 +40017,7 @@
 !     ==========
 !>    \param[in] R4Tensor
 !>    \verbatim
-!>        Matrix is Type(MQC_R4Tensor)
+!>        R4Tensor is Class(MQC_R4Tensor)
 !>        The MQC R4Tensor to be conjugate transposed.
 !>    \endverbatim
 !
@@ -35747,6 +40025,8 @@
 !     ========
 !>    \author M. M. F. Moraes
 !>    \date 2025
+!>    \author M. M. F. Moraes
+!>    \date 2026
 !
       Function MQC_R4Tensor_Conjugate_Transpose(R4Tensor)
 !
@@ -35754,107 +40034,61 @@
       Implicit None
       Type(MQC_R4Tensor)::MQC_R4Tensor_Conjugate_Transpose
       Class(MQC_R4Tensor),Intent(In)::R4Tensor
-      Integer(kind=int64)::I,J,L,K
 !
-      If(MQC_R4Tensor_HaveReal(R4Tensor)) then
-        Call MQC_Allocate_R4Tensor(R4Tensor%L,R4Tensor%K,R4Tensor%J,R4Tensor%I,&
-          MQC_R4Tensor_Conjugate_Transpose,'Real',R4Tensor%Storage)
-        If (R4Tensor%Storage.eq.'StorFull') then
-         do I=1, R4Tensor%I 
-          do J=1, R4Tensor%J 
-           do L=1, R4Tensor%L 
-            do K=1, R4Tensor%K 
-              MQC_R4Tensor_Conjugate_Transpose%RTen(L,K,J,I)=R4Tensor%RTen(I,J,K,L)
-            end do
-           end do
-          end do
-         end do
-        ElseIf (R4Tensor%Storage.eq.'StorSymm') then
-         do I=1, R4Tensor%I 
-          do J=1, R4Tensor%J 
-           do L=1, R4Tensor%L 
-            do K=1, R4Tensor%K 
-              MQC_R4Tensor_Conjugate_Transpose%RTen(L,K,J,I)=R4Tensor%RTen(I,J,K,L)
-            end do
-           end do
-          end do
-         end do
-        Else
-          Call MQC_Error_A('Unrecognise R4Tensor storage type in MQC_R4Tensor_Conjugate_Transpose', 6, &
-               'R4Tensor%Storage', R4Tensor%Storage )
-        EndIf
-      ElseIf(MQC_R4Tensor_HaveInteger(R4Tensor)) then
-        Call MQC_Allocate_R4Tensor(R4Tensor%I,R4Tensor%J,R4Tensor%K,R4Tensor%L,&
-          MQC_R4Tensor_Conjugate_Transpose,'Integer',R4Tensor%Storage)
-        If (R4Tensor%Storage.eq.'StorFull') then
-         do I=1, R4Tensor%I 
-          do J=1, R4Tensor%J 
-           do L=1, R4Tensor%L 
-            do K=1, R4Tensor%K 
-              MQC_R4Tensor_Conjugate_Transpose%ITen(L,K,J,I)=R4Tensor%ITen(I,J,K,L)
-            end do
-           end do
-          end do
-         end do
-        ElseIf (R4Tensor%Storage.eq.'StorSymm') then
-         do I=1, R4Tensor%I 
-          do J=1, R4Tensor%J 
-           do L=1, R4Tensor%L 
-            do K=1, R4Tensor%K 
-              MQC_R4Tensor_Conjugate_Transpose%ITen(L,K,J,I)=R4Tensor%ITen(I,J,K,L)
-            end do
-           end do
-          end do
-         end do
-        Else
-          Call MQC_Error_A('Unrecognise R4Tensor storage type in MQC_R4Tensor_Conjugate_Transpose', 6, &
-               'R4Tensor%Storage', R4Tensor%Storage )
-        EndIf
-      ElseIf(MQC_R4Tensor_HaveComplex(R4Tensor)) then
-        Call MQC_Allocate_R4Tensor(R4Tensor%I,R4Tensor%J,R4Tensor%K,R4Tensor%L,&
-          MQC_R4Tensor_Conjugate_Transpose,'Complex',R4Tensor%Storage)
-        If (R4Tensor%Storage.eq.'StorFull') then
-         do I=1, R4Tensor%I 
-          do J=1, R4Tensor%J 
-           do L=1, R4Tensor%L 
-            do K=1, R4Tensor%K 
-              MQC_R4Tensor_Conjugate_Transpose%CTen(L,K,J,I)=conjg(R4Tensor%CTen(I,J,K,L))
-            end do
-           end do
-          end do
-         end do
-        ElseIf (R4Tensor%Storage.eq.'StorSymm') then
-         do I=1, R4Tensor%I 
-          do J=1, R4Tensor%J 
-           do L=1, R4Tensor%L 
-            do K=1, R4Tensor%K 
-              MQC_R4Tensor_Conjugate_Transpose%CTen(L,K,J,I)=conjg(R4Tensor%CTen(I,J,K,L))
-            end do
-           end do
-          end do
-         end do
-        Else
-          Call MQC_Error_A('Unrecognise R4Tensor storage type in MQC_R4Tensor_Conjugate_Transpose', 6, &
-               'R4Tensor%Storage', R4Tensor%Storage )
-        EndIf
-      EndIf
-!
-      Return
+      MQC_R4Tensor_Conjugate_Transpose = MQC_R4Tensor_Permute(R4Tensor,[4,3,2,1],.true.)
+
       End Function MQC_R4Tensor_Conjugate_Transpose
 
 !
 !
 !     PROCEDURE MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor
 !
-!>    \brief <b> MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor 
-!>    </b>
+!>    \brief <b> MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor contracts two
+!>    indexes of two MQC rank-4 tensors into a rank-4 tensor</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
-!>       
-!>    MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor
+!>
+!>    RC(k,l,p,q) = Sum_{i,j} RA(..)*RB(..), with i,j,k,l at the view positions
+!>    orderA(1..4) of RA and i,j,p,q at the view positions orderB(1..4) of RB
+!>    (no complex conjugation). The data type is the promoted one.
+!>
+!>    Symmetry of RC: RC has the operation (s on positions 1,2; t on 3,4; conj c)
+!>    when an operation a of RA and an operation b of RB (view groups, identity
+!>    included; real data: every operation also with the other conj flag) both
+!>    keep their contracted pair, both swap it or both keep its order, have the
+!>    same conj flag c, s swaps 1,2 when a swaps orderA(3),orderA(4) and t swaps
+!>    3,4 when b swaps orderB(3),orderB(4). The largest class in that group
+!>    (MQC_R4Symm_Best_Class) is the storage of RC. Examples:
+!>    | RA         | RB      | orders           | RC                                  |
+!>    |------------+---------+------------------+-------------------------------------|
+!>    | R8         | R8      | any              | R4 (2134,1243,2143)                 |
+!>    | S4         | S4      | any              | S2Pair (2143*)                      |
+!>    | R4         | R4      | 1234, 1234       | R4                                  |
+!>    | R4         | R4      | other            | R2 or its views                     |
+!>    | S2Pair     | S2Pair  | 1234, 1234       | S2Pair; other orders: none          |
+!>    | S2         | S2      | any              | none                                |
+!>    | S4 complex | R8 real | 1234, 1234       | group 1243,2134*,2143* (no class):  |
+!>    |            |         |                  | S2Pair                              |
+!>    With Grouping, RB equal to RA (or its conjugate) in the roles of the
+!>    orders adds the exchange RC(p,q,k,l) = RC(k,l,p,q) (or its conjugate):
+!>    R8 x R8 -> R8, R4 x R4 -> R8, S4 x S4 -> S4 for orders 1234, 1234.
+!>
+!>    Method: the two inputs are read once into pair matrices A(kl,ij) and
+!>    B(ij,pq) restricted to the needed pairs (k >= l, p >= q when RC has the
+!>    swap; i >= j with weight 2 off the diagonal when both inputs have the
+!>    contracted swap without conjugation); RC = A*B with DGEMM/ZGEMM (DSYRK/
+!>    ZSYRK/ZHERK on the lower triangle when the grouping holds; MatMul for
+!>    integers); each value is written to every element of its orbit in RC.
+!>
+!>    TestSymm: a StorFull input is first tested for the largest class that
+!>    has an operation keeping its contracted pair (S_1 inputs are taken as
+!>    tested). After the product, RC is tested only for the classes whose group
+!>    contains the derived group and is larger (Grouping: also the classes that
+!>    exchange the two halves); the first that holds repacks RC. The threshold
+!>    is MQC_very_small (1e-10 if not set).
 !>
 !>    \endverbatim
 !
@@ -35874,7 +40108,7 @@
 !>
 !>    \param[in] orderA
 !>    \verbatim
-!>        inorder is Integer(kind=int64),dimension(4),optional
+!>        orderA is Integer(kind=int64),dimension(4),optional
 !>        Contain the indexes of RA to be contracted.
 !>        The two first integers in the object are the ones to be contracted,
 !>        while the two last are the one to be multiplied.
@@ -35885,7 +40119,7 @@
 !>
 !>    \param[in] orderB
 !>    \verbatim
-!>        inorder is Integer(kind=int64),dimension(B),optional
+!>        orderB is Integer(kind=int64),dimension(4),optional
 !>        Contain the indexes of RB to be contracted.
 !>        The two first integers in the object are the ones to be contracted,
 !>        while the two last are used as the two last indexes of the R4Tensor.
@@ -35894,239 +40128,2393 @@
 !>        sum_{i,j} RA_{ljik} RB_{jipq} = RC_{klqp}
 !>
 !>    \endverbatim
+!>
+!>    \param[in] TestSymm
+!>    \verbatim
+!>        TestSymm is Logical,optional (default FALSE)
+!>        Test StorFull inputs for a class before the contraction.
+!>    \endverbatim
+!>
+!>    \param[in] Grouping
+!>    \verbatim
+!>        Grouping is Logical,optional (default FALSE)
+!>        Test whether RB equals RA (or its conjugate) in the roles of the
+!>        orders, and the result for classes that exchange its two halves.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
-!>    \date 2025
+!>    \date 2025, 2026
 !
-      Function MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(RA,RB,orderA,orderB) Result(RC)
+      Function MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(RA,RB,orderA,orderB, &
+        TestSymm,Grouping) Result(RC)
 !
       Implicit None
       Type(MQC_R4Tensor),Intent(In)::RA,RB
       Integer(kind=int64),dimension(4),Intent(In),optional::orderA,orderB
-      Type(MQC_R4Tensor)::RAreal,RBreal,RC
-      Type(MQC_Matrix)::tmpRB,tmpRA
-      Integer(kind=int64)::ia,ja,ka,la,ib,jb,kb,lb,i,j,k,l,p,q
-      Integer(kind=int64)::dimAi,dimAj,dimAk,dimAl,dimBi,dimBj,dimBk,dimBl
-      Integer(kind=int64),dimension(2)::vi,vj
+      Logical,Intent(In),Optional::TestSymm,Grouping
+      Type(MQC_R4Tensor)::RC,TA,TB,Tmp
+      Integer(kind=int64),Dimension(4)::OA,OB,DimsC,Ord,X,Y,PP
+      Integer(kind=int64)::ni,nj,nk,nl,np,nq,TypeCode,NGA,NGB,NG,NH,N,A,B,R,S,T
+      Integer(kind=int64)::Nr,Ns,Nt,ExConj,FoldC,Fold,Cand,Q1,Q2,Q3,Q4,SL
+      Integer(kind=int64),Dimension(4,48)::GPA,GPB,GP,HP
+      Logical,Dimension(48)::GCA,GCB,GC,HC
+      Logical::my_TestSymm,my_Grouping,IsRealA,IsRealB,IsRealC,Found,NewPlain,OK,Sub
+      Logical::RowFold,ColFold,ConFoldA,ConFoldB,ConFold,Exch,FullA,FullB,PackC,Cj
+      Character(Len=64)::my_Type,NewClass
+      Character(Len=64)::ShapeA,ShapeB
+      Character(Len=10),Dimension(7)::CandName
+      Logical,Dimension(7)::CandPlain
+      Integer,Dimension(7)::CandFold
+      Integer,Dimension(4)::GIDA,GIDB,GIDC
+      Integer(kind=int64),Dimension(:),Allocatable::RowK,RowL,ColP,ColQ,ConI,ConJ,WtI
+      Real(kind=real64),Dimension(:),Allocatable::Wt
+      Integer(kind=int64),Dimension(:,:),Allocatable::AI,BI,CI
+      Real(kind=real64),Dimension(:,:),Allocatable::AR,BR,CR
+      Complex(kind=real64),Dimension(:,:),Allocatable::AC,BC,CC
+      Integer(kind=MQC_BlasInt)::Nr32,Ns32,Nt32
+      Real(kind=real64)::oneR,zeroR,Thresh
+      Complex(kind=real64)::oneC,zeroC,VC
 
-      if(present(orderA)) then
-        ia=orderA(1)
-        ja=orderA(2)
-        ka=orderA(3)
-        la=orderA(4)
-        if (ia.eq.ja) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction_2R4Tensor',&
-                                        6,'ia', ia,'ja',ja)             
-        if (ia.eq.ka) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction_2R4Tensor',&
-                                        6,'ia', ia,'ka',ka)             
-        if (ia.eq.la) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction_2R4Tensor',&
-                                        6,'ia', ia,'la',la)             
-        if (ja.eq.ka) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction_2R4Tensor',&
-                                        6,'ja', ja,'ka',ka)             
-        if (ja.eq.la) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction_2R4Tensor',&
-                                        6,'ja', ja,'la',la)             
-        if (ka.eq.la) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Contraction_2R4Tensor',&
-                                        6,'ka', ka,'la',la)
-      else
-        ia=1
-        ja=2
-        ka=3
-        la=4
-      endif
-      if(present(orderB)) then
-        ib=orderB(1)
-        jb=orderB(2)
-        kb=orderB(3)
-        lb=orderB(4)
-        if (ib.eq.jb) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor',&
-                                        6,'ib', ib,'jb',jb)
-        if (ib.eq.kb) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor',&
-                                        6,'ib', ib,'kb',kb)
-        if (ib.eq.lb) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor',&
-                                        6,'ib', ib,'lb',lb)
-        if (jb.eq.kb) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor',&
-                                        6,'jb', jb,'kb',kb)
-        if (jb.eq.lb) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor',&
-                                        6,'jb', jb,'lb',lb)
-        if (kb.eq.lb) Call MQC_Error_I('Duplicated index in MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor',&
-                                        6,'kb', kb,'lb',lb)
-      else
-        ib=1
-        jb=2
-        kb=3
-        lb=4
-      endif
-      if (ia.gt.4.or.ia.le.0.or.ib.gt.4.or.ib.le.0.or.&
-          ja.gt.4.or.ja.le.0.or.jb.gt.4.or.jb.le.0.or.&
-          ka.gt.4.or.ka.le.0.or.kb.gt.4.or.kb.le.0.or.&
-          la.gt.4.or.la.le.0.or.lb.gt.4.or.lb.le.0.) Call MQC_Error(&
-           'Index out of range in MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor', 6)
-      dimAi = MQC_R4Tensor_Size(RA,ia)
-      dimAj = MQC_R4Tensor_Size(RA,ja)
-      dimAk = MQC_R4Tensor_Size(RA,ka)
-      dimAl = MQC_R4Tensor_Size(RA,la)
-
-      dimBi = MQC_R4Tensor_Size(RB,ib)
-      dimBj = MQC_R4Tensor_Size(RB,jb)
-      dimBk = MQC_R4Tensor_Size(RB,kb)
-      dimBl = MQC_R4Tensor_Size(RB,lb)
-
-      If (dimAi.ne.dimBi.or.dimAj.ne.dimBj) Call MQC_Error(&
-             'R4Tensor are not conformable for partial contraction_2R4Tensor', 6)
-
-      If (MQC_R4Tensor_HaveInteger(RA)) RAreal = MQC_Cast_Real(RA)
-      If (MQC_R4Tensor_HaveInteger(RB)) RBreal = MQC_Cast_Real(RB)
-      If (MQC_R4Tensor_HaveComplex(RA) .or. MQC_R4Tensor_HaveComplex(RB)) then
-        Call MQC_Allocate_R4Tensor(dimAk,dimAl,dimBk,dimBl,RC,'Complex','StorFull')
-      ElseIf (MQC_R4Tensor_HaveReal(RA) .or. MQC_R4Tensor_HaveReal(RB)) then
-        Call MQC_Allocate_R4Tensor(dimAk,dimAl,dimBk,dimBl,RC,'Real','StorFull')
-       !!TODO:Consider symm
+      CandName = [Character(Len=10)::'R_8_1234','S_4_1234','S_4_1234','R_4_12_34','S_2_12_34', &
+        'S_2_13_24','R_2_12_3_4']
+      CandPlain = [.False.,.False.,.True.,.False.,.False.,.False.,.False.]
+      CandFold = [8,4,4,4,2,2,2]
+      If(MQC_very_small.gt.0.0) then
+        Thresh = MQC_very_small
       Else
-        Call MQC_Allocate_R4Tensor(dimAk,dimAl,dimBk,dimBl,RC,'Integer','StorFull')
+        Thresh = 1e-10
       EndIf
-      
-      vi=[1,dimAi]
-      vj=[1,dimAj]
-!$OMP PARALLEL DO DEFAULT(NONE), &
-!$OMP SHARED(RA,RB,vi,vj,ia,ja,la,ka,&
-!$OMP       ib,jb,lb,kb,RC,dimAl,dimAk,dimBl,dimBk),&
-!$OMP PRIVATE(tmpRA,tmpRB,k,l,p,q)
-      do k=1,dimAk
-        do l=1,dimAl
-          select case(ia)
-          case(1)      
-            select case(ja)
-            case(2)      
-              if(ka.eq.3) tmpRA = RA%mat(vi,vj,[k],[l])
-              if(ka.eq.4) tmpRA = RA%mat(vi,vj,[l],[k])
-            case(3)      
-              if(ka.eq.2) tmpRA = RA%mat(vi,[k],vj,[l])
-              if(ka.eq.4) tmpRA = RA%mat(vi,[l],vj,[k])
-            case(4)
-              if(ka.eq.2) tmpRA = RA%mat(vi,[k],[l],vj)
-              if(ka.eq.3) tmpRA = RA%mat(vi,[l],[k],vj)
-            end select      
-          case(2)      
-            select case(ja)
-            case(1)      
-              if(ka.eq.3) tmpRA = transpose(RA%mat(vj,vi,[k],[l]))
-              if(ka.eq.4) tmpRA = transpose(RA%mat(vj,vi,[l],[k]))
-              !if(ka.eq.3) tmpRA = dagger(RA%mat(vj,vi,[k],[l]))
-              !if(ka.eq.4) tmpRA = dagger(RA%mat(vj,vi,[l],[k]))
-            case(3)      
-              if(ka.eq.1) tmpRA = RA%mat([k],vi,vj,[l])
-              if(ka.eq.4) tmpRA = RA%mat([l],vi,vj,[k])
-            case(4)
-              if(ka.eq.1) tmpRA = RA%mat([k],vi,[l],vj)
-              if(ka.eq.3) tmpRA = RA%mat([l],vi,[k],vj)
-            end select      
-          case(3)      
-            select case(ja)
-            case(1)      
-              if(ka.eq.2) tmpRA = transpose(RA%mat(vj,[k],vi,[l]))
-              if(ka.eq.4) tmpRA = transpose(RA%mat(vj,[l],vi,[k]))
-              !if(ka.eq.2) tmpRA = dagger(RA%mat(vj,[k],vi,[l]))
-              !if(ka.eq.4) tmpRA = dagger(RA%mat(vj,[l],vi,[k]))
-            case(2)      
-              if(ka.eq.1) tmpRA = transpose(RA%mat([k],vj,vi,[l]))
-              if(ka.eq.4) tmpRA = transpose(RA%mat([l],vj,vi,[k]))
-              !if(ka.eq.1) tmpRA = dagger(RA%mat([k],vj,vi,[l]))
-              !if(ka.eq.4) tmpRA = dagger(RA%mat([l],vj,vi,[k]))
-            case(4)
-              if(ka.eq.1) tmpRA = RA%mat([k],[l],vi,vj)
-              if(ka.eq.2) tmpRA = RA%mat([l],[k],vi,vj)
-            end select      
-          case(4)
-            select case(ja)
-            case(1)      
-              if(ka.eq.2) tmpRA = transpose(RA%mat(vj,[k],[l],vi))
-              if(ka.eq.3) tmpRA = transpose(RA%mat(vj,[l],[k],vi))
-              !if(ka.eq.2) tmpRA = dagger(RA%mat(vj,[k],[l],vi))
-              !if(ka.eq.3) tmpRA = dagger(RA%mat(vj,[l],[k],vi))
-            case(2)       
-              if(ka.eq.1) tmpRA = transpose(RA%mat([k],vj,[l],vi))
-              if(ka.eq.3) tmpRA = transpose(RA%mat([l],vj,[k],vi))
-              !if(ka.eq.1) tmpRA = dagger(RA%mat([k],vj,[l],vi))
-              !if(ka.eq.3) tmpRA = dagger(RA%mat([l],vj,[k],vi))
-            case(3)       
-              if(ka.eq.1) tmpRA = transpose(RA%mat([k],[l],vj,vi))
-              if(ka.eq.2) tmpRA = transpose(RA%mat([l],[k],vj,vi))
-              !if(ka.eq.1) tmpRA = dagger(RA%mat([k],[l],vj,vi))
-              !if(ka.eq.2) tmpRA = dagger(RA%mat([l],[k],vj,vi))
-            end select      
-          end select      
-          do p=1,dimBk
-            do q=1,dimBl
-             select case(ib)
-             case(1)
-               select case(jb)
-               case(2)
-                 if(kb.eq.3) tmpRB = RB%mat(vi,vj,[p],[q])
-                 if(kb.eq.4) tmpRB = RB%mat(vi,vj,[q],[p])
-               case(3)
-                 if(kb.eq.2) tmpRB = RB%mat(vi,[p],vj,[q])
-                 if(kb.eq.4) tmpRB = RB%mat(vi,[q],vj,[p])
-               case(4)
-                 if(kb.eq.2) tmpRB = RB%mat(vi,[p],[q],vj)
-                 if(kb.eq.3) tmpRB = RB%mat(vi,[q],[p],vj)
-               end select
-             case(2)
-               select case(jb)
-               case(1)
-                 if(kb.eq.3) tmpRB = transpose(RB%mat(vj,vi,[p],[q]))
-                 if(kb.eq.4) tmpRB = transpose(RB%mat(vj,vi,[q],[p]))
-                 !if(kb.eq.3) tmpRB = dagger(RB%mat(vj,vi,[p],[q]))
-                 !if(kb.eq.4) tmpRB = dagger(RB%mat(vj,vi,[q],[p]))
-               case(3)
-                 if(kb.eq.1) tmpRB = RB%mat([p],vi,vj,[q])
-                 if(kb.eq.4) tmpRB = RB%mat([q],vi,vj,[p])
-               case(4)
-                 if(kb.eq.1) tmpRB = RB%mat([p],vi,[q],vj)
-                 if(kb.eq.3) tmpRB = RB%mat([q],vi,[p],vj)
-               end select
-             case(3)
-               select case(jb)
-               case(1)
-                 if(kb.eq.2) tmpRB = transpose(RB%mat(vj,[p],vi,[q]))
-                 if(kb.eq.4) tmpRB = transpose(RB%mat(vj,[q],vi,[p]))
-                 !if(kb.eq.2) tmpRB = dagger(RB%mat(vj,[p],vi,[q]))
-                 !if(kb.eq.4) tmpRB = dagger(RB%mat(vj,[q],vi,[p]))
-               case(2)
-                 if(kb.eq.1) tmpRB = transpose(RB%mat([p],vj,vi,[q]))
-                 if(kb.eq.4) tmpRB = transpose(RB%mat([q],vj,vi,[p]))
-                 !if(kb.eq.1) tmpRB = dagger(RB%mat([p],vj,vi,[q]))
-                 !if(kb.eq.4) tmpRB = dagger(RB%mat([q],vj,vi,[p]))
-               case(4)
-                 if(kb.eq.1) tmpRB = RB%mat([p],[q],vi,vj)
-                 if(kb.eq.2) tmpRB = RB%mat([q],[p],vi,vj)
-               end select
-             case(4)
-               select case(jb)
-               case(1)
-                 if(kb.eq.2) tmpRB = transpose(RB%mat(vj,[p],[q],vi))
-                 if(kb.eq.3) tmpRB = transpose(RB%mat(vj,[q],[p],vi))
-                 !if(kb.eq.2) tmpRB = dagger(RB%mat(vj,[p],[q],vi))
-                 !if(kb.eq.3) tmpRB = dagger(RB%mat(vj,[q],[p],vi))
-               case(2)
-                 if(kb.eq.1) tmpRB = transpose(RB%mat([p],vj,[q],vi))
-                 if(kb.eq.3) tmpRB = transpose(RB%mat([q],vj,[p],vi))
-                 !if(kb.eq.1) tmpRB = dagger(RB%mat([p],vj,[q],vi))
-                 !if(kb.eq.3) tmpRB = dagger(RB%mat([q],vj,[p],vi))
-               case(3)
-                 if(kb.eq.1) tmpRB = transpose(RB%mat([p],[q],vj,vi))
-                 if(kb.eq.2) tmpRB = transpose(RB%mat([q],[p],vj,vi))
-                 !if(kb.eq.1) tmpRB = dagger(RB%mat([p],[q],vj,vi))
-                 !if(kb.eq.2) tmpRB = dagger(RB%mat([q],[p],vj,vi))
-               end select
-             end select
-             call RC%put(Contraction(tmpRA,tmpRB),k,l,p,q)
-            enddo
-          enddo
-        enddo
-      enddo
+      If(.not.MQC_R4Tensor_isAllocated(RA).or..not.MQC_R4Tensor_isAllocated(RB)) &
+        Call MQC_Error_A('Unallocated rank-4 tensor in MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor', &
+        6, 'RA%Storage', RA%Storage, 'RB%Storage', RB%Storage)
+      OA = [1,2,3,4]
+      OB = [1,2,3,4]
+      If(Present(orderA)) OA = orderA
+      If(Present(orderB)) OB = orderB
+      If(.not.MQC_R4Symm_Is_Order(OA)) Call MQC_Error_I( &
+        'Invalid orderA in MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor', 6, &
+        'orderA(1)', OA(1), 'orderA(2)', OA(2), 'orderA(3)', OA(3), 'orderA(4)', OA(4))
+      If(.not.MQC_R4Symm_Is_Order(OB)) Call MQC_Error_I( &
+        'Invalid orderB in MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor', 6, &
+        'orderB(1)', OB(1), 'orderB(2)', OB(2), 'orderB(3)', OB(3), 'orderB(4)', OB(4))
+      ni = MQC_R4Tensor_Size(RA,OA(1))
+      nj = MQC_R4Tensor_Size(RA,OA(2))
+      nk = MQC_R4Tensor_Size(RA,OA(3))
+      nl = MQC_R4Tensor_Size(RA,OA(4))
+      np = MQC_R4Tensor_Size(RB,OB(3))
+      nq = MQC_R4Tensor_Size(RB,OB(4))
+      If(MQC_R4Tensor_Size(RB,OB(1)).ne.ni.or.MQC_R4Tensor_Size(RB,OB(2)).ne.nj) then
+        Write(ShapeA,'(4(1x,I0))') RA%I,RA%J,RA%K,RA%L
+        Write(ShapeB,'(4(1x,I0))') RB%I,RB%J,RB%K,RB%L
+        Call MQC_Error_A('Contracted dimensions do not conform in '// &
+          'MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor', 6, &
+          'Shape of RA', ShapeA, 'Shape of RB', ShapeB)
+      EndIf
+      DimsC = [nk,nl,np,nq]
+      my_TestSymm = .False.
+      If(Present(TestSymm)) my_TestSymm = TestSymm
+      my_Grouping = .False.
+      If(Present(Grouping)) my_Grouping = Grouping
+      If(MQC_R4Tensor_HaveComplex(RA).or.MQC_R4Tensor_HaveComplex(RB)) then
+        my_Type = 'Complex'
+        TypeCode = 3
+      ElseIf(MQC_R4Tensor_HaveReal(RA).or.MQC_R4Tensor_HaveReal(RB)) then
+        my_Type = 'Real'
+        TypeCode = 2
+      Else
+        my_Type = 'Integer'
+        TypeCode = 1
+      EndIf
+      IsRealA = .not.MQC_R4Tensor_HaveComplex(RA)
+      IsRealB = .not.MQC_R4Tensor_HaveComplex(RB)
+      IsRealC = TypeCode.ne.3
+
+      If(MQC_R4Tensor_HaveZero(RA).or.MQC_R4Tensor_HaveZero(RB).or.ni.eq.0.or.nj.eq.0) then
+        Call MQC_Allocate_R4Tensor(nk,nl,np,nq,RC,my_Type,'Z')
+      Else
+        TA = RA
+        TB = RB
+        Call MQC_R4Tensor_Resolve_Conjg(TA)
+        Call MQC_R4Tensor_Resolve_Conjg(TB)
+        Call MQC_R4Tensor_Promote(TA,my_Type)
+        Call MQC_R4Tensor_Promote(TB,my_Type)
+!       TestSymm: StorFull inputs get their largest useful class
+        If(my_TestSymm) then
+          Call MQC_R4Tensor_Input_Class(TA,OA,IsRealA)
+          Call MQC_R4Tensor_Input_Class(TB,OB,IsRealB)
+        EndIf
+        FullA = MQC_R4Tensor_HaveFull(TA)
+        FullB = MQC_R4Tensor_HaveFull(TB)
+
+!       groups of the inputs (view positions)
+        Call MQC_R4Tensor_Group(TA,IsRealA,GPA,GCA,NGA)
+        Call MQC_R4Tensor_Group(TB,IsRealB,GPB,GCB,NGB)
+!       derived group of RC
+        NG = 0
+        ConFoldA = .False.
+        ConFoldB = .False.
+        Do A = 1, NGA
+          If(.not.MQC_R4Symm_Keeps_Pair(GPA(:,A),OA)) Cycle
+          If(GPA(OA(1),A).eq.OA(2).and.GPA(OA(3),A).eq.OA(3).and..not.GCA(A)) ConFoldA = .True.
+          Do B = 1, NGB
+            If(.not.MQC_R4Symm_Keeps_Pair(GPB(:,B),OB)) Cycle
+            If(A.eq.1.and.GPB(OB(1),B).eq.OB(2).and.GPB(OB(3),B).eq.OB(3).and..not.GCB(B)) &
+              ConFoldB = .True.
+            If((GPA(OA(1),A).eq.OA(2)).neqv.(GPB(OB(1),B).eq.OB(2))) Cycle
+            If(GCA(A).neqv.GCB(B)) Cycle
+            PP = [1,2,3,4]
+            If(GPA(OA(3),A).eq.OA(4)) PP(1:2) = [2,1]
+            If(GPB(OB(3),B).eq.OB(4)) PP(3:4) = [4,3]
+            Call MQC_R4Symm_Add_Op(PP,GCA(A),GP,GC,NG)
+          EndDo
+        EndDo
+        ConFold = ConFoldA.and.ConFoldB
+
+!       Grouping: RB equal to RA (or conjugate) in the roles of the orders
+        Exch = .False.
+        ExConj = 0
+        If(my_Grouping.and.nk.eq.np.and.nl.eq.nq) then
+          Do ExConj = 0, 1
+            If(ExConj.eq.1.and.TypeCode.ne.3) Exit
+            Exch = MQC_R4Tensor_Same_Roles(TA,TB,FullA,FullB,OA,OB,[ni,nj,np,nq],TypeCode,Thresh, &
+              ExConj.eq.1)
+            If(Exch) Exit
+          EndDo
+          If(Exch) then
+!           add the exchange (3412) and close the group
+            PP = [3,4,1,2]
+            Call MQC_R4Symm_Add_Op(PP,ExConj.eq.1,GP,GC,NG)
+            Call MQC_R4Symm_Close_Group(GP,GC,NG)
+          Else
+            ExConj = 0
+          EndIf
+        EndIf
+
+!       storage of RC
+        Call MQC_R4Symm_Best_Class(GP,GC,NG,IsRealC,DimsC,NewClass,Ord,NewPlain,Found)
+        If(Found) then
+          Call MQC_Allocate_R4Tensor(nk,nl,np,nq,RC,my_Type,MQC_R4Symm_With_Order(NewClass,Ord,NewPlain))
+          FoldC = CandFold(MQC_R4Symm_Cand_Index(NewClass,NewPlain))
+        ElseIf(TA%Storage.eq.'StorFull'.or.TB%Storage.eq.'StorFull') then
+          Call MQC_Allocate_R4Tensor(nk,nl,np,nq,RC,my_Type,'StorFull')
+          FoldC = 1
+        Else
+          GIDA = MQC_R4Symm_Layout_Groups(TA%Storage,TA%IndexOrder)
+          GIDB = MQC_R4Symm_Layout_Groups(TB%Storage,TB%IndexOrder)
+          GIDC = [GIDA(OA(3)),GIDA(OA(4)),10+GIDB(OB(3)),10+GIDB(OB(4))]
+          If(Exch) GIDC(3:4) = GIDC(1:2)
+          Call MQC_R4Symm_Layout_Class(GIDC,GIDC,NewClass,Ord)
+          Call MQC_Allocate_R4Tensor(nk,nl,np,nq,RC,my_Type,NewClass,Ord)
+          FoldC = 1
+        EndIf
+        PackC = MQC_R4Tensor_HaveSymmetric(RC)
+
+!       pairs: rows (k,l), columns (p,q), contracted (i,j)
+        RowFold = .False.
+        ColFold = .False.
+        Do N = 1, NG
+          If(GP(1,N).eq.2.and.GP(3,N).le.4.and.GP(3,N).ge.3) RowFold = .True.
+          If(GP(1,N).eq.1.and.GP(3,N).eq.4) ColFold = .True.
+        EndDo
+!       grouping (SYRK): rows and columns are the same pairs
+        If(Exch) then
+          RowFold = RowFold.and.ColFold
+          ColFold = RowFold
+        EndIf
+        Call MQC_R4Symm_Pairs(nk,nl,RowFold,RowK,RowL)
+        Call MQC_R4Symm_Pairs(np,nq,ColFold,ColP,ColQ)
+        Call MQC_R4Symm_Pairs(ni,nj,ConFold,ConI,ConJ)
+        Nr = Size(RowK)
+        Nt = Size(ColP)
+        Ns = Size(ConI)
+        Allocate(Wt(Ns),WtI(Ns))
+        WtI = 1
+        If(ConFold) then
+          Do S = 1, Ns
+            If(ConI(S).ne.ConJ(S)) WtI(S) = 2
+          EndDo
+        EndIf
+        Wt = Real(WtI,kind=real64)
+        Nr32 = int(Nr,kind=MQC_BlasInt)
+        Ns32 = int(Ns,kind=MQC_BlasInt)
+        Nt32 = int(Nt,kind=MQC_BlasInt)
+        oneR = 1.0
+        zeroR = 0.0
+        oneC = (1.0,0.0)
+        zeroC = (0.0,0.0)
+
+!       pair matrices and product
+        Select Case(TypeCode)
+        Case(1)
+          Allocate(AI(Nr,Ns),BI(Ns,Nt))
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(TA,TB,FullA,FullB,OA,OB,RowK,RowL,ColP,ColQ,ConI,ConJ, &
+!$OMP   WtI,AI,BI,Nr,Ns,Nt,Exch), PRIVATE(R,T,X)
+          Do S = 1, Ns
+            Do R = 1, Nr
+              X(OA) = [ConI(S),ConJ(S),RowK(R),RowL(R)]
+              AI(R,S) = MQC_R4Tensor_Raw_I(TA,FullA,X(1),X(2),X(3),X(4))
+            EndDo
+            Do T = 1, Nt
+              If(Exch) then
+                X(OA) = [ConI(S),ConJ(S),ColP(T),ColQ(T)]
+                BI(S,T) = WtI(S)*MQC_R4Tensor_Raw_I(TA,FullA,X(1),X(2),X(3),X(4))
+              Else
+                X(OB) = [ConI(S),ConJ(S),ColP(T),ColQ(T)]
+                BI(S,T) = WtI(S)*MQC_R4Tensor_Raw_I(TB,FullB,X(1),X(2),X(3),X(4))
+              EndIf
+            EndDo
+          EndDo
 !$OMP END PARALLEL DO
+          CI = MatMul(AI,BI)
+        Case(2)
+          Allocate(AR(Nr,Ns),CR(Nr,Nt))
+          If(.not.Exch) Allocate(BR(Ns,Nt))
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(TA,TB,FullA,FullB,OA,OB,RowK,RowL,ColP,ColQ,ConI,ConJ, &
+!$OMP   Wt,AR,BR,Nr,Ns,Nt,Exch), PRIVATE(R,T,X)
+          Do S = 1, Ns
+            Do R = 1, Nr
+              X(OA) = [ConI(S),ConJ(S),RowK(R),RowL(R)]
+              AR(R,S) = MQC_R4Tensor_Raw_R(TA,FullA,X(1),X(2),X(3),X(4))
+              If(Exch) AR(R,S) = Sqrt(Wt(S))*AR(R,S)
+            EndDo
+            If(.not.Exch) then
+              Do T = 1, Nt
+                X(OB) = [ConI(S),ConJ(S),ColP(T),ColQ(T)]
+                BR(S,T) = Wt(S)*MQC_R4Tensor_Raw_R(TB,FullB,X(1),X(2),X(3),X(4))
+              EndDo
+            EndIf
+          EndDo
+!$OMP END PARALLEL DO
+          If(Exch) then
+            Call DSYRK('L','N',Nr32,Ns32,oneR,AR,Nr32,zeroR,CR,Nr32)
+          Else
+            Call DGEMM('N','N',Nr32,Nt32,Ns32,oneR,AR,Nr32,BR,Ns32,zeroR,CR,Nr32)
+          EndIf
+        Case(3)
+          Allocate(AC(Nr,Ns),CC(Nr,Nt))
+          If(.not.Exch) Allocate(BC(Ns,Nt))
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(TA,TB,FullA,FullB,OA,OB,RowK,RowL,ColP,ColQ,ConI,ConJ, &
+!$OMP   Wt,AC,BC,Nr,Ns,Nt,Exch), PRIVATE(R,T,X)
+          Do S = 1, Ns
+            Do R = 1, Nr
+              X(OA) = [ConI(S),ConJ(S),RowK(R),RowL(R)]
+              AC(R,S) = MQC_R4Tensor_Raw_C(TA,FullA,X(1),X(2),X(3),X(4))
+              If(Exch) AC(R,S) = Sqrt(Wt(S))*AC(R,S)
+            EndDo
+            If(.not.Exch) then
+              Do T = 1, Nt
+                X(OB) = [ConI(S),ConJ(S),ColP(T),ColQ(T)]
+                BC(S,T) = Wt(S)*MQC_R4Tensor_Raw_C(TB,FullB,X(1),X(2),X(3),X(4))
+              EndDo
+            EndIf
+          EndDo
+!$OMP END PARALLEL DO
+          If(Exch.and.ExConj.eq.1) then
+            Call ZHERK('L','N',Nr32,Ns32,oneR,AC,Nr32,zeroR,CC,Nr32)
+          ElseIf(Exch) then
+            Call ZSYRK('L','N',Nr32,Ns32,oneC,AC,Nr32,zeroC,CC,Nr32)
+          Else
+            Call ZGEMM('N','N',Nr32,Nt32,Ns32,oneC,AC,Nr32,BC,Ns32,zeroC,CC,Nr32)
+          EndIf
+        Case Default
+          Call MQC_Error_I('MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor: unknown case in '// &
+            'Product', 6, 'TypeCode', TypeCode)
+        End Select
+
+!       each computed value to every element of its orbit in RC
+        Do T = 1, Nt
+          Do R = 1, Nr
+            If(Exch.and.R.lt.T) Cycle
+            X = [RowK(R),RowL(R),ColP(T),ColQ(T)]
+            If(TypeCode.eq.3) VC = CC(R,T)
+            Do N = 1, NG
+              Y = X(GP(:,N))
+              If(PackC) then
+                SL = MQC_R4Tensor_Slot(RC,Y(1),Y(2),Y(3),Y(4),Cj)
+              Else
+                SL = 0
+              EndIf
+              Select Case(TypeCode)
+              Case(1)
+                If(PackC) then
+                  RC%ITen(SL,1,1,1) = CI(R,T)
+                Else
+                  RC%ITen(Y(1),Y(2),Y(3),Y(4)) = CI(R,T)
+                EndIf
+              Case(2)
+                If(PackC) then
+                  RC%RTen(SL,1,1,1) = CR(R,T)
+                Else
+                  RC%RTen(Y(1),Y(2),Y(3),Y(4)) = CR(R,T)
+                EndIf
+              Case(3)
+                If(GC(N)) then
+                  VC = Conjg(CC(R,T))
+                Else
+                  VC = CC(R,T)
+                EndIf
+                If(PackC) then
+                  If(Cj) VC = Conjg(VC)
+                  RC%CTen(SL,1,1,1) = VC
+                Else
+                  RC%CTen(Y(1),Y(2),Y(3),Y(4)) = VC
+                EndIf
+              Case Default
+                Call MQC_Error_I('MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor: unknown case '// &
+                  'in Scatter', 6, 'TypeCode', TypeCode)
+              End Select
+            EndDo
+          EndDo
+        EndDo
+
+!       post-test: only larger classes whose group contains the derived group
+        Search: Do Fold = 8, FoldC+1, -1
+          Do Cand = 1, 7
+            If(CandFold(Cand).ne.Fold) Cycle
+            If(CandPlain(Cand).and.IsRealC) Cycle
+            Do Q1 = 1, 4
+              Do Q2 = 1, 4
+                Do Q3 = 1, 4
+                  Do Q4 = 1, 4
+                    Ord = [Q1,Q2,Q3,Q4]
+                    If(.not.MQC_R4Symm_Is_Order(Ord)) Cycle
+                    If(.not.MQC_R4Symm_Dims_OK(CandName(Cand),nk,nl,np,nq,Ord)) Cycle
+                    Call MQC_R4Symm_View_Group(CandName(Cand),Ord,CandPlain(Cand),IsRealC,HP,HC,NH)
+                    Sub = .True.
+                    Do N = 1, NG
+                      If(.not.MQC_R4Symm_In_Group(GP(:,N),GC(N),HP,HC,NH)) then
+                        Sub = .False.
+                        Exit
+                      EndIf
+                    EndDo
+                    If(.not.Sub) Cycle
+                    If(.not.my_Grouping) then
+                      Do N = 1, NH
+                        If(HP(1,N).ge.3) then
+                          Sub = .False.
+                          Exit
+                        EndIf
+                      EndDo
+                      If(.not.Sub) Cycle
+                    EndIf
+                    Call MQC_R4Tensor_Build_Packed(RC,CandName(Cand),Ord,Tmp,OK,CandPlain(Cand))
+                    If(OK) then
+                      RC = Tmp
+                      Exit Search
+                    EndIf
+                  EndDo
+                EndDo
+              EndDo
+            EndDo
+          EndDo
+        EndDo Search
+      EndIf
 
       EndFunction MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor
+!
+!
+!     PROCEDURE MQC_R4Tensor_Trans_Full
+!
+!>    \brief <b> MQC_R4Tensor_Trans_Full transforms the four indexes of an MQC
+!>    rank-4 tensor with up to four MQC matrices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    R4Out(a1,a2,a3,a4) = Sum_x R4(x1,x2,x3,x4) T1(x1,a1) T2(x2,a2) T3(x3,a3) T4(x4,a4)
+!>    with T_q = M_m (Map(q) = m > 0, contracted with the rows of M_m) or
+!>    transpose(M_m) (Map(q) = -m, contracted with the columns), conjugated
+!>    when Conj(q). Default Map: q for a present Mq, else 1; default Conj:
+!>    [T,F,T,F] (chemist (pq|rs) = sum C*(mu,p) C(nu,q) C*(la,r) C(si,s) (mu nu|la si)).
+!>    The data type is the promoted one.
+!>
+!>    Symmetry of R4Out: an operation (P,c) of R4 (view group; real data: both
+!>    conj flags) holds for R4Out when every T_{P(q)} equals T_q (c = F) or
+!>    conjg(T_q) (c = T) (MQC_R4Trans_Relation). The equalities come from the
+!>    same matrix used in the same way (conj flags compared), the same matrix
+!>    used by rows and by columns (its label: symmetric -> equal, hermitian ->
+!>    conjugate), real matrices (equal to their conjugate) and, with Grouping,
+!>    numerical comparison of the transforms of different matrices. Examples:
+!>    | R4         | matrices        | Conj      | R4Out                     |
+!>    |------------+-----------------+-----------+---------------------------|
+!>    | real R8    | one real C      | any       | R8                        |
+!>    | real R8    | one complex C   | [T,F,T,F] | S4 (3412, 2143*, 4321*)   |
+!>    | complex S4 | one complex C   | [T,F,T,F] | S4                        |
+!>    | complex S4 | one complex C   | none      | S2 (3412)                 |
+!>    | R8         | Map [1,2,1,2]   | [T,F,T,F] | S2 (3412)                 |
+!>    | R8         | Map [1,1,2,2]   | -         | R4                        |
+!>    | R8         | Map [1,2,3,4]   | -         | none (S_1 layout)         |
+!>    Without a class, R4Out is stored full with the S_1 label of the positions
+!>    that share a transform.
+!>
+!>    Method: two half transforms with BLAS (DGEMM/ZGEMM; MatMul for integers):
+!>    T3^T S T4 for every slice S(x3,x4) of R4 (slices x1 >= x2 only when R4 has
+!>    the swap 2134 without conjugation, or R4Out has 2143 (with or without
+!>    conjugation) and the columns a3, a4 are not folded: then the slice (x2,x1)
+!>    gives Mid(x2x1,(a3,a4)) = Mid(x1x2,(a4,a3)), conjugated for 2143*), keeping
+!>    only the columns a3 >= a4 when
+!>    R4Out has the swap 1243; then T1^T W T2 for every kept (a3,a4), keeping
+!>    a1 >= a2 when R4Out has a swap of 1,2; each value is written to every
+!>    element of its orbit in R4Out. OpenMP over the slices. A diagonal
+!>    transform (MQC_R4Trans_Mat_Info) replaces its product by a scaling of the
+!>    rows or columns (O(n^2) instead of O(n^3) per slice). A folded pair gets
+!>    only the lower triangle of its product (DGEMMT/ZGEMMT); with the exchange
+!>    3412 and both pairs folded, half 2 computes only the bra pairs >= the
+!>    ket pair.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] R4
+!>    \verbatim
+!>        R4 is Class(MQC_R4Tensor)
+!>    \endverbatim
+!>
+!>    \param[in] M1,M2,M3,M4
+!>    \verbatim
+!>        M1 is Type(MQC_Matrix); M2, M3, M4 are Type(MQC_Matrix),optional
+!>    \endverbatim
+!>
+!>    \param[in] Map
+!>    \verbatim
+!>        Map is Integer(kind=int64),Dimension(4),optional
+!>        Map(q) = m: index q of R4 is contracted with the rows of Mm;
+!>        Map(q) = -m: with the columns of Mm. Ex: [1,2,1,3]: M1 on indexes
+!>        1 and 3, M2 on index 2, M3 on index 4.
+!>    \endverbatim
+!>
+!>    \param[in] Conj
+!>    \verbatim
+!>        Conj is Logical,Dimension(4),optional (default [T,F,T,F])
+!>        Use the conjugate of the transform of index q.
+!>    \endverbatim
+!>
+!>    \param[in] MatTestSymm
+!>    \verbatim
+!>        MatTestSymm is Logical,optional (default TRUE)
+!>        Test a complex matrix for real values, and a matrix that Map uses by
+!>        rows and by columns, without symmetry label ('unknown'), for
+!>        symmetric and hermitian.
+!>    \endverbatim
+!>
+!>    \param[in] R4TestSymm
+!>    \verbatim
+!>        R4TestSymm is Logical,optional (default FALSE)
+!>        Test a StorFull R4 for its largest class.
+!>    \endverbatim
+!>
+!>    \param[in] Grouping
+!>    \verbatim
+!>        Grouping is Logical,optional (default TRUE)
+!>        Compare the transforms of different matrices (threshold
+!>        MQC_very_small, 1e-10 if not set).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Tensor_Trans_Full(R4,M1,M2,M3,M4,Map,Conj,MatTestSymm,R4TestSymm,Grouping) &
+        Result(R4Out)
+
+      Implicit None
+      Class(MQC_R4Tensor),Intent(In)::R4
+      Type(MQC_Matrix),Intent(In)::M1
+      Type(MQC_Matrix),Intent(In),Optional::M2,M3,M4
+      Integer(kind=int64),Dimension(4),Intent(In),Optional::Map
+      Logical,Dimension(4),Intent(In),Optional::Conj
+      Logical,Intent(In),Optional::MatTestSymm,R4TestSymm,Grouping
+      Type(MQC_R4Tensor)::R4Out,TA
+      Type(MQC_R4Trans_T),Dimension(4)::TT,MF
+      Integer(kind=int64),Dimension(4)::my_Map,NI,NO,X,Y,Ord
+      Logical,Dimension(4)::my_Conj,Have,RealM,UseCol,BothWays,DiagM,DiagT
+      Logical::my_MatTest,my_R4Test,my_Grouping,ZeroIn,ZeroQ,FullA,PackC,Found,NewPlain,OKT,Cj
+      Logical::InFold,InFoldC,CjFold,RowFold,ColFold,ExchFold,OneWrite
+      Logical,Dimension(4,4)::EqP,EqC
+      Character(Len=64),Dimension(4)::MLab
+      Character(Len=64)::my_Type,NewClass
+      Integer(kind=int64)::TypeCode,Q,Q2,MA,MB,N,NGA,NG,NH,NR1,NC1,NR2,R,C,C2,SL
+      Integer(kind=int64),Dimension(4,48)::GPA,GP,HP
+      Logical,Dimension(48)::GCA,GC,HC
+      Integer,Dimension(4)::GID
+      Integer(kind=int64),Dimension(:),Allocatable::R1A,R1B,C1A,C1B,R2A,R2B
+      Integer(kind=int64),Dimension(:,:),Allocatable::MidI,ResI
+      Real(kind=real64),Dimension(:,:),Allocatable::MidR,ResR
+      Complex(kind=real64),Dimension(:,:),Allocatable::MidC,ResC
+      Complex(kind=real64)::VC,oneC,zeroC
+      Real(kind=real64)::Thresh,oneR,zeroR
+
+      oneR = 1.0
+      zeroR = 0.0
+      oneC = (1.0,0.0)
+      zeroC = (0.0,0.0)
+      If(MQC_very_small.gt.0.0) then
+        Thresh = MQC_very_small
+      Else
+        Thresh = 1e-10
+      EndIf
+      If(.not.MQC_R4Tensor_isAllocated(R4)) Call MQC_Error_A( &
+        'Unallocated rank-4 tensor in MQC_R4Tensor_Trans_Full', 6, 'R4%Storage', R4%Storage)
+      Have = [.True.,Present(M2),Present(M3),Present(M4)]
+      my_Map = [1,2,3,4]
+      Do Q = 1, 4
+        If(.not.Have(Q)) my_Map(Q) = 1
+      EndDo
+      If(Present(Map)) my_Map = Map
+      Do Q = 1, 4
+        If(my_Map(Q).eq.0.or.Abs(my_Map(Q)).gt.4) then
+          Call MQC_Error_I('Invalid Map in MQC_R4Tensor_Trans_Full', 6, 'q', Q, 'Map(q)', my_Map(Q))
+        ElseIf(.not.Have(Abs(my_Map(Q)))) then
+          Call MQC_Error_I('Map uses a matrix that was not given in MQC_R4Tensor_Trans_Full', 6, &
+            'q', Q, 'Map(q)', my_Map(Q))
+        EndIf
+      EndDo
+      UseCol = my_Map.lt.0
+      my_Conj = [.True.,.False.,.True.,.False.]
+      If(Present(Conj)) my_Conj = Conj
+      my_MatTest = .True.
+      If(Present(MatTestSymm)) my_MatTest = MatTestSymm
+      my_R4Test = .False.
+      If(Present(R4TestSymm)) my_R4Test = R4TestSymm
+      my_Grouping = .True.
+      If(Present(Grouping)) my_Grouping = Grouping
+
+!     data type, real values and labels of the matrices
+      TypeCode = 1
+      If(MQC_R4Tensor_HaveReal(R4)) TypeCode = 2
+      If(MQC_R4Tensor_HaveComplex(R4)) TypeCode = 3
+      RealM = .True.
+      DiagM = .False.
+      MLab = 'unknown'
+      Do MA = 1, 4
+        BothWays(MA) = Any(my_Map.eq.MA).and.Any(my_Map.eq.-MA)
+      EndDo
+!     promoted type from the matrix types (no conversion)
+      Do MA = 1, 4
+        If(.not.Have(MA)) Cycle
+        Select Case(MA)
+        Case(1)
+          Call MQC_R4Trans_Mat_Type(M1,TypeCode)
+        Case(2)
+          Call MQC_R4Trans_Mat_Type(M2,TypeCode)
+        Case(3)
+          Call MQC_R4Trans_Mat_Type(M3,TypeCode)
+        Case(4)
+          Call MQC_R4Trans_Mat_Type(M4,TypeCode)
+        Case Default
+          Call MQC_Error_I('MQC_R4Tensor_Trans_Full: unknown case in Matrix types', 6, 'MA', MA)
+        End Select
+      EndDo
+!     each matrix used by Map: one full array in the promoted type, real values, label
+      Do MA = 1, 4
+        If(.not.Have(MA).or..not.Any(Abs(my_Map).eq.MA)) Cycle
+        Select Case(MA)
+        Case(1)
+          Call MQC_R4Trans_Unpack(M1,TypeCode,MF(MA))
+          Call MQC_R4Trans_Mat_Info(M1,MF(MA),my_MatTest,my_MatTest.and.BothWays(MA),Thresh, &
+            RealM(MA),DiagM(MA),MLab(MA))
+        Case(2)
+          Call MQC_R4Trans_Unpack(M2,TypeCode,MF(MA))
+          Call MQC_R4Trans_Mat_Info(M2,MF(MA),my_MatTest,my_MatTest.and.BothWays(MA),Thresh, &
+            RealM(MA),DiagM(MA),MLab(MA))
+        Case(3)
+          Call MQC_R4Trans_Unpack(M3,TypeCode,MF(MA))
+          Call MQC_R4Trans_Mat_Info(M3,MF(MA),my_MatTest,my_MatTest.and.BothWays(MA),Thresh, &
+            RealM(MA),DiagM(MA),MLab(MA))
+        Case(4)
+          Call MQC_R4Trans_Unpack(M4,TypeCode,MF(MA))
+          Call MQC_R4Trans_Mat_Info(M4,MF(MA),my_MatTest,my_MatTest.and.BothWays(MA),Thresh, &
+            RealM(MA),DiagM(MA),MLab(MA))
+        Case Default
+          Call MQC_Error_I('MQC_R4Tensor_Trans_Full: unknown case in Matrices', 6, 'MA', MA)
+        End Select
+      EndDo
+      Select Case(TypeCode)
+      Case(1)
+        my_Type = 'Integer'
+      Case(2)
+        my_Type = 'Real'
+      Case(3)
+        my_Type = 'Complex'
+      Case Default
+        Call MQC_Error_I('MQC_R4Tensor_Trans_Full: unknown case in Type', 6, 'TypeCode', TypeCode)
+      End Select
+
+!     effective transforms T_q (input dimension x output dimension)
+      ZeroIn = .False.
+      Do Q = 1, 4
+        Call MQC_R4Trans_Make_T(MF(Abs(my_Map(Q))),UseCol(Q),my_Conj(Q),TypeCode,TT(Q),NI(Q),NO(Q),ZeroQ)
+        ZeroIn = ZeroIn.or.ZeroQ
+        DiagT(Q) = DiagM(Abs(my_Map(Q)))
+        If(NI(Q).ne.MQC_R4Tensor_Size(R4,Q)) Call MQC_Error_I( &
+          'Matrix does not conform with the R4Tensor in MQC_R4Tensor_Trans_Full', 6, &
+          'q', Q, 'Map(q)', my_Map(Q), 'matrix size', NI(Q), 'R4 size', MQC_R4Tensor_Size(R4,Q))
+      EndDo
+
+      If(ZeroIn.or.MQC_R4Tensor_HaveZero(R4)) then
+        Call MQC_Allocate_R4Tensor(NO(1),NO(2),NO(3),NO(4),R4Out,my_Type,'Z')
+      Else
+        TA = R4
+        Call MQC_R4Tensor_Resolve_Conjg(TA)
+        If(my_R4Test.and.TA%Storage.eq.'StorFull') Call MQC_R4Tensor_Largest_Class(TA)
+        Call MQC_R4Tensor_Promote(TA,my_Type)
+        FullA = MQC_R4Tensor_HaveFull(TA)
+
+!       relations between the transforms
+        Do Q = 1, 4
+          MA = Abs(my_Map(Q))
+          Do Q2 = 1, 4
+            MB = Abs(my_Map(Q2))
+            Call MQC_R4Trans_Relation(Q.eq.Q2,MA.eq.MB,UseCol(Q),UseCol(Q2),my_Conj(Q),my_Conj(Q2), &
+              RealM(MA).and.RealM(MB),MLab(MA),my_Grouping,TypeCode,Thresh,TT(Q),TT(Q2), &
+              EqP(Q,Q2),EqC(Q,Q2))
+          EndDo
+        EndDo
+!       group of R4Out: operations of R4 compatible with the relations
+        If(MQC_R4Tensor_HaveSymmetric(TA)) then
+          Call MQC_R4Symm_View_Group(TA%Storage,TA%IndexOrder,TA%PlainSymm, &
+            .not.MQC_R4Tensor_HaveComplex(R4),GPA,GCA,NGA)
+        Else
+          GPA = 0
+          GCA = .False.
+          NGA = 1
+          GPA(:,1) = [1,2,3,4]
+          If(.not.MQC_R4Tensor_HaveComplex(R4)) then
+            NGA = 2
+            GPA(:,2) = [1,2,3,4]
+            GCA(2) = .True.
+          EndIf
+        EndIf
+        NG = 0
+        InFold = .False.
+        Do N = 1, NGA
+          If(All(GPA(:,N).eq.[2,1,3,4]).and..not.GCA(N)) InFold = .True.
+          OKT = .True.
+          Do Q = 1, 4
+            If(GCA(N)) then
+              OKT = OKT.and.EqC(Q,GPA(Q,N))
+            Else
+              OKT = OKT.and.EqP(Q,GPA(Q,N))
+            EndIf
+          EndDo
+          If(OKT) then
+            NG = NG+1
+            GP(:,NG) = GPA(:,N)
+            GC(NG) = GCA(N)
+          EndIf
+        EndDo
+        Call MQC_R4Symm_Best_Class(GP,GC,NG,TypeCode.ne.3,NO,NewClass,Ord,NewPlain,Found)
+        If(Found) then
+          Call MQC_Allocate_R4Tensor(NO(1),NO(2),NO(3),NO(4),R4Out,my_Type, &
+            MQC_R4Symm_With_Order(NewClass,Ord,NewPlain))
+        Else
+!         S_1 layout: positions with equal (or conjugate) transforms share a basis
+          Do Q = 1, 4
+            GID(Q) = int(Q)
+            Do Q2 = 1, Q-1
+              If(EqP(Q,Q2).or.EqC(Q,Q2)) then
+                GID(Q) = GID(Q2)
+                Exit
+              EndIf
+            EndDo
+          EndDo
+          Call MQC_R4Symm_Layout_Class(GID,GID,NewClass,Ord)
+          Call MQC_Allocate_R4Tensor(NO(1),NO(2),NO(3),NO(4),R4Out,my_Type,NewClass,Ord)
+        EndIf
+        PackC = MQC_R4Tensor_HaveSymmetric(R4Out)
+        RowFold = .False.
+        ColFold = .False.
+        Do N = 1, NG
+          If(GP(1,N).eq.2.and.GP(3,N).ge.3) RowFold = .True.
+          If(GP(1,N).eq.1.and.GP(3,N).eq.4) ColFold = .True.
+        EndDo
+        InFold = InFold.and.NI(1).eq.NI(2)
+!       conjugate slice fold (half 1, slices x1 >= x2): an operation 2143 of R4Out, with
+!       conjugation CjFold, gives Mid(x2x1,(a3,a4)) = Mid(x1x2,(a4,a3)) (conjugated if
+!       CjFold); used when the plain swap 2134 (InFold) is not available and the column
+!       list is not folded (the swapped column (a4,a3) must be in it)
+        InFoldC = .False.
+        CjFold = .False.
+        If(.not.InFold.and..not.ColFold.and.NI(1).eq.NI(2).and.NO(3).eq.NO(4)) then
+          Do N = 1, NG
+            If(All(GP(:,N).eq.[2,1,4,3])) then
+              InFoldC = .True.
+              CjFold = GC(N)
+              Exit
+            EndIf
+          EndDo
+        EndIf
+!       exchange (3412) with equal pair lists (both pairs folded or both unfolded, equal
+!       dims): half 2 computes only the bra pairs >= the ket pair (the scatter fills the
+!       others). A row fold without a column fold is dropped for it (the row fold saves
+!       about 1/4 of half 2, the exchange about 1/2)
+        ExchFold = .False.
+        If(NO(1).eq.NO(3).and.NO(2).eq.NO(4).and..not.DiagT(1).and..not.DiagT(2)) then
+          Do N = 1, NG
+            If(All(GP(:,N).eq.[3,4,1,2])) then
+              ExchFold = .True.
+              Exit
+            EndIf
+          EndDo
+        EndIf
+        If(ExchFold.and.RowFold.and..not.ColFold) RowFold = .False.
+        ExchFold = ExchFold.and.(RowFold.eqv.ColFold)
+
+!       pair lists
+        Call MQC_R4Symm_Pairs(NI(1),NI(2),InFold.or.InFoldC,R1A,R1B)
+        Call MQC_R4Symm_Pairs(NO(3),NO(4),ColFold,C1A,C1B)
+        Call MQC_R4Symm_Pairs(NO(1),NO(2),RowFold,R2A,R2B)
+        NR1 = Size(R1A)
+        NC1 = Size(C1A)
+        NR2 = Size(R2A)
+
+!       half 1: Mid(r,c) = (T3^T S T4)(a3,a4) for the slice S = R4(x1,x2,:,:)
+        Select Case(TypeCode)
+        Case(1)
+          Allocate(MidI(NR1,NC1))
+        Case(2)
+          Allocate(MidR(NR1,NC1))
+        Case(3)
+          Allocate(MidC(NR1,NC1))
+        Case Default
+          Call MQC_Error_I('MQC_R4Tensor_Trans_Full: unknown case in Half 1', 6, 'TypeCode', TypeCode)
+        End Select
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(TA,FullA,R1A,R1B,C1A,C1B,NI,NO,NR1,NC1,TypeCode, &
+!$OMP   TT,DiagT,ColFold,MidI,MidR,MidC,oneR,zeroR,oneC,zeroC), PRIVATE(C)
+        Do R = 1, NR1
+          Select Case(TypeCode)
+          Case(1)
+            Block
+              Integer(kind=int64),Dimension(NI(3),NI(4))::S
+              Integer(kind=int64),Dimension(NI(3),NI(4))::SL
+              Logical,Dimension(NI(3),NI(4))::CJ
+              Integer(kind=int64),Dimension(NI(3),NO(4))::U
+              Integer(kind=int64),Dimension(NO(3),NO(4))::H
+              Integer(kind=int64)::A3,A4
+              If(FullA) then
+                S = TA%ITen(R1A(R),R1B(R),:,:)
+              Else
+                Call MQC_R4Tensor_Slice_Slots(TA,R1A(R),R1B(R),SL,CJ)
+                Do A4 = 1, NI(4)
+                  Do A3 = 1, NI(3)
+                    S(A3,A4) = TA%ITen(SL(A3,A4),1,1,1)
+                  EndDo
+                EndDo
+              EndIf
+              If(DiagT(4)) then
+                Do A4 = 1, NO(4)
+                  U(:,A4) = S(:,A4)*TT(4)%I(A4,A4)
+                EndDo
+              Else
+                U = MatMul(S,TT(4)%I)
+              EndIf
+              If(DiagT(3)) then
+                Do A3 = 1, NO(3)
+                  H(A3,:) = TT(3)%I(A3,A3)*U(A3,:)
+                EndDo
+              Else
+                H = MatMul(Transpose(TT(3)%I),U)
+              EndIf
+              Do C = 1, NC1
+                MidI(R,C) = H(C1A(C),C1B(C))
+              EndDo
+            End Block
+          Case(2)
+            Block
+              Real(kind=real64),Dimension(NI(3),NI(4))::S
+              Integer(kind=int64),Dimension(NI(3),NI(4))::SL
+              Logical,Dimension(NI(3),NI(4))::CJ
+              Real(kind=real64),Dimension(NI(3),NO(4))::U
+              Real(kind=real64),Dimension(NO(3),NO(4))::H
+              Integer(kind=int64)::A3,A4
+              If(FullA) then
+                S = TA%RTen(R1A(R),R1B(R),:,:)
+              Else
+                Call MQC_R4Tensor_Slice_Slots(TA,R1A(R),R1B(R),SL,CJ)
+                Do A4 = 1, NI(4)
+                  Do A3 = 1, NI(3)
+                    S(A3,A4) = TA%RTen(SL(A3,A4),1,1,1)
+                  EndDo
+                EndDo
+              EndIf
+              If(DiagT(4)) then
+                Do A4 = 1, NO(4)
+                  U(:,A4) = S(:,A4)*TT(4)%R(A4,A4)
+                EndDo
+              Else
+                Call DGEMM('N','N',int(NI(3),kind=MQC_BlasInt),int(NO(4),kind=MQC_BlasInt), &
+                  int(NI(4),kind=MQC_BlasInt),oneR,S,int(NI(3),kind=MQC_BlasInt),TT(4)%R, &
+                  int(NI(4),kind=MQC_BlasInt),zeroR,U,int(NI(3),kind=MQC_BlasInt))
+              EndIf
+              If(DiagT(3)) then
+                Do A3 = 1, NO(3)
+                  H(A3,:) = TT(3)%R(A3,A3)*U(A3,:)
+                EndDo
+              Else
+                If(ColFold) then
+                  Call DGEMMT('L','T','N',int(NO(3),kind=MQC_BlasInt), &
+                    int(NI(3),kind=MQC_BlasInt),oneR,TT(3)%R,int(NI(3),kind=MQC_BlasInt),U, &
+                    int(NI(3),kind=MQC_BlasInt),zeroR,H,int(NO(3),kind=MQC_BlasInt))
+                Else
+                  Call DGEMM('T','N',int(NO(3),kind=MQC_BlasInt),int(NO(4),kind=MQC_BlasInt), &
+                    int(NI(3),kind=MQC_BlasInt),oneR,TT(3)%R,int(NI(3),kind=MQC_BlasInt),U, &
+                    int(NI(3),kind=MQC_BlasInt),zeroR,H,int(NO(3),kind=MQC_BlasInt))
+                EndIf
+              EndIf
+              Do C = 1, NC1
+                MidR(R,C) = H(C1A(C),C1B(C))
+              EndDo
+            End Block
+          Case(3)
+            Block
+              Complex(kind=real64),Dimension(NI(3),NI(4))::S
+              Integer(kind=int64),Dimension(NI(3),NI(4))::SL
+              Logical,Dimension(NI(3),NI(4))::CJ
+              Complex(kind=real64),Dimension(NI(3),NO(4))::U
+              Complex(kind=real64),Dimension(NO(3),NO(4))::H
+              Integer(kind=int64)::A3,A4
+              If(FullA) then
+                S = TA%CTen(R1A(R),R1B(R),:,:)
+              Else
+                Call MQC_R4Tensor_Slice_Slots(TA,R1A(R),R1B(R),SL,CJ)
+                Do A4 = 1, NI(4)
+                  Do A3 = 1, NI(3)
+                    S(A3,A4) = TA%CTen(SL(A3,A4),1,1,1)
+                    If(CJ(A3,A4)) S(A3,A4) = Conjg(S(A3,A4))
+                  EndDo
+                EndDo
+              EndIf
+              If(DiagT(4)) then
+                Do A4 = 1, NO(4)
+                  U(:,A4) = S(:,A4)*TT(4)%Z(A4,A4)
+                EndDo
+              Else
+                Call ZGEMM('N','N',int(NI(3),kind=MQC_BlasInt),int(NO(4),kind=MQC_BlasInt), &
+                  int(NI(4),kind=MQC_BlasInt),oneC,S,int(NI(3),kind=MQC_BlasInt),TT(4)%Z, &
+                  int(NI(4),kind=MQC_BlasInt),zeroC,U,int(NI(3),kind=MQC_BlasInt))
+              EndIf
+              If(DiagT(3)) then
+                Do A3 = 1, NO(3)
+                  H(A3,:) = TT(3)%Z(A3,A3)*U(A3,:)
+                EndDo
+              Else
+                If(ColFold) then
+                  Call ZGEMMT('L','T','N',int(NO(3),kind=MQC_BlasInt), &
+                    int(NI(3),kind=MQC_BlasInt),oneC,TT(3)%Z,int(NI(3),kind=MQC_BlasInt),U, &
+                    int(NI(3),kind=MQC_BlasInt),zeroC,H,int(NO(3),kind=MQC_BlasInt))
+                Else
+                  Call ZGEMM('T','N',int(NO(3),kind=MQC_BlasInt),int(NO(4),kind=MQC_BlasInt), &
+                    int(NI(3),kind=MQC_BlasInt),oneC,TT(3)%Z,int(NI(3),kind=MQC_BlasInt),U, &
+                    int(NI(3),kind=MQC_BlasInt),zeroC,H,int(NO(3),kind=MQC_BlasInt))
+                EndIf
+              EndIf
+              Do C = 1, NC1
+                MidC(R,C) = H(C1A(C),C1B(C))
+              EndDo
+            End Block
+          Case Default
+            Call MQC_Error_I('MQC_R4Tensor_Trans_Full: unknown case in Half 1', 6, 'TypeCode', TypeCode)
+          End Select
+        EndDo
+!$OMP END PARALLEL DO
+
+!       half 2: Res(r2,c) = (T1^T W T2)(a1,a2) for W(x1,x2) = Mid(.,c)
+        Select Case(TypeCode)
+        Case(1)
+          Allocate(ResI(NR2,NC1))
+        Case(2)
+          Allocate(ResR(NR2,NC1))
+        Case(3)
+          Allocate(ResC(NR2,NC1))
+        Case Default
+          Call MQC_Error_I('MQC_R4Tensor_Trans_Full: unknown case in Half 2', 6, 'TypeCode', TypeCode)
+        End Select
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(R1A,R1B,R2A,R2B,NI,NO,NR1,NR2,NC1,TypeCode,InFold, &
+!$OMP   InFoldC,CjFold,C1A,TT,DiagT,RowFold,ExchFold,C1B,MidI,MidR,MidC,ResI,ResR,ResC,oneR, &
+!$OMP   zeroR,oneC,zeroC), PRIVATE(R,C2)
+        Do C = 1, NC1
+!         swapped column (a4,a3) in the unfolded column-major list
+          C2 = C1B(C)+(C1A(C)-1)*NO(3)
+          Select Case(TypeCode)
+          Case(1)
+            Block
+              Integer(kind=int64),Dimension(NI(1),NI(2))::W
+              Integer(kind=int64),Dimension(NI(1),NO(2))::U
+              Integer(kind=int64),Dimension(NO(1),NO(2))::H
+              Integer(kind=int64)::A1,A2
+              Do R = 1, NR1
+                W(R1A(R),R1B(R)) = MidI(R,C)
+                If(InFold) W(R1B(R),R1A(R)) = MidI(R,C)
+                If(InFoldC.and.R1A(R).ne.R1B(R)) W(R1B(R),R1A(R)) = MidI(R,C2)
+              EndDo
+              If(DiagT(2)) then
+                Do A2 = 1, NO(2)
+                  U(:,A2) = W(:,A2)*TT(2)%I(A2,A2)
+                EndDo
+              Else
+                U = MatMul(W,TT(2)%I)
+              EndIf
+              If(DiagT(1)) then
+                Do A1 = 1, NO(1)
+                  H(A1,:) = TT(1)%I(A1,A1)*U(A1,:)
+                EndDo
+              Else
+                H = MatMul(Transpose(TT(1)%I),U)
+              EndIf
+              Do R = 1, NR2
+                ResI(R,C) = H(R2A(R),R2B(R))
+              EndDo
+            End Block
+          Case(2)
+            Block
+              Real(kind=real64),Dimension(NI(1),NI(2))::W
+              Real(kind=real64),Dimension(NI(1),NO(2))::U
+              Real(kind=real64),Dimension(NO(1),NO(2))::H
+              Integer(kind=int64)::A1,A2,L0,M
+              Do R = 1, NR1
+                W(R1A(R),R1B(R)) = MidR(R,C)
+                If(InFold) W(R1B(R),R1A(R)) = MidR(R,C)
+                If(InFoldC.and.R1A(R).ne.R1B(R)) W(R1B(R),R1A(R)) = MidR(R,C2)
+              EndDo
+!             with the exchange only the columns a2 >= a4 of H are needed
+              L0 = 1
+              If(ExchFold) L0 = C1B(C)
+              M = NO(2)-L0+1
+              If(DiagT(2)) then
+                Do A2 = L0, NO(2)
+                  U(:,A2) = W(:,A2)*TT(2)%R(A2,A2)
+                EndDo
+              Else
+                Call DGEMM('N','N',int(NI(1),kind=MQC_BlasInt),int(M,kind=MQC_BlasInt), &
+                  int(NI(2),kind=MQC_BlasInt),oneR,W,int(NI(1),kind=MQC_BlasInt),TT(2)%R(1,L0), &
+                  int(NI(2),kind=MQC_BlasInt),zeroR,U(1,L0),int(NI(1),kind=MQC_BlasInt))
+              EndIf
+              If(DiagT(1)) then
+                Do A1 = 1, NO(1)
+                  H(A1,L0:) = TT(1)%R(A1,A1)*U(A1,L0:)
+                EndDo
+              ElseIf(RowFold) then
+!               lower triangle (a1 >= a2) of the rows and columns L0..
+                Call DGEMMT('L','T','N',int(M,kind=MQC_BlasInt), &
+                  int(NI(1),kind=MQC_BlasInt),oneR,TT(1)%R(1,L0),int(NI(1),kind=MQC_BlasInt),U(1,L0), &
+                  int(NI(1),kind=MQC_BlasInt),zeroR,H(L0,L0),int(NO(1),kind=MQC_BlasInt))
+              Else
+                Call DGEMM('T','N',int(NO(1),kind=MQC_BlasInt),int(M,kind=MQC_BlasInt), &
+                  int(NI(1),kind=MQC_BlasInt),oneR,TT(1)%R,int(NI(1),kind=MQC_BlasInt),U(1,L0), &
+                  int(NI(1),kind=MQC_BlasInt),zeroR,H(1,L0),int(NO(1),kind=MQC_BlasInt))
+              EndIf
+              Do R = 1, NR2
+                If(ExchFold.and.R.lt.C) Cycle
+                ResR(R,C) = H(R2A(R),R2B(R))
+              EndDo
+            End Block
+          Case(3)
+            Block
+              Complex(kind=real64),Dimension(NI(1),NI(2))::W
+              Complex(kind=real64),Dimension(NI(1),NO(2))::U
+              Complex(kind=real64),Dimension(NO(1),NO(2))::H
+              Integer(kind=int64)::A1,A2,L0,M
+              Do R = 1, NR1
+                W(R1A(R),R1B(R)) = MidC(R,C)
+                If(InFold) W(R1B(R),R1A(R)) = MidC(R,C)
+                If(InFoldC.and.R1A(R).ne.R1B(R)) then
+                  If(CjFold) then
+                    W(R1B(R),R1A(R)) = Conjg(MidC(R,C2))
+                  Else
+                    W(R1B(R),R1A(R)) = MidC(R,C2)
+                  EndIf
+                EndIf
+              EndDo
+!             with the exchange only the columns a2 >= a4 of H are needed
+              L0 = 1
+              If(ExchFold) L0 = C1B(C)
+              M = NO(2)-L0+1
+              If(DiagT(2)) then
+                Do A2 = L0, NO(2)
+                  U(:,A2) = W(:,A2)*TT(2)%Z(A2,A2)
+                EndDo
+              Else
+                Call ZGEMM('N','N',int(NI(1),kind=MQC_BlasInt),int(M,kind=MQC_BlasInt), &
+                  int(NI(2),kind=MQC_BlasInt),oneC,W,int(NI(1),kind=MQC_BlasInt),TT(2)%Z(1,L0), &
+                  int(NI(2),kind=MQC_BlasInt),zeroC,U(1,L0),int(NI(1),kind=MQC_BlasInt))
+              EndIf
+              If(DiagT(1)) then
+                Do A1 = 1, NO(1)
+                  H(A1,L0:) = TT(1)%Z(A1,A1)*U(A1,L0:)
+                EndDo
+              ElseIf(RowFold) then
+!               lower triangle (a1 >= a2) of the rows and columns L0..
+                Call ZGEMMT('L','T','N',int(M,kind=MQC_BlasInt), &
+                  int(NI(1),kind=MQC_BlasInt),oneC,TT(1)%Z(1,L0),int(NI(1),kind=MQC_BlasInt),U(1,L0), &
+                  int(NI(1),kind=MQC_BlasInt),zeroC,H(L0,L0),int(NO(1),kind=MQC_BlasInt))
+              Else
+                Call ZGEMM('T','N',int(NO(1),kind=MQC_BlasInt),int(M,kind=MQC_BlasInt), &
+                  int(NI(1),kind=MQC_BlasInt),oneC,TT(1)%Z,int(NI(1),kind=MQC_BlasInt),U(1,L0), &
+                  int(NI(1),kind=MQC_BlasInt),zeroC,H(1,L0),int(NO(1),kind=MQC_BlasInt))
+              EndIf
+              Do R = 1, NR2
+                If(ExchFold.and.R.lt.C) Cycle
+                ResC(R,C) = H(R2A(R),R2B(R))
+              EndDo
+            End Block
+          Case Default
+            Call MQC_Error_I('MQC_R4Tensor_Trans_Full: unknown case in Half 2', 6, 'TypeCode', TypeCode)
+          End Select
+        EndDo
+!$OMP END PARALLEL DO
+
+!       each computed value to its orbit in R4Out: one write to its slot when every
+!       orbit is one slot (class group = group of R4Out), else to every element
+        OneWrite = .False.
+        If(PackC) then
+          Call MQC_R4Symm_View_Group(R4Out%Storage,R4Out%IndexOrder,R4Out%PlainSymm, &
+            TypeCode.ne.3,HP,HC,NH)
+          OneWrite = NH.eq.NG
+        EndIf
+        Do C = 1, NC1
+          Do R = 1, NR2
+            If(ExchFold.and.R.lt.C) Cycle
+            X = [R2A(R),R2B(R),C1A(C),C1B(C)]
+            If(OneWrite) then
+              SL = MQC_R4Tensor_Slot(R4Out,X(1),X(2),X(3),X(4),Cj)
+              Select Case(TypeCode)
+              Case(1)
+                R4Out%ITen(SL,1,1,1) = ResI(R,C)
+              Case(2)
+                R4Out%RTen(SL,1,1,1) = ResR(R,C)
+              Case(3)
+                VC = ResC(R,C)
+                If(Cj) VC = Conjg(VC)
+                R4Out%CTen(SL,1,1,1) = VC
+              Case Default
+                Call MQC_Error_I('MQC_R4Tensor_Trans_Full: unknown case in Scatter', 6, &
+                  'TypeCode', TypeCode)
+              End Select
+            Else
+              Do N = 1, NG
+                Y = X(GP(:,N))
+                If(PackC) then
+                  SL = MQC_R4Tensor_Slot(R4Out,Y(1),Y(2),Y(3),Y(4),Cj)
+                Else
+                  SL = 0
+                  Cj = .False.
+                EndIf
+                Select Case(TypeCode)
+                Case(1)
+                  If(PackC) then
+                    R4Out%ITen(SL,1,1,1) = ResI(R,C)
+                  Else
+                    R4Out%ITen(Y(1),Y(2),Y(3),Y(4)) = ResI(R,C)
+                  EndIf
+                Case(2)
+                  If(PackC) then
+                    R4Out%RTen(SL,1,1,1) = ResR(R,C)
+                  Else
+                    R4Out%RTen(Y(1),Y(2),Y(3),Y(4)) = ResR(R,C)
+                  EndIf
+                Case(3)
+                  VC = ResC(R,C)
+                  If(GC(N).neqv.Cj) VC = Conjg(VC)
+                  If(PackC) then
+                    R4Out%CTen(SL,1,1,1) = VC
+                  Else
+                    R4Out%CTen(Y(1),Y(2),Y(3),Y(4)) = VC
+                  EndIf
+                Case Default
+                  Call MQC_Error_I('MQC_R4Tensor_Trans_Full: unknown case in Scatter', 6, &
+                    'TypeCode', TypeCode)
+                End Select
+              EndDo
+            EndIf
+          EndDo
+        EndDo
+      EndIf
+
+      End Function MQC_R4Tensor_Trans_Full
+!
+!
+!     PROCEDURE MQC_R4Tensor_Slice_Slots
+!
+!>    \brief <b> MQC_R4Tensor_Slice_Slots returns the storage slots of a slice
+!>    T(X1,X2,:,:) of a packed MQC_R4Tensor</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    SL(a3,a4) and CJ(a3,a4) are the slot and conjugation flag of the view
+!>    element (X1,X2,a3,a4) (as MQC_R4Tensor_Slot). With the canonical view
+!>    (IndexOrder 1234) the plain classes (R_8_1234, R_4_12_34, S_2_13_24,
+!>    R_2_12_3_4) compute the X1,X2 part of the hash once and the rest inline;
+!>    S_4_1234, S_2_12_34 and views call MQC_R4Symm_Hash_Code per element
+!>    without the MQC_R4Tensor_Slot layers.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] T
+!>    \verbatim
+!>        T is Type(MQC_R4Tensor), packed
+!>    \endverbatim
+!>
+!>    \param[in] X1
+!>    \verbatim
+!>        X1 is Integer(kind=int64), view index 1 of the slice
+!>    \endverbatim
+!>
+!>    \param[in] X2
+!>    \verbatim
+!>        X2 is Integer(kind=int64), view index 2 of the slice
+!>    \endverbatim
+!>
+!>    \param[out] SL
+!>    \verbatim
+!>        SL is Integer(kind=int64),Dimension(:,:), the slots (view dimensions
+!>        3 and 4)
+!>    \endverbatim
+!>
+!>    \param[out] CJ
+!>    \verbatim
+!>        CJ is Logical,Dimension(:,:), TRUE where the stored value is the
+!>        conjugate of the element
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Slice_Slots(T,X1,X2,SL,CJ)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(In)::T
+      Integer(kind=int64),Intent(In)::X1,X2
+      Integer(kind=int64),Dimension(:,:),Intent(Out)::SL
+      Logical,Dimension(:,:),Intent(Out)::CJ
+      Integer(kind=int64),Dimension(4)::D,X
+      Integer(kind=int64)::A3,A4,B,M,P,Off,OffB,G,SB,SK,S1,S2
+      Logical::Cj1,FB,DB,FK,DK,F1,F2,D1
+
+      D = MQC_R4Symm_ToChem(T%IndexOrder,[T%I,T%J,T%K,T%L])
+      CJ = .False.
+      If(All(T%IndexOrder.eq.[1,2,3,4])) then
+        Select Case(T%SymCode)
+        Case(1)
+          B = MQC_Tri_Index(X1,X2)
+          Do A4 = 1, Size(SL,2)
+            Do A3 = 1, Size(SL,1)
+              SL(A3,A4) = MQC_Tri_Index(B,MQC_Tri_Index(A3,A4))
+            EndDo
+          EndDo
+        Case(2)
+          Off = D(1)*(D(1)-1)/2
+          Call MQC_R4Symm_PairIndex(X1,X2,D(1),SB,FB,DB)
+          Do A4 = 1, Size(SL,2)
+            Do A3 = 1, Size(SL,1)
+              Call MQC_R4Symm_PairIndex(A3,A4,D(1),SK,FK,DK)
+              If(SB.ge.SK) then
+                S1 = SB
+                S2 = SK
+                F1 = FB
+                F2 = FK
+                D1 = DB
+              Else
+                S1 = SK
+                S2 = SB
+                F1 = FK
+                F2 = FB
+                D1 = DK
+              EndIf
+              If(D1) then
+                CJ(A3,A4) = F2
+              Else
+                CJ(A3,A4) = F1
+              EndIf
+              If(S1.le.Off) then
+                G = 0
+                If(F1.neqv.F2) G = 1
+                SL(A3,A4) = S1*(S1-1)+2*(S2-1)+G+1
+              Else
+                SL(A3,A4) = Off*(Off+1)/2+S1*(S1-1)/2+S2
+              EndIf
+            EndDo
+          EndDo
+        Case(3)
+          B = MQC_Tri_Index(X1,X2)
+          M = D(1)*(D(1)+1)/2
+          Do A4 = 1, Size(SL,2)
+            Do A3 = 1, Size(SL,1)
+              SL(A3,A4) = (MQC_Tri_Index(A3,A4)-1)*M+B
+            EndDo
+          EndDo
+        Case(4)
+          Off = D(1)*(D(1)-1)/2
+          OffB = D(3)*(D(3)-1)/2
+          M = 2*OffB+D(3)
+          Call MQC_R4Symm_PairIndex(X1,X2,D(1),SB,FB,DB)
+          Do A4 = 1, Size(SL,2)
+            Do A3 = 1, Size(SL,1)
+              Call MQC_R4Symm_PairIndex(A3,A4,D(3),SK,FK,DK)
+              If(.not.DB) then
+                CJ(A3,A4) = FB
+                If(.not.DK) then
+                  G = 0
+                  If(FB.neqv.FK) G = 1
+                  SL(A3,A4) = (SB-1)*M+2*(SK-1)+G+1
+                Else
+                  SL(A3,A4) = (SB-1)*M+2*OffB+(SK-OffB)
+                EndIf
+              Else
+                CJ(A3,A4) = FK
+                SL(A3,A4) = Off*M+(SB-Off-1)*(OffB+D(3))+SK
+              EndIf
+            EndDo
+          EndDo
+        Case(5)
+          P = X1+D(1)*(X2-1)
+          Do A4 = 1, Size(SL,2)
+            Do A3 = 1, Size(SL,1)
+              SL(A3,A4) = MQC_Tri_Index(P,A3+D(1)*(A4-1))
+            EndDo
+          EndDo
+        Case(6)
+          B = MQC_Tri_Index(X1,X2)
+          M = D(1)*(D(1)+1)/2
+          Do A4 = 1, Size(SL,2)
+            Do A3 = 1, Size(SL,1)
+              SL(A3,A4) = B+M*((A3-1)+D(3)*(A4-1))
+            EndDo
+          EndDo
+        Case Default
+          Call MQC_Error_I('Storage code not packed in MQC_R4Tensor_Slice_Slots', 6, 'SymCode', T%SymCode)
+        End Select
+      Else
+        Do A4 = 1, Size(SL,2)
+          Do A3 = 1, Size(SL,1)
+            X(T%IndexOrder) = [X1,X2,A3,A4]
+            SL(A3,A4) = MQC_R4Symm_Hash_Code(T%SymCode,X,D,Cj1)
+            CJ(A3,A4) = Cj1
+          EndDo
+        EndDo
+      EndIf
+      If(T%PlainSymm) CJ = .False.
+      If(T%DoConjg) CJ = .not.CJ
+
+      End Subroutine MQC_R4Tensor_Slice_Slots
+!
+!
+!     PROCEDURE MQC_R4Trans_Mat_Type
+!
+!>    \brief <b> MQC_R4Trans_Mat_Type raises a data type code to the type of an MQC
+!>    matrix</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    TypeCode (1 integer, 2 real, 3 complex) becomes at least the matrix type.
+!>    The matrix is not converted.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Mat
+!>    \verbatim
+!>        Mat is Type(MQC_Matrix)
+!>    \endverbatim
+!>
+!>    \param[in,out] TypeCode
+!>    \verbatim
+!>        TypeCode is Integer(kind=int64)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Trans_Mat_Type(Mat,TypeCode)
+
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::Mat
+      Integer(kind=int64),Intent(InOut)::TypeCode
+
+      If(.not.MQC_Matrix_isAllocated(Mat)) Call MQC_Error_A( &
+        'Unallocated matrix in MQC_R4Tensor_Trans_Full', 6, 'Mat%Storage', Mat%Storage)
+      If(MQC_Matrix_HaveComplex(Mat)) then
+        TypeCode = 3
+      ElseIf(MQC_Matrix_HaveReal(Mat)) then
+        If(TypeCode.lt.2) TypeCode = 2
+      EndIf
+
+      End Subroutine MQC_R4Trans_Mat_Type
+!
+!
+!     PROCEDURE MQC_R4Trans_Unpack
+!
+!>    \brief <b> MQC_R4Trans_Unpack converts an MQC matrix once to a full array of
+!>    a given data type</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The full array (packed and diagonal storages unpacked) is stored in F%I,
+!>    F%R or F%Z for TypeCode 1, 2 or 3.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Mat,TypeCode
+!>    \verbatim
+!>        Mat is Type(MQC_Matrix); TypeCode is Integer(kind=int64)
+!>    \endverbatim
+!>
+!>    \param[out] F
+!>    \verbatim
+!>        F is Type(MQC_R4Trans_T)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Trans_Unpack(Mat,TypeCode,F)
+
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::Mat
+      Integer(kind=int64),Intent(In)::TypeCode
+      Type(MQC_R4Trans_T),Intent(Out)::F
+
+      Select Case(TypeCode)
+      Case(1)
+        Call MQC_Matrix_To_Array(F%I,Mat,Unpack=.True.)
+      Case(2)
+        Call MQC_Matrix_To_Array(F%R,Mat,Unpack=.True.)
+      Case(3)
+        Call MQC_Matrix_To_Array(F%Z,Mat,Unpack=.True.)
+      Case Default
+        Call MQC_Error_I('MQC_R4Trans_Unpack: unknown case in TypeCode', 6, 'TypeCode', TypeCode)
+      End Select
+
+      End Subroutine MQC_R4Trans_Unpack
+!
+!
+!     PROCEDURE MQC_R4Trans_Mat_Info
+!
+!>    \brief <b> MQC_R4Trans_Mat_Info returns the real values and symmetry label of
+!>    a matrix of MQC_R4Tensor_Trans_Full</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    IsReal is TRUE for a real or integer matrix and, with TestReal, for a
+!>    complex matrix whose imaginary parts (read from its full array F) are all
+!>    <= Thresh. Lab is the matrix label (MQC_Matrix_Get_Symmetry); with
+!>    TestLab an 'unknown' label is tested for 'symmetric', then 'hermitian'
+!>    (the labels that relate the row and column use of a matrix). IsDiag is
+!>    TRUE for a 'diagonal' label or a square matrix with exactly zero
+!>    off-diagonal elements (its transform is a scaling).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Mat,F,TestReal,TestLab,Thresh
+!>    \verbatim
+!>        Mat is Type(MQC_Matrix); F is Type(MQC_R4Trans_T) (its full array);
+!>        TestReal, TestLab are Logical; Thresh is Real(kind=real64)
+!>    \endverbatim
+!>
+!>    \param[out] IsReal,IsDiag,Lab
+!>    \verbatim
+!>        IsReal, IsDiag are Logical; Lab is Character(Len=64)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Trans_Mat_Info(Mat,F,TestReal,TestLab,Thresh,IsReal,IsDiag,Lab)
+
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::Mat
+      Type(MQC_R4Trans_T),Intent(In)::F
+      Logical,Intent(In)::TestReal,TestLab
+      Real(kind=real64),Intent(In)::Thresh
+      Logical,Intent(Out)::IsReal,IsDiag
+      Character(Len=64),Intent(Out)::Lab
+      Integer(kind=int64)::I,J
+
+      IsReal = .not.MQC_Matrix_HaveComplex(Mat)
+      If(.not.IsReal.and.TestReal) IsReal = MaxVal(Abs(Aimag(F%Z))).le.Thresh
+      Lab = MQC_Matrix_Get_Symmetry(Mat)
+      If(Trim(Lab).eq.'unknown'.and.TestLab) then
+        If(MQC_Matrix_Test_Symmetric(Mat,'symmetric')) then
+          Lab = 'symmetric'
+        ElseIf(MQC_Matrix_Test_Symmetric(Mat,'hermitian')) then
+          Lab = 'hermitian'
+        EndIf
+      EndIf
+!     diagonal: label, or square with exactly zero off-diagonal elements
+      IsDiag = Trim(MQC_Matrix_Get_Symmetry(Mat)).eq.'diagonal'
+      If(.not.IsDiag.and.Size(Mat,1).eq.Size(Mat,2)) then
+        IsDiag = .True.
+        Scan: Do J = 1, Size(Mat,2)
+          Do I = 1, Size(Mat,1)
+            If(I.eq.J) Cycle
+            If(Allocated(F%I)) then
+              IsDiag = F%I(I,J).eq.0
+            ElseIf(Allocated(F%R)) then
+              IsDiag = F%R(I,J).eq.0.0
+            Else
+              IsDiag = F%Z(I,J).eq.(0.0,0.0)
+            EndIf
+            If(.not.IsDiag) Exit Scan
+          EndDo
+        EndDo Scan
+      EndIf
+
+      End Subroutine MQC_R4Trans_Mat_Info
+!
+!
+!     PROCEDURE MQC_R4Trans_Make_T
+!
+!>    \brief <b> MQC_R4Trans_Make_T builds the transform of one index of
+!>    MQC_R4Tensor_Trans_Full</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    T is the full matrix array F (UseCol: its transpose; DoConj and complex
+!>    data: its conjugate), stored in T%I, T%R or T%Z. NIn, NOut are its
+!>    dimensions (input, output index of R4); IsZero is TRUE when every
+!>    element is zero.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] F,UseCol,DoConj,TypeCode
+!>    \verbatim
+!>        F is Type(MQC_R4Trans_T) (MQC_R4Trans_Unpack); UseCol, DoConj are
+!>        Logical; TypeCode is Integer(kind=int64)
+!>    \endverbatim
+!>
+!>    \param[out] T,NIn,NOut,IsZero
+!>    \verbatim
+!>        T is Type(MQC_R4Trans_T); NIn, NOut are Integer(kind=int64); IsZero
+!>        is Logical
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Trans_Make_T(F,UseCol,DoConj,TypeCode,T,NIn,NOut,IsZero)
+
+      Implicit None
+      Type(MQC_R4Trans_T),Intent(In)::F
+      Logical,Intent(In)::UseCol,DoConj
+      Integer(kind=int64),Intent(In)::TypeCode
+      Type(MQC_R4Trans_T),Intent(Out)::T
+      Integer(kind=int64),Intent(Out)::NIn,NOut
+      Logical,Intent(Out)::IsZero
+
+      Select Case(TypeCode)
+      Case(1)
+        If(UseCol) then
+          T%I = Transpose(F%I)
+        Else
+          T%I = F%I
+        EndIf
+        NIn = Size(T%I,1)
+        NOut = Size(T%I,2)
+        IsZero = All(T%I.eq.0)
+      Case(2)
+        If(UseCol) then
+          T%R = Transpose(F%R)
+        Else
+          T%R = F%R
+        EndIf
+        NIn = Size(T%R,1)
+        NOut = Size(T%R,2)
+        IsZero = All(T%R.eq.0.0)
+      Case(3)
+        If(UseCol.and.DoConj) then
+          T%Z = Conjg(Transpose(F%Z))
+        ElseIf(UseCol) then
+          T%Z = Transpose(F%Z)
+        ElseIf(DoConj) then
+          T%Z = Conjg(F%Z)
+        Else
+          T%Z = F%Z
+        EndIf
+        NIn = Size(T%Z,1)
+        NOut = Size(T%Z,2)
+        IsZero = All(T%Z.eq.(0.0,0.0))
+      Case Default
+        Call MQC_Error_I('MQC_R4Trans_Make_T: unknown case in TypeCode', 6, 'TypeCode', TypeCode)
+      End Select
+
+      End Subroutine MQC_R4Trans_Make_T
+!
+!
+!     PROCEDURE MQC_R4Trans_Relation
+!
+!>    \brief <b> MQC_R4Trans_Relation returns whether the transforms of two
+!>    indexes of MQC_R4Tensor_Trans_Full are equal or conjugate</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    First the relation of the underlying matrices (before the conj flags):
+!>    same index, or same matrix used the same way -> equal; same matrix used
+!>    by rows and by columns -> from its label (symmetric/diagonal: equal,
+!>    hermitian: conjugate); otherwise, with Grouping and equal dimensions,
+!>    numerical comparison (threshold Thresh). Real matrices are equal to their
+!>    conjugate.
+!>    Then the conj flags: different flags exchange equal and conjugate.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] SameIdx,SameMat,ColA,ColB,ConjA,ConjB,BothReal,Lab,Grouping,TypeCode,Thresh,TA,TB
+!>    \verbatim
+!>        SameIdx: the two indexes are the same; SameMat: same matrix; ColA,
+!>        ColB: used by columns; ConjA, ConjB: conj flags; BothReal: both
+!>        matrices real; Lab: label of the matrix (SameMat); TA, TB:
+!>        transforms (Type(MQC_R4Trans_T), conj flags applied).
+!>    \endverbatim
+!>
+!>    \param[out] EP,EC
+!>    \verbatim
+!>        EP, EC are Logical: T_B = T_A, T_B = conjg(T_A).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Trans_Relation(SameIdx,SameMat,ColA,ColB,ConjA,ConjB,BothReal,Lab,Grouping, &
+        TypeCode,Thresh,TA,TB,EP,EC)
+
+      Implicit None
+      Logical,Intent(In)::SameIdx,SameMat,ColA,ColB,ConjA,ConjB,BothReal,Grouping
+      Character(Len=*),Intent(In)::Lab
+      Integer(kind=int64),Intent(In)::TypeCode
+      Real(kind=real64),Intent(In)::Thresh
+      Type(MQC_R4Trans_T),Intent(In)::TA,TB
+      Logical,Intent(Out)::EP,EC
+      Logical::EEP,EEC,SameShape
+
+      EEP = .False.
+      EEC = .False.
+      If(SameIdx) then
+        EEP = .True.
+      ElseIf(SameMat.and.(ColA.eqv.ColB)) then
+        EEP = .True.
+      ElseIf(SameMat) then
+        Select Case(Trim(Lab))
+        Case('symmetric','diagonal')
+          EEP = .True.
+        Case('hermitian')
+          EEC = .True.
+        Case('antisymmetric','antihermitian','unknown')
+          Continue
+        Case Default
+          Call MQC_Error_A('Unrecognized matrix symmetry in MQC_R4Trans_Relation', 6, 'Lab', Lab)
+        End Select
+      EndIf
+      If(.not.(EEP.or.EEC).and.Grouping) then
+        Select Case(TypeCode)
+        Case(1)
+          SameShape = All(Shape(TA%I).eq.Shape(TB%I))
+          If(SameShape) EEP = All(TA%I.eq.TB%I)
+        Case(2)
+          SameShape = All(Shape(TA%R).eq.Shape(TB%R))
+          If(SameShape) EEP = MaxVal(Abs(TA%R-TB%R)).le.Thresh
+        Case(3)
+          SameShape = All(Shape(TA%Z).eq.Shape(TB%Z))
+          If(SameShape) then
+!           matrices before the conj flags: E_A = conjg^ConjA(T_A); with equal
+!           flags E_A = E_B <-> T_A = T_B, with different flags T_A = conjg(T_B)
+            If(ConjA.eqv.ConjB) then
+              EEP = MaxVal(Abs(TA%Z-TB%Z)).le.Thresh
+              EEC = MaxVal(Abs(TA%Z-Conjg(TB%Z))).le.Thresh
+            Else
+              EEP = MaxVal(Abs(TA%Z-Conjg(TB%Z))).le.Thresh
+              EEC = MaxVal(Abs(TA%Z-TB%Z)).le.Thresh
+            EndIf
+          EndIf
+        Case Default
+          Call MQC_Error_I('MQC_R4Trans_Relation: unknown case in TypeCode', 6, 'TypeCode', TypeCode)
+        End Select
+      EndIf
+      If(BothReal.and.(EEP.or.EEC)) then
+        EEP = .True.
+        EEC = .True.
+      EndIf
+!     conj flags (only complex transforms carry them)
+      If(TypeCode.eq.3.and.(ConjA.neqv.ConjB).and..not.BothReal) then
+        EP = EEC
+        EC = EEP
+      Else
+        EP = EEP
+        EC = EEC
+      EndIf
+      If(TypeCode.ne.3) EC = EP
+
+      End Subroutine MQC_R4Trans_Relation
+!
+!
+!     PROCEDURE MQC_R4Symm_Pairs
+!
+!>    \brief <b> MQC_R4Symm_Pairs lists the index pairs (a,b) of two ranges</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Column-major order (a fastest); with Folded only a >= b (NA = NB).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] NA,NB,Folded
+!>    \verbatim
+!>        NA, NB are Integer(kind=int64); Folded is Logical
+!>    \endverbatim
+!>
+!>    \param[out] PA,PB
+!>    \verbatim
+!>        PA, PB are Integer(kind=int64),Dimension(:),Allocatable
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_Pairs(NA,NB,Folded,PA,PB)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::NA,NB
+      Logical,Intent(In)::Folded
+      Integer(kind=int64),Dimension(:),Allocatable,Intent(Out)::PA,PB
+      Integer(kind=int64)::IA,IB,NP2
+
+      If(Folded) then
+        NP2 = NA*(NA+1)/2
+      Else
+        NP2 = NA*NB
+      EndIf
+      Allocate(PA(NP2),PB(NP2))
+      NP2 = 0
+      Do IB = 1, NB
+        Do IA = 1, NA
+          If(Folded.and.IA.lt.IB) Cycle
+          NP2 = NP2+1
+          PA(NP2) = IA
+          PB(NP2) = IB
+        EndDo
+      EndDo
+
+      End Subroutine MQC_R4Symm_Pairs
+!
+!
+!     PROCEDURE MQC_R4Tensor_Largest_Class
+!
+!>    \brief <b> MQC_R4Tensor_Largest_Class packs a StorFull MQC_R4Tensor in the
+!>    largest class it satisfies</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Classes by decreasing fold, each with all 24 orders, tested and packed in
+!>    one pass (MQC_R4Tensor_Build_Packed, threshold MQC_very_small); the first
+!>    that holds replaces Tensor. Unchanged when none holds.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] Tensor
+!>    \verbatim
+!>        Tensor is Type(MQC_R4Tensor)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Largest_Class(Tensor)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(InOut)::Tensor
+      Type(MQC_R4Tensor)::Tmp
+      Character(Len=10),Dimension(7)::CandName
+      Logical,Dimension(7)::CandPlain
+      Integer,Dimension(7)::CandFold
+      Integer(kind=int64),Dimension(4)::OrdT
+      Integer::Fold,Cand,P1,P2,P3,P4
+      Logical::IsRealT,OKT
+
+      CandName = [Character(Len=10)::'R_8_1234','S_4_1234','S_4_1234','R_4_12_34','S_2_12_34', &
+        'S_2_13_24','R_2_12_3_4']
+      CandPlain = [.False.,.False.,.True.,.False.,.False.,.False.,.False.]
+      CandFold = [8,4,4,4,2,2,2]
+      IsRealT = .not.MQC_R4Tensor_HaveComplex(Tensor)
+      Search: Do Fold = 8, 2, -1
+        Do Cand = 1, 7
+          If(CandFold(Cand).ne.Fold) Cycle
+          If(CandPlain(Cand).and.IsRealT) Cycle
+          Do P1 = 1, 4
+            Do P2 = 1, 4
+              Do P3 = 1, 4
+                Do P4 = 1, 4
+                  OrdT = [P1,P2,P3,P4]
+                  If(.not.MQC_R4Symm_Is_Order(OrdT)) Cycle
+                  If(.not.MQC_R4Symm_Dims_OK(CandName(Cand),Tensor%I,Tensor%J,Tensor%K,Tensor%L, &
+                    OrdT)) Cycle
+                  Call MQC_R4Tensor_Build_Packed(Tensor,CandName(Cand),OrdT,Tmp,OKT,CandPlain(Cand))
+                  If(OKT) then
+                    Tensor = Tmp
+                    Exit Search
+                  EndIf
+                EndDo
+              EndDo
+            EndDo
+          EndDo
+        EndDo
+      EndDo Search
+
+      End Subroutine MQC_R4Tensor_Largest_Class
+!
+!
+!     PROCEDURE MQC_R4Symm_Add_Op
+!
+!>    \brief <b> MQC_R4Symm_Add_Op adds an operation to a symmetry group</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Appends (P,C) to (GP,GC,NG) unless it is already there
+!>    (MQC_R4Symm_In_Group). Error beyond 48 operations.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] P,C
+!>    \verbatim
+!>        P is Integer(kind=int64),Dimension(4); C is Logical
+!>    \endverbatim
+!>
+!>    \param[in,out] GP,GC,NG
+!>    \verbatim
+!>        GP is Integer(kind=int64),Dimension(4,48); GC is Logical,Dimension(48);
+!>        NG is Integer(kind=int64)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_Add_Op(P,C,GP,GC,NG)
+
+      Implicit None
+      Integer(kind=int64),Dimension(4),Intent(In)::P
+      Logical,Intent(In)::C
+      Integer(kind=int64),Dimension(4,48),Intent(InOut)::GP
+      Logical,Dimension(48),Intent(InOut)::GC
+      Integer(kind=int64),Intent(InOut)::NG
+
+      If(NG.eq.0) then
+        NG = 1
+        GP(:,1) = P
+        GC(1) = C
+      ElseIf(.not.MQC_R4Symm_In_Group(P,C,GP,GC,NG)) then
+        If(NG.ge.48) Call MQC_Error_I('Group too large in MQC_R4Symm_Add_Op', 6, 'NG', NG)
+        NG = NG+1
+        GP(:,NG) = P
+        GC(NG) = C
+      EndIf
+
+      End Subroutine MQC_R4Symm_Add_Op
+!
+!
+!     PROCEDURE MQC_R4Symm_Close_Group
+!
+!>    \brief <b> MQC_R4Symm_Close_Group closes a set of operations under
+!>    composition</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Adds every product of two operations (permutation P1(P2), conj flags
+!>    combined) until nothing new appears.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] GP,GC,NG
+!>    \verbatim
+!>        GP is Integer(kind=int64),Dimension(4,48); GC is Logical,Dimension(48);
+!>        NG is Integer(kind=int64)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Symm_Close_Group(GP,GC,NG)
+
+      Implicit None
+      Integer(kind=int64),Dimension(4,48),Intent(InOut)::GP
+      Logical,Dimension(48),Intent(InOut)::GC
+      Integer(kind=int64),Intent(InOut)::NG
+      Integer(kind=int64)::N1,N2,NOld
+      Integer(kind=int64),Dimension(4)::P
+
+      NOld = 0
+      Do While(NOld.ne.NG)
+        NOld = NG
+        Do N1 = 1, NOld
+          Do N2 = 1, NOld
+            P = GP(GP(:,N2),N1)
+            Call MQC_R4Symm_Add_Op(P,GC(N1).neqv.GC(N2),GP,GC,NG)
+          EndDo
+        EndDo
+      EndDo
+
+      End Subroutine MQC_R4Symm_Close_Group
+!
+!
+!     PROCEDURE MQC_R4Symm_Keeps_Pair
+!
+!>    \brief <b> MQC_R4Symm_Keeps_Pair returns TRUE if an operation maps the
+!>    positions O(1), O(2) onto themselves</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Used for the contracted pair of the partial contractions.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] P,O
+!>    \verbatim
+!>        P, O are Integer(kind=int64),Dimension(4)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Keeps_Pair(P,O) Result(Keeps)
+
+      Implicit None
+      Integer(kind=int64),Dimension(4),Intent(In)::P,O
+      Logical::Keeps
+
+      Keeps = (P(O(1)).eq.O(1).or.P(O(1)).eq.O(2)).and.(P(O(2)).eq.O(1).or.P(O(2)).eq.O(2))
+
+      End Function MQC_R4Symm_Keeps_Pair
+!
+!
+!     PROCEDURE MQC_R4Symm_Cand_Index
+!
+!>    \brief <b> MQC_R4Symm_Cand_Index returns the position of a packed class in
+!>    the candidate list of MQC_R4Symm_Best_Class</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    1 R_8_1234, 2 S_4_1234, 3 S_4_1234 plain, 4 R_4_12_34, 5 S_2_12_34,
+!>    6 S_2_13_24, 7 R_2_12_3_4 (folds 8,4,4,4,2,2,2). Error otherwise.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Name,Plain
+!>    \verbatim
+!>        Name is Character(Len=*); Plain is Logical
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Symm_Cand_Index(Name,Plain) Result(Idx)
+
+      Implicit None
+      Character(Len=*),Intent(In)::Name
+      Logical,Intent(In)::Plain
+      Integer::Idx
+
+      Select Case(Trim(Name))
+      Case('R_8_1234')
+        Idx = 1
+      Case('S_4_1234')
+        Idx = 2
+        If(Plain) Idx = 3
+      Case('R_4_12_34')
+        Idx = 4
+      Case('S_2_12_34')
+        Idx = 5
+      Case('S_2_13_24')
+        Idx = 6
+      Case('R_2_12_3_4')
+        Idx = 7
+      Case Default
+        Call MQC_Error_A('Unrecognized class in MQC_R4Symm_Cand_Index', 6, 'Name', Name)
+      End Select
+
+      End Function MQC_R4Symm_Cand_Index
+!
+!
+!     PROCEDURE MQC_R4Tensor_Group
+!
+!>    \brief <b> MQC_R4Tensor_Group returns the symmetry group of an MQC_R4Tensor
+!>    in view positions</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Packed tensors: MQC_R4Symm_View_Group. Other storages: the identity
+!>    (and, for real data, the identity with conjugation).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] T,IsReal
+!>    \verbatim
+!>        T is Type(MQC_R4Tensor); IsReal is Logical
+!>    \endverbatim
+!>
+!>    \param[out] GP,GC,NG
+!>    \verbatim
+!>        GP is Integer(kind=int64),Dimension(4,48); GC is Logical,Dimension(48);
+!>        NG is Integer(kind=int64)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Group(T,IsReal,GP,GC,NG)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(In)::T
+      Logical,Intent(In)::IsReal
+      Integer(kind=int64),Dimension(4,48),Intent(Out)::GP
+      Logical,Dimension(48),Intent(Out)::GC
+      Integer(kind=int64),Intent(Out)::NG
+
+      If(MQC_R4Tensor_HaveSymmetric(T)) then
+        Call MQC_R4Symm_View_Group(T%Storage,T%IndexOrder,T%PlainSymm,IsReal,GP,GC,NG)
+      Else
+        GP = 0
+        GC = .False.
+        NG = 1
+        GP(:,1) = [1,2,3,4]
+        If(IsReal) then
+          NG = 2
+          GP(:,2) = [1,2,3,4]
+          GC(2) = .True.
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Tensor_Group
+!
+!
+!     PROCEDURE MQC_R4Tensor_Input_Class
+!
+!>    \brief <b> MQC_R4Tensor_Input_Class packs a StorFull input of a partial
+!>    contraction in its largest useful class</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Only for StorFull: classes by decreasing fold and order, only those with
+!>    an operation (other than the identity) that keeps the contracted pair
+!>    O(1),O(2); tested and packed in one pass (MQC_R4Tensor_Build_Packed). S_1
+!>    and packed storages are left as they are; other storages are an error.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] T
+!>    \verbatim
+!>        T is Type(MQC_R4Tensor)
+!>    \endverbatim
+!>
+!>    \param[in] O,IsReal
+!>    \verbatim
+!>        O is Integer(kind=int64),Dimension(4) (contracted pair in O(1:2));
+!>        IsReal is Logical
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Input_Class(T,O,IsReal)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(InOut)::T
+      Integer(kind=int64),Dimension(4),Intent(In)::O
+      Logical,Intent(In)::IsReal
+      Type(MQC_R4Tensor)::TP
+      Character(Len=10),Dimension(7)::CandName
+      Logical,Dimension(7)::CandPlain
+      Integer,Dimension(7)::CandFold
+      Integer(kind=int64),Dimension(4,48)::HP
+      Logical,Dimension(48)::HC
+      Integer(kind=int64)::NH,N
+      Integer(kind=int64),Dimension(4)::Ord
+      Integer::Fold,Cand,P1,P2,P3,P4
+      Logical::Useful,OK
+
+      CandName = [Character(Len=10)::'R_8_1234','S_4_1234','S_4_1234','R_4_12_34','S_2_12_34', &
+        'S_2_13_24','R_2_12_3_4']
+      CandPlain = [.False.,.False.,.True.,.False.,.False.,.False.,.False.]
+      CandFold = [8,4,4,4,2,2,2]
+      Select Case(Trim(T%Storage))
+      Case('StorFull')
+        Search: Do Fold = 8, 2, -1
+          Do Cand = 1, 7
+            If(CandFold(Cand).ne.Fold) Cycle
+            If(CandPlain(Cand).and.IsReal) Cycle
+            Do P1 = 1, 4
+              Do P2 = 1, 4
+                Do P3 = 1, 4
+                  Do P4 = 1, 4
+                    Ord = [P1,P2,P3,P4]
+                    If(.not.MQC_R4Symm_Is_Order(Ord)) Cycle
+                    If(.not.MQC_R4Symm_Dims_OK(CandName(Cand),T%I,T%J,T%K,T%L,Ord)) Cycle
+                    Call MQC_R4Symm_View_Group(CandName(Cand),Ord,CandPlain(Cand),IsReal,HP,HC,NH)
+                    Useful = .False.
+                    Do N = 1, NH
+                      If(All(HP(:,N).eq.[1,2,3,4])) Cycle
+                      If(MQC_R4Symm_Keeps_Pair(HP(:,N),O)) then
+                        Useful = .True.
+                        Exit
+                      EndIf
+                    EndDo
+                    If(.not.Useful) Cycle
+                    Call MQC_R4Tensor_Build_Packed(T,CandName(Cand),Ord,TP,OK,CandPlain(Cand))
+                    If(OK) then
+                      T = TP
+                      Exit Search
+                    EndIf
+                  EndDo
+                EndDo
+              EndDo
+            EndDo
+          EndDo
+        EndDo Search
+      Case('S_1_1234','S_1_123_4','S_1_12_34','S_1_12_3_4','S_1_1_2_3_4', &
+        'R_8_1234','S_4_1234','R_4_12_34','S_2_12_34','S_2_13_24','R_2_12_3_4')
+        Continue
+      Case Default
+        Call MQC_Error_A('Unrecognized storage in MQC_R4Tensor_Input_Class', 6, 'T%Storage', T%Storage)
+      End Select
+
+      End Subroutine MQC_R4Tensor_Input_Class
+!
+!
+!     PROCEDURE MQC_R4Tensor_Same_Roles
+!
+!>    \brief <b> MQC_R4Tensor_Same_Roles returns TRUE if TB equals TA (or its
+!>    conjugate) in the roles of two index orders</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    TB(x with x(OB) = [i,j,k,l]) = conjg^Conj(TA(x with x(OA) = [i,j,k,l]))
+!>    for all i,j,k,l up to Dims (threshold Thresh for real and complex data);
+!>    stops at the first difference. Both tensors have data type TypeCode, no
+!>    pending conjugation, and FullA/FullB tell whether they are stored full.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] TA,TB,FullA,FullB,OA,OB,Dims,TypeCode,Thresh,Conj
+!>    \verbatim
+!>        TA, TB are Type(MQC_R4Tensor); FullA, FullB, Conj are Logical; OA,
+!>        OB, Dims are Integer(kind=int64),Dimension(4); TypeCode is
+!>        Integer(kind=int64); Thresh is Real(kind=real64)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Tensor_Same_Roles(TA,TB,FullA,FullB,OA,OB,Dims,TypeCode,Thresh,Conj) Result(Same)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(In)::TA,TB
+      Logical,Intent(In)::FullA,FullB,Conj
+      Integer(kind=int64),Dimension(4),Intent(In)::OA,OB,Dims
+      Integer(kind=int64),Intent(In)::TypeCode
+      Real(kind=real64),Intent(In)::Thresh
+      Logical::Same
+      Integer(kind=int64)::I1,J1,K1,L1
+      Integer(kind=int64),Dimension(4)::XA,XB
+      Complex(kind=real64)::VA,VB
+
+      Same = .True.
+      Compare: Do L1 = 1, Dims(4)
+        Do K1 = 1, Dims(3)
+          Do J1 = 1, Dims(2)
+            Do I1 = 1, Dims(1)
+              XA(OA) = [I1,J1,K1,L1]
+              XB(OB) = [I1,J1,K1,L1]
+              Select Case(TypeCode)
+              Case(1)
+                Same = MQC_R4Tensor_Raw_I(TA,FullA,XA(1),XA(2),XA(3),XA(4)).eq. &
+                  MQC_R4Tensor_Raw_I(TB,FullB,XB(1),XB(2),XB(3),XB(4))
+              Case(2)
+                Same = Abs(MQC_R4Tensor_Raw_R(TA,FullA,XA(1),XA(2),XA(3),XA(4))- &
+                  MQC_R4Tensor_Raw_R(TB,FullB,XB(1),XB(2),XB(3),XB(4))).le.Thresh
+              Case(3)
+                VA = MQC_R4Tensor_Raw_C(TA,FullA,XA(1),XA(2),XA(3),XA(4))
+                VB = MQC_R4Tensor_Raw_C(TB,FullB,XB(1),XB(2),XB(3),XB(4))
+                If(Conj) VA = Conjg(VA)
+                Same = Abs(VA-VB).le.Thresh
+              Case Default
+                Call MQC_Error_I('MQC_R4Tensor_Same_Roles: unknown case in TypeCode', 6, &
+                  'TypeCode', TypeCode)
+              End Select
+              If(.not.Same) Exit Compare
+            EndDo
+          EndDo
+        EndDo
+      EndDo Compare
+
+      End Function MQC_R4Tensor_Same_Roles
+!
+!
+!     PROCEDURE MQC_R4Tensor_Raw_Dot
+!
+!>    \brief <b> MQC_R4Tensor_Raw_Dot adds Sum_x TA(x)*TB(x) over all elements to
+!>    an accumulator</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Element loop with raw reads (full position or packed slot,
+!>    MQC_R4Tensor_Raw_I/_R/_C); OpenMP reduction. The accumulator of TypeCode
+!>    (AccI, AccR or AccC) is updated; both tensors have that data type.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] TA,TB,FullA,FullB,Dims,TypeCode
+!>    \verbatim
+!>        TA, TB are Type(MQC_R4Tensor); FullA, FullB are Logical; Dims is
+!>        Integer(kind=int64),Dimension(4); TypeCode is Integer(kind=int64)
+!>    \endverbatim
+!>
+!>    \param[in,out] AccI,AccR,AccC
+!>    \verbatim
+!>        AccI is Integer(kind=int64); AccR is Real(kind=real64); AccC is
+!>        Complex(kind=real64)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Tensor_Raw_Dot(TA,TB,FullA,FullB,Dims,TypeCode,AccI,AccR,AccC)
+
+      Implicit None
+      Type(MQC_R4Tensor),Intent(In)::TA,TB
+      Logical,Intent(In)::FullA,FullB
+      Integer(kind=int64),Dimension(4),Intent(In)::Dims
+      Integer(kind=int64),Intent(In)::TypeCode
+      Integer(kind=int64),Intent(InOut)::AccI
+      Real(kind=real64),Intent(InOut)::AccR
+      Complex(kind=real64),Intent(InOut)::AccC
+      Integer(kind=int64)::I,J,K,L
+
+!$OMP PARALLEL DO DEFAULT(NONE), &
+!$OMP SHARED(TA,TB,Dims,FullA,FullB,TypeCode),&
+!$OMP PRIVATE(I,J,K),&
+!$OMP REDUCTION(+:AccI,AccR,AccC)
+      Do L = 1, Dims(4)
+        Do K = 1, Dims(3)
+          Do J = 1, Dims(2)
+            Do I = 1, Dims(1)
+              Select Case(TypeCode)
+              Case(1)
+                AccI = AccI+MQC_R4Tensor_Raw_I(TA,FullA,I,J,K,L)*MQC_R4Tensor_Raw_I(TB,FullB,I,J,K,L)
+              Case(2)
+                AccR = AccR+MQC_R4Tensor_Raw_R(TA,FullA,I,J,K,L)*MQC_R4Tensor_Raw_R(TB,FullB,I,J,K,L)
+              Case(3)
+                AccC = AccC+MQC_R4Tensor_Raw_C(TA,FullA,I,J,K,L)*MQC_R4Tensor_Raw_C(TB,FullB,I,J,K,L)
+              Case Default
+                Call MQC_Error_I('MQC_R4Tensor_R4Tensor_Contraction: unknown case in Raw', 6, &
+                  'TypeCode', TypeCode)
+              End Select
+            EndDo
+          EndDo
+        EndDo
+      EndDo
+!$OMP END PARALLEL DO
+
+      End Subroutine MQC_R4Tensor_Raw_Dot
+!
+!
+!     PROCEDURE MQC_Matrix_Outer_Rels
+!
+!>    \brief <b> MQC_Matrix_Outer_Rels returns the relations (swap, sign, conj) of
+!>    an MQC matrix used by MQC_Matrix_Outer_Core</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Rels(:,n) = [swap (0/1), sign (+1/-1), conj (0/1)]: always the identity
+!>    [0,1,0]; symmetric or diagonal [1,1,0]; antisymmetric [1,-1,0];
+!>    hermitian [1,1,1]; antihermitian [1,-1,1]. The label comes from
+!>    MQC_Matrix_Get_Symmetry; with TestSymm an 'unknown' label is tested
+!>    (symmetric, hermitian, antisymmetric, antihermitian). Real data: every
+!>    relation also with the other conj flag.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Mat,IsReal,TestSymm
+!>    \verbatim
+!>        Mat is Type(MQC_Matrix); IsReal, TestSymm are Logical
+!>    \endverbatim
+!>
+!>    \param[out] Rels,NR
+!>    \verbatim
+!>        Rels is Integer(kind=int64),Dimension(3,4); NR is Integer(kind=int64)
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_Matrix_Outer_Rels(Mat,IsReal,TestSymm,Rels,NR)
+
+      Implicit None
+      Type(MQC_Matrix),Intent(In)::Mat
+      Logical,Intent(In)::IsReal,TestSymm
+      Integer(kind=int64),Dimension(3,4),Intent(Out)::Rels
+      Integer(kind=int64),Intent(Out)::NR
+      Character(Len=64)::Lab
+      Integer(kind=int64)::NR0,NN
+
+      Lab = MQC_Matrix_Get_Symmetry(Mat)
+      If(Trim(Lab).eq.'unknown'.and.TestSymm) then
+        If(MQC_Matrix_Test_Symmetric(Mat,'symmetric')) then
+          Lab = 'symmetric'
+        ElseIf(MQC_Matrix_Test_Symmetric(Mat,'hermitian')) then
+          Lab = 'hermitian'
+        ElseIf(MQC_Matrix_Test_Symmetric(Mat,'antisymmetric')) then
+          Lab = 'antisymmetric'
+        ElseIf(MQC_Matrix_Test_Symmetric(Mat,'antihermitian')) then
+          Lab = 'antihermitian'
+        EndIf
+      EndIf
+      Rels = 0
+      NR = 1
+      Rels(:,1) = [0,1,0]
+      Select Case(Trim(Lab))
+      Case('symmetric','diagonal')
+        NR = 2
+        Rels(:,2) = [1,1,0]
+      Case('antisymmetric')
+        NR = 2
+        Rels(:,2) = [1,-1,0]
+      Case('hermitian')
+        NR = 2
+        Rels(:,2) = [1,1,1]
+      Case('antihermitian')
+        NR = 2
+        Rels(:,2) = [1,-1,1]
+      Case('unknown')
+        Continue
+      Case Default
+        Call MQC_Error_A('Unrecognized matrix symmetry in MQC_Matrix_Outer_Rels', 6, 'Lab', Lab)
+      End Select
+      If(IsReal) then
+        NR0 = NR
+        Do NN = 1, NR0
+          NR = NR+1
+          Rels(:,NR) = [Rels(1,NN),Rels(2,NN),1-Rels(3,NN)]
+        EndDo
+      EndIf
+
+      End Subroutine MQC_Matrix_Outer_Rels
 
       End Module MQC_Algebra

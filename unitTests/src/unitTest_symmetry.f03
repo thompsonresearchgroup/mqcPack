@@ -825,7 +825,7 @@
       call tinv('T16 inv real diagonal',M1,'diagonal')
 !     The array assignment after LU packs a result that tests symmetric.
       call tinv('T16 inv hermitian full',PD,'hermitian')
-      call tinv('T16 inv general full',XA,'unknown')
+      call tinv('T16 inv general full',XA,'asymmetric')
 !     Matrix power.
       call tpowh('T16 power 1/2 hermitian packed',packed(PD),'hermitian')
       call tpowh('T16 power 1/2 hermitian full',PD,'hermitian')
@@ -1110,7 +1110,9 @@
       logical::ok
       call Mf%init(n,n,(0.0,0.0))
       call Mf%put(z,i,j,op)
-      ok = abs(val(Mf,i,j)-z).lt.tol.and.Mf%getSymm().eq.'unknown'
+!     a zero matrix (StorZero) takes the symmetry of its first write with a flag
+      ok = abs(val(Mf,i,j)-z).lt.tol.and.(Mf%getSymm().eq.'unknown'.or.(op.ne.'element'.and. &
+        (Mf%getSymm().eq.op.or.(op.eq.'symmetric'.and.Mf%getSymm().eq.'hermitian'))))
       if(i.ne.j) ok = ok.and.abs(val(Mf,j,i)-mirror(op,z)).lt.tol
       call check(label,ok)
       end subroutine t4full
@@ -1152,7 +1154,8 @@
         maxdiff(Ma,Mf%mat([1,na8],[1,na8])).lt.tol
       if(nb.gt.0) ok = ok.and.Mb%getSymm().eq.Mat%getSymm().and. &
         maxdiff(Mb,Mf%mat([na8+1,na8+nb8],[na8+1,na8+nb8])).lt.tol
-      if(na.gt.0.and.nb.gt.0) ok = ok.and.Mab%getSymm().eq.'unknown'.and. &
+!     the off-diagonal block is non-square: StorNoSym ('asymmetric')
+      if(na.gt.0.and.nb.gt.0) ok = ok.and.Mab%getSymm().eq.'asymmetric'.and. &
         maxdiff(Mab,Mf%mat([na8+1,na8+nb8],[1,na8])).lt.tol
       call check(label//': blocks',ok)
       Mj = MQC_Matrix_Packed_Block_Join(Ma,Mab,Mb,na8,nb8,Mat%getSymm())

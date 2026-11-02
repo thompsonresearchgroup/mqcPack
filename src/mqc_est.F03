@@ -1569,7 +1569,8 @@
       logical::hasAlpha
 !
       hasAlpha = .false.
-      if(MQC_Matrix_isAllocated(integral%alpha)) hasAlpha = .true. 
+      !     a StorZero block holds no data: reported absent (the data is not changed)
+      if(MQC_Matrix_isAllocated(integral%alpha)) hasAlpha = .not.MQC_Matrix_HaveZero(integral%alpha) 
 !
       end function mqc_integral_has_alpha
 !
@@ -1609,7 +1610,8 @@
       logical::hasBeta
 !
       hasBeta = .false.
-      if(MQC_Matrix_isAllocated(integral%beta)) hasBeta = .true. 
+      !     a StorZero block holds no data: reported absent (the data is not changed)
+      if(MQC_Matrix_isAllocated(integral%beta)) hasBeta = .not.MQC_Matrix_HaveZero(integral%beta) 
 !
       end function mqc_integral_has_beta
 !
@@ -1651,7 +1653,8 @@
       logical::hasAlphaBeta
 !
       hasAlphaBeta = .false.
-      if(MQC_Matrix_isAllocated(integral%alphaBeta)) hasAlphaBeta = .true. 
+      !     a StorZero block holds no data: reported absent (the data is not changed)
+      if(MQC_Matrix_isAllocated(integral%alphaBeta)) hasAlphaBeta = .not.MQC_Matrix_HaveZero(integral%alphaBeta) 
 !
       end function mqc_integral_has_alphaBeta
 !
@@ -1693,8 +1696,10 @@
       logical::hasBetaAlpha
 !
       hasBetaAlpha = .false.
-      if(MQC_Matrix_isAllocated(integral%betaAlpha)) hasBetaAlpha = .true.
-      if(integral%isCompressed().and.MQC_Matrix_isAllocated(integral%alphaBeta)) &
+      !     a StorZero block holds no data: reported absent (the data is not changed)
+      if(MQC_Matrix_isAllocated(integral%betaAlpha)) hasBetaAlpha = .not.MQC_Matrix_HaveZero(integral%betaAlpha)
+      if(integral%isCompressed().and.MQC_Matrix_isAllocated(integral%alphaBeta).and. &
+        .not.MQC_Matrix_HaveZero(integral%alphaBeta)) &
         hasBetaAlpha = .true.
 !
       end function mqc_integral_has_betaAlpha
@@ -8447,12 +8452,19 @@
       logical::doOffDiag
       type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha
       Character(Len=64)::myLabel
+      Character(Len=64)::expSymm
 !
       if(present(label)) then
         call string_change_case(label,'l',myLabel)
       else
         myLabel = ''
       endIf
+!     Expected symmetry: diagonal x diagonal stays diagonal (realdiag/imagdiag/complexdiag
+!     is set from the data by mqc_integral_allocate). A zero operand gives no blocks and
+!     the default 'fullsymmetric'. Other products have no structure: 'unknown'.
+      expSymm = 'unknown'
+      if(integralA%isDiag().and.mqc_matrix_get_symmetry(matrixB).eq.'diagonal') &
+        expSymm = 'diagonal'
 
       rows = mqc_matrix_rows(matrixB)
       nBasisAlpha1 = integralA%blockSize('Alpha',1)
@@ -8486,10 +8498,10 @@
               [nBasisAlpha2+1,nBasisTotal2])
           endIf
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha, &
-            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha) 
+            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,symmetry=expSymm)
         else
           if(integralA%hasAlpha()) tmpMatrixAlpha = integralA%alpha.dot.matrixB
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha)
+          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,symmetry=expSymm)
         endIf
       case('spin')
         if(doOffDiag) then
@@ -8505,11 +8517,11 @@
               [1,nBasisAlpha2])
           endIf
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha, &
-            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha) 
+            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,symmetry=expSymm)
         else
           if(integralA%hasAlpha()) tmpMatrixAlpha = integralA%alpha.dot.matrixB
           if(integralA%hasBeta()) tmpMatrixBeta = integralA%beta.dot.matrixB
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,symmetry=expSymm)
         endIf
       case('general')
         if(doOffDiag) then
@@ -8561,14 +8573,14 @@
             endIf
           endIf
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha, &
-            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha) 
+            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,symmetry=expSymm)
         else
           if(integralA%hasAlpha()) tmpMatrixAlpha = integralA%alpha.dot.matrixB
           if(integralA%hasBeta()) tmpMatrixBeta = integralA%beta.dot.matrixB
           if(integralA%hasAlphaBeta()) tmpMatrixAlphaBeta = integralA%alphaBeta.dot.matrixB
           if(integralA%hasBetaAlpha()) tmpMatrixBetaAlpha = integralA%baBlock().dot.matrixB
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha, &
-            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,symmetry=expSymm)
         endIf
       case default
         call mqc_error_A('Unknown integral type in mqc_integral_matrix_multiply', 6, &
@@ -8630,12 +8642,19 @@
       logical::doOffDiag
       type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha
       Character(Len=64)::myLabel
+      Character(Len=64)::expSymm
 !
       if(present(label)) then
         call string_change_case(label,'l',myLabel)
       else
         myLabel = ''
       endIf
+!     Expected symmetry: diagonal x diagonal stays diagonal (realdiag/imagdiag/complexdiag
+!     is set from the data by mqc_integral_allocate). A zero operand gives no blocks and
+!     the default 'fullsymmetric'. Other products have no structure: 'unknown'.
+      expSymm = 'unknown'
+      if(integralB%isDiag().and.mqc_matrix_get_symmetry(matrixA).eq.'diagonal') &
+        expSymm = 'diagonal'
 
       columns = mqc_matrix_columns(matrixA)
       nBasisAlpha1 = integralB%blockSize('Alpha',1)
@@ -8669,10 +8688,10 @@
               integralB%alpha
           endIf
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha, &
-            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha) 
+            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,symmetry=expSymm)
         else
           if(integralB%hasAlpha()) tmpMatrixAlpha = matrixA.dot.integralB%alpha
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha)
+          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,symmetry=expSymm)
         endIf
       case('spin')
         if(doOffDiag) then
@@ -8688,11 +8707,11 @@
               integralB%beta
           endIf
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha, &
-            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha) 
+            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,symmetry=expSymm)
         else
           if(integralB%hasAlpha()) tmpMatrixAlpha = matrixA.dot.integralB%alpha
           if(integralB%hasBeta()) tmpMatrixBeta = matrixA.dot.integralB%beta 
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta)
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,symmetry=expSymm)
         endIf
       case('general')
         if(doOffDiag) then
@@ -8743,14 +8762,14 @@
             endIf
           endIf
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha, &
-            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha) 
+            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,symmetry=expSymm)
         else
           if(integralB%hasAlpha()) tmpMatrixAlpha = matrixA.dot.integralB%alpha
           if(integralB%hasBeta()) tmpMatrixBeta = matrixA.dot.integralB%beta
           if(integralB%hasAlphaBeta()) tmpMatrixAlphaBeta = matrixA.dot.integralB%alphaBeta
           if(integralB%hasBetaAlpha()) tmpMatrixBetaAlpha = matrixA.dot.integralB%baBlock()
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha, &
-            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha)
+            tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,symmetry=expSymm)
         endIf
       case default
         call mqc_error_A('Unknown integral type in mqc_integral_matrix_multiply', 6, &
@@ -14270,6 +14289,7 @@
       logical::doOffDiag
       type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha
       Character(Len=64)::myLabel
+      Character(Len=64)::expSymm
       integer(kind=int64)::nAA1,nAA2,nAB1,nAB2,nBA1,nBA2,nBB1,nBB2
 !
       if(present(label)) then
@@ -14277,6 +14297,11 @@
       else
         myLabel = ''
       endIf
+!     Expected symmetry: diagonal x diagonal stays diagonal (realdiag/imagdiag/complexdiag
+!     is set from the data by mqc_integral_allocate). A zero operand gives no blocks and
+!     the default 'fullsymmetric'. Other products have no structure: 'unknown'.
+      expSymm = 'unknown'
+      if(integralA%isDiag().and.integralB%isDiag()) expSymm = 'diagonal'
 
       nAA1 = size(integralA,'alpha',1)
       nAA2 = size(integralA,'alpha',2)
@@ -14314,14 +14339,14 @@
           if(integralA%hasAlpha().and.integralB%hasAlpha()) &
             tmpMatrixAlpha = integralA%alpha.dot.integralB%alpha
           call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrixAlpha,nDimA1=nAA1,nDimA2=nBA2,&
-            nDimB1=nAB1,nDimB2=nBB2)
+            nDimB1=nAB1,nDimB2=nBB2,symmetry=expSymm)
         case('spin')
           if(integralA%hasAlpha().and.integralB%hasAlpha()) &
             tmpMatrixAlpha = integralA%alpha.dot.integralB%alpha
           if(integralA%hasAlpha().and.integralB%hasBeta()) &
             tmpMatrixBeta = integralA%alpha.dot.integralB%beta
           call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
+            nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2,symmetry=expSymm)
         case('general')
           if(integralA%hasAlpha().and.integralB%hasAlpha()) &
             tmpMatrixAlpha = integralA%alpha.dot.integralB%alpha
@@ -14332,7 +14357,7 @@
           if(integralA%hasAlpha().and.integralB%hasBetaAlpha()) &
             tmpMatrixBetaAlpha = integralA%alpha.dot.integralB%baBlock()
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
+            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2,symmetry=expSymm)
         case default
           call mqc_error_A('Unknown integral type in mqc_integral_integral_multiply', 6, &
                'integralB%array_type', integralB%array_type )
@@ -14345,14 +14370,14 @@
           if(integralA%hasBeta().and.integralB%hasAlpha()) &
             tmpMatrixBeta = integralA%beta.dot.integralB%alpha
           call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
+            nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2,symmetry=expSymm)
         case('spin')
           if(integralA%hasAlpha().and.integralB%hasAlpha()) &
             tmpMatrixAlpha = integralA%alpha.dot.integralB%alpha
           if(integralA%hasBeta().and.integralB%hasBeta()) &
             tmpMatrixBeta = integralA%beta.dot.integralB%beta
           call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrixAlpha,tmpMatrixBeta,&
-            nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
+            nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2,symmetry=expSymm)
         case('general')
           if(integralA%hasAlpha().and.integralB%hasAlpha()) &
             tmpMatrixAlpha = integralA%alpha.dot.integralB%alpha
@@ -14363,7 +14388,7 @@
           if(integralA%hasAlpha().and.integralB%hasBetaAlpha()) &
             tmpMatrixBetaAlpha = integralA%alpha.dot.integralB%baBlock()
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
+            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2,symmetry=expSymm)
         case default
           call mqc_error_A('Unknown integral type in mqc_integral_integral_multiply', 6, &
                'integralB%array_type', integralB%array_type )
@@ -14380,7 +14405,7 @@
           if(integralA%hasBetaAlpha().and.integralB%hasAlpha()) &
             tmpMatrixBetaAlpha = integralA%baBlock().dot.integralB%alpha
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
+            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2,symmetry=expSymm)
         case('spin')
           if(integralA%hasAlpha().and.integralB%hasAlpha()) &
             tmpMatrixAlpha = integralA%alpha.dot.integralB%alpha
@@ -14391,7 +14416,7 @@
           if(integralA%hasBetaAlpha().and.integralB%hasBeta()) &
             tmpMatrixBetaAlpha = integralA%baBlock().dot.integralB%beta
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
+            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2,symmetry=expSymm)
         case('general')
           if(integralA%hasAlpha().and.integralB%hasAlpha()) tmpMatrixAlpha = (integralA%alpha.dot.integralB%alpha)
           if(integralA%hasBetaAlpha().and.integralB%hasAlphaBeta()) then
@@ -14426,7 +14451,7 @@
             endIf
           endIf
           call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrixAlpha,tmpMatrixBeta, &
-            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2)
+            tmpMatrixAlphaBeta,tmpMatrixBetaAlpha,nDimA1=nAA1,nDimA2=nBA2,nDimB1=nAB1,nDimB2=nBB2,symmetry=expSymm)
         case default
           call mqc_error_A('Unknown integral type in mqc_integral_integral_multiply', 6, &
                'integralB%array_type', integralB%array_type )
@@ -15256,6 +15281,8 @@
 !
       if(.not.integral%isSquare()) then
         integral%symmetry = 'asymmetric'
+!     stored blocks (StorZero blocks are dropped before by dropZeroBlocks, unless
+!     MQC_very_small < 0, which keeps zero blocks and the flag 'unknown')
       elseIf(.not.(MQC_Matrix_isAllocated(integral%alpha).or. &
         MQC_Matrix_isAllocated(integral%beta).or. &
         MQC_Matrix_isAllocated(integral%alphaBeta).or. &
@@ -16701,29 +16728,7 @@
              'integralA%array_type', integralA%array_type,&
              'integralB%array_type', integralB%array_type )
       end if
-     !if(integralA%array_type.eq.'general'.or.integralA%array_type.eq.'spin') then 
-     !  NBasis = max(MQC_Matrix_Rows(integralA%Alpha),MQC_Matrix_Rows(integralA%Beta))
-     !else
-     !  NBasis = MQC_Matrix_Rows(integralA%Alpha)
-     !end if
-
-     !call Alpha%init(NBasis,NBasis,NBasis,NBasis)
-     !call Beta%init(NBasis,NBasis,NBasis,NBasis)
-     !call AlphaBeta%init(NBasis,NBasis,NBasis,NBasis)
-     !call BetaAlpha%init(NBasis,NBasis,NBasis,NBasis)
-     !call aaab%init(NBasis,NBasis,NBasis,NBasis)
-     !call aaba%init(NBasis,NBasis,NBasis,NBasis)
-     !call abaa%init(NBasis,NBasis,NBasis,NBasis)
-     !call baaa%init(NBasis,NBasis,NBasis,NBasis)
-     !call abab%init(NBasis,NBasis,NBasis,NBasis)
-     !call baab%init(NBasis,NBasis,NBasis,NBasis)
-     !call baba%init(NBasis,NBasis,NBasis,NBasis)
-     !call abba%init(NBasis,NBasis,NBasis,NBasis)
-     !call bbba%init(NBasis,NBasis,NBasis,NBasis)
-     !call bbab%init(NBasis,NBasis,NBasis,NBasis)
-     !call babb%init(NBasis,NBasis,NBasis,NBasis)
-     !call abbb%init(NBasis,NBasis,NBasis,NBasis)
-
+!
       AlphaA=integralA%getBlock('alpha')
       AlphaB=integralB%getBlock('alpha')
       Alpha = AlphaA.crossouter.AlphaB
@@ -16913,12 +16918,18 @@
       type(mqc_matrix)::tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4
       type(mqc_vector)::tmpVector1,tmpVector2
       Character(Len=64)::myLabel
+      Character(Len=64)::expSymm
 !
       if(present(label)) then
         call string_change_case(label,'l',myLabel)
       else
         myLabel = ''
       endIf
+!     Expected symmetry: diagonal x diagonal stays diagonal (realdiag/imagdiag/complexdiag
+!     is set from the data by mqc_integral_allocate). A zero operand gives no blocks and
+!     the default 'fullsymmetric'. Other products have no structure: 'unknown'.
+      expSymm = 'unknown'
+      if(integralA%isDiag()) expSymm = 'diagonal'
 
       select case (integralA%array_type)
       case('space')
@@ -16927,7 +16938,7 @@
           tmpVector1 = eigenvaluesB%alpha
           call tmpVector1%diag(tmpMatrix1)
           tmpMatrix1 = matmul(integralA%alpha,tmpMatrix1)
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrix1)
+          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrix1,symmetry=expSymm)
         case('spin','general')
           tmpVector1 = eigenvaluesB%alpha
           tmpVector2 = eigenvaluesB%beta
@@ -16935,7 +16946,7 @@
           call tmpVector2%diag(tmpMatrix2)
           tmpMatrix1 = matmul(integralA%alpha,tmpMatrix1)
           tmpMatrix2 = matmul(integralA%alpha,tmpMatrix2)
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2)
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2,symmetry=expSymm)
         case default
           call mqc_error_A('Unknown eigenvalues type in mqc_integral_eigenvalues_multiply', 6, &
                'eigenvaluesB%array_type', eigenvaluesB%array_type )
@@ -16947,7 +16958,7 @@
           call tmpVector1%diag(tmpMatrix1)
           tmpMatrix2 = matmul(integralA%beta,tmpMatrix1)
           tmpMatrix1 = matmul(integralA%alpha,tmpMatrix1)
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2)
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2,symmetry=expSymm)
         case('spin','general')
           tmpVector1 = eigenvaluesB%alpha
           tmpVector2 = eigenvaluesB%beta
@@ -16955,7 +16966,7 @@
           call tmpVector2%diag(tmpMatrix2)
           tmpMatrix1 = matmul(integralA%alpha,tmpMatrix1)
           tmpMatrix2 = matmul(integralA%beta,tmpMatrix2)
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2)
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2,symmetry=expSymm)
         case default
           call mqc_error_A('Unknown eigenvalues type in mqc_integral_eigenvalues_multiply', 6, &
                'eigenvaluesB%array_type', eigenvaluesB%array_type )
@@ -16969,7 +16980,7 @@
           tmpMatrix3 = matmul(integralA%alphaBeta,tmpMatrix1)
           tmpMatrix4 = matmul(integralA%baBlock(),tmpMatrix1)
           tmpMatrix1 = matmul(integralA%alpha,tmpMatrix1)
-          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4)
+          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4,symmetry=expSymm)
         case('spin','general')
           tmpVector1 = eigenvaluesB%alpha
           tmpVector2 = eigenvaluesB%beta
@@ -16979,7 +16990,7 @@
           tmpMatrix4 = matmul(integralA%baBlock(),tmpMatrix2)
           tmpMatrix1 = matmul(integralA%alpha,tmpMatrix1)
           tmpMatrix2 = matmul(integralA%beta,tmpMatrix2)
-          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4)
+          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4,symmetry=expSymm)
         case default
           call mqc_error_A('Unknown eigenvalues type in mqc_integral_eigenvalues_multiply', 6, &
                'eigenvaluesB%array_type', eigenvaluesB%array_type )
@@ -17045,12 +17056,18 @@
       type(mqc_matrix)::tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4
       type(mqc_vector)::tmpVector1,tmpVector2
       Character(Len=64)::myLabel
+      Character(Len=64)::expSymm
 !
       if(present(label)) then
         call string_change_case(label,'l',myLabel)
       else
         myLabel = ''
       endIf
+!     Expected symmetry: diagonal x diagonal stays diagonal (realdiag/imagdiag/complexdiag
+!     is set from the data by mqc_integral_allocate). A zero operand gives no blocks and
+!     the default 'fullsymmetric'. Other products have no structure: 'unknown'.
+      expSymm = 'unknown'
+      if(integralB%isDiag()) expSymm = 'diagonal'
 
       select case (integralB%array_type)
       case('space')
@@ -17059,7 +17076,7 @@
           tmpVector1 = eigenvaluesA%alpha
           call tmpVector1%diag(tmpMatrix1)
           tmpMatrix1 = matmul(tmpMatrix1,integralB%alpha)
-          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrix1)
+          call mqc_integral_allocate(integralOut,myLabel,'space',tmpMatrix1,symmetry=expSymm)
         case('spin','general')
           tmpVector1 = eigenvaluesA%alpha
           tmpVector2 = eigenvaluesA%beta
@@ -17067,7 +17084,7 @@
           call tmpVector2%diag(tmpMatrix2)
           tmpMatrix1 = matmul(tmpMatrix1,integralB%alpha)
           tmpMatrix2 = matmul(tmpMatrix2,integralB%alpha)
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2)
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2,symmetry=expSymm)
         case default
           call mqc_error_A('Unknown eigenvalues type in mqc_integral_eigenvalues_multiply', 6, &
                'eigenvaluesA%array_type', eigenvaluesA%array_type )
@@ -17079,7 +17096,7 @@
           call tmpVector1%diag(tmpMatrix1)
           tmpMatrix2 = matmul(tmpMatrix1,integralB%beta)
           tmpMatrix1 = matmul(tmpMatrix1,integralB%alpha)
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2)
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2,symmetry=expSymm)
         case('spin','general')
           tmpVector1 = eigenvaluesA%alpha
           tmpVector2 = eigenvaluesA%beta
@@ -17087,7 +17104,7 @@
           call tmpVector2%diag(tmpMatrix2)
           tmpMatrix1 = matmul(tmpMatrix1,integralB%alpha)
           tmpMatrix2 = matmul(tmpMatrix2,integralB%beta)
-          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2)
+          call mqc_integral_allocate(integralOut,myLabel,'spin',tmpMatrix1,tmpMatrix2,symmetry=expSymm)
         case default
           call mqc_error_A('Unknown eigenvalues type in mqc_integral_eigenvalues_multiply', 6, &
                'eigenvaluesA%array_type', eigenvaluesA%array_type )
@@ -17101,7 +17118,7 @@
           tmpMatrix3 = matmul(tmpMatrix1,integralB%alphaBeta)
           tmpMatrix4 = matmul(tmpMatrix1,integralB%baBlock())
           tmpMatrix1 = matmul(tmpMatrix1,integralB%alpha)
-          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4)
+          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4,symmetry=expSymm)
         case('spin','general')
           tmpVector1 = eigenvaluesA%alpha
           tmpVector2 = eigenvaluesA%beta
@@ -17111,7 +17128,7 @@
           tmpMatrix4 = matmul(tmpMatrix1,integralB%baBlock())
           tmpMatrix1 = matmul(tmpMatrix1,integralB%alpha)
           tmpMatrix2 = matmul(tmpMatrix2,integralB%beta)
-          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4)
+          call mqc_integral_allocate(integralOut,myLabel,'general',tmpMatrix1,tmpMatrix2,tmpMatrix3,tmpMatrix4,symmetry=expSymm)
         case default
           call mqc_error_A('Unknown eigenvalues type in mqc_integral_eigenvalues_multiply', 6, &
                'eigenvaluesA%array_type', eigenvaluesA%array_type )
@@ -18376,7 +18393,7 @@
       type(mqc_scf_integral)::output
       type(mqc_matrix)::alpha,beta,alphaBeta,betaAlpha
       integer(kind=int64)::cnt,kp,mp,k,l,m,n,nBasis,ntt,fact1,flag,i
-      character(len=64)::mylabel,algorithm
+      character(len=64)::mylabel,algorithm,expSymm
       real(kind=real64)::zero
 !     Pgfortran does not support declare reduce AND no way to restrict reduction to only 
 !     defined arrays. For now define local copies by hand and then sum into global version
@@ -18467,12 +18484,14 @@
           tmpMat = real(hermden%getblock('alpha'))
           if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
           if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+          if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
           temp = tmpMat
           aaHRden = temp(:,1)
           if(mod(flag,100)/10.eq.1) then
             tmpMat = aimag(hermden%getblock('alpha'))
             if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
             if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+            if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
             temp = tmpMat
             aaHCden = temp(:,1)
           endIf
@@ -18480,12 +18499,14 @@
             tmpMat = real(hermden%getblock('beta'))
             if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
             if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+            if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
             temp = tmpMat
             bbHRden = temp(:,1)
             if(mod(flag,100)/10.eq.1) then
               tmpMat = aimag(hermden%getblock('beta'))
               if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
               if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+              if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
               temp = tmpMat
               bbHCden = temp(:,1)
             endIf
@@ -18495,12 +18516,14 @@
               dagger(hermden%getblock('alpha-beta'))))
             if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
             if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+            if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
             temp = tmpMat
             abHHRden = temp(:,1)
             tmpMat = real(half*(hermden%getblock('alpha-beta')- &
               dagger(hermden%getblock('alpha-beta'))))
             if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
             if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+            if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
             temp = tmpMat
             abAHRden = temp(:,1)
             abAHRden = (-1)*abAHRden
@@ -18509,6 +18532,7 @@
                 dagger(hermden%getblock('alpha-beta'))))
               if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
               if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+              if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
               temp = tmpMat
               abHHCden = temp(:,1)
               abHHCden = (-1)*abHHCden
@@ -18516,6 +18540,7 @@
                 dagger(hermden%getblock('alpha-beta'))))
               if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
               if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+              if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
               temp = tmpMat
               abAHCden = temp(:,1)
             endIf
@@ -18528,12 +18553,14 @@
           tmpMat = real(ahermden%getblock('alpha'))
           if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
           if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+          if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
           temp = tmpMat
           aaARden = temp(:,1)
           if(mod(flag,100)/10.eq.1) then
             tmpMat = aimag(ahermden%getblock('alpha'))
             if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
             if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+            if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
             temp = tmpMat
             aaACden = temp(:,1)
           endIf
@@ -18541,12 +18568,14 @@
             tmpMat = real(ahermden%getblock('beta'))
             if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
             if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+            if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
             temp = tmpMat
             bbARden = temp(:,1)
             if(mod(flag,100)/10.eq.1) then
               tmpMat = aimag(ahermden%getblock('beta'))
               if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
               if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+              if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
               temp = tmpMat
               bbACden = temp(:,1)
             endIf
@@ -18556,12 +18585,14 @@
               dagger(ahermden%getblock('alpha-beta'))))
             if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
             if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+            if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
             temp = tmpMat
             abHARden = temp(:,1)
             tmpMat = real(half*(ahermden%getblock('alpha-beta')- &
               dagger(ahermden%getblock('alpha-beta'))))
             if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
             if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+            if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
             temp = tmpMat
             abAARden = temp(:,1)
             abAARden = (-1)*abAARden
@@ -18570,6 +18601,7 @@
                 dagger(ahermden%getblock('alpha-beta'))))
               if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
               if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+              if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
               temp = tmpMat
               abHACden = temp(:,1)
               abHACden = (-1)*abHACden
@@ -18577,6 +18609,7 @@
                 dagger(ahermden%getblock('alpha-beta'))))
               if(mqc_matrix_haveFull(tmpMat)) call mqc_matrix_full2symm(tmpMat)
               if(mqc_matrix_haveDiagonal(tmpMat)) call mqc_matrix_diag2symm(tmpMat)
+              if(mqc_matrix_haveZero(tmpMat)) call MQC_Matrix_Zero_To_Packed(tmpMat)
               temp = tmpMat
               abAACden = temp(:,1)
             endIf
@@ -19176,9 +19209,28 @@
           beta = transpose(beta)
       endIf
 !
+!     expected symmetry: the real AO integrals give G[D]^dagger = G[D^dagger], so a hermitian
+!     (antihermitian) density gives a hermitian (antihermitian) result; from the density
+!     parts of the regular algorithm, else from the density flag. allocate checks it.
+      expSymm = 'unknown'
+      if(algorithm.eq.'regular') then
+        if(doHerm.and..not.doAhrm) expSymm = 'hermitian'
+        if(doAhrm.and..not.doHerm) expSymm = 'antihermitian'
+      endIf
+      if(expSymm.eq.'unknown'.and.(integral%getSymm().eq.'hermitian'.or. &
+        integral%getSymm().eq.'antihermitian')) expSymm = integral%getSymm()
+      if(expSymm.ne.'unknown') then
+        if(integral%array_type.eq.'space') call mqc_integral_allocate(output,'contraction','space',alpha, &
+          symmetry=expSymm)
+        if(integral%array_type.eq.'spin') call mqc_integral_allocate(output,'contraction','spin',alpha,beta, &
+          symmetry=expSymm)
+        if(integral%array_type.eq.'general') call mqc_integral_allocate(output,'contraction','general',alpha, &
+          beta,alphaBeta,betaAlpha,symmetry=expSymm)
+      else
       if(integral%array_type.eq.'space') call mqc_integral_allocate(output,'contraction','space',alpha)
       if(integral%array_type.eq.'spin') call mqc_integral_allocate(output,'contraction','spin',alpha,beta)
       if(integral%array_type.eq.'general') call mqc_integral_allocate(output,'contraction','general',alpha,beta,alphaBeta,betaAlpha)
+      endIf
 !
       if(DEBUG) call output%print(6,'Final Fock matrix')
       
@@ -19226,12 +19278,13 @@
 !>    \author M. M. F. Moraes
 !>    \date 2024
 !
-      function mqc_eri_integral_contraction(erisIn,integral,inorder) result(output)
+      function mqc_eri_integral_contraction(erisIn,integral,inorder,ForceSym) result(output)
 !
       implicit none
       type(mqc_twoERIs),intent(in)::erisIn
       type(mqc_scf_integral),intent(in)::integral
       Integer(kind=int64),dimension(2),Intent(In),optional::inorder
+      logical,intent(in),optional::ForceSym
       Integer(kind=int64),dimension(2)::ind
       character(len=64)::FinalType
       type(mqc_twoERIs)::eris
@@ -19240,8 +19293,18 @@
       integer(kind=int64)::nAc,nAd,nBc,nBd
       logical::usedAA,usedBB,usedAB,usedBA
       logical::same
+      character(len=64)::expSymm
+      type(mqc_matrix)::dAA,dBB,dAB,dBA
+      logical::myForce,skipBA
+      character(len=64)::forcedSymm
       integer::ia,ib,ic,id
 !      
+!     the integral blocks, fetched once (a compressed integral rebuilds betaAlpha on
+!     every getBlock('ba'))
+      dAA = integral%getBlock('aa')
+      dBB = integral%getBlock('bb')
+      dAB = integral%getBlock('ab')
+      dBA = integral%getBlock('ba')
       eris = erisIn
       if(present(inorder)) then
         same=.false.
@@ -19296,6 +19359,21 @@
         id=4
         same=.true.
       endif
+!     ForceSym (default TRUE): when the symmetry of the result is known from the initial
+!     symmetries - ERIs with (pq|rs) = (rs|pq) and (pq|rs)* = (qp|sr) over all spin blocks (one
+!     coefficient set: storage 'symm'), a hermitian (antihermitian) integral and a J-type
+!     (12, 34) or K-type (23, 14) pair - only the required terms are computed: the lower
+!     triangle of the alpha and beta blocks (MQC_R4Tensor_Matrix_Contraction ForceSym) and
+!     alphaBeta (betaAlpha follows from it in allocate). FALSE: every term is computed.
+      myForce = .true.
+      if(present(ForceSym)) myForce = ForceSym
+      forcedSymm = 'unknown'
+      if(myForce.and.eris%storType().eq.'symm'.and. &
+        (integral%getSymm().eq.'hermitian'.or.integral%getSymm().eq.'antihermitian')) then
+        if(same.or.(min(ia,ib).eq.2.and.max(ia,ib).eq.3).or.(min(ia,ib).eq.1.and.max(ia,ib).eq.4)) &
+          forcedSymm = integral%getSymm()
+      endIf
+      skipBA = forcedSymm.ne.'unknown'
       nAc = size(eris,'alpha',ic)
       nAd = size(eris,'alpha',id)
       nBc = size(eris,'beta',ic)
@@ -19313,20 +19391,20 @@
         select case (integral%type())
         case ('space')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('aa'),ind)
+            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+                                  dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(same) aa=2*aa
           FinalType='space'
         case ('spin')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('aa'),ind)
+            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+                                  dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
-          tmpM=MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                integral%getBlock('bb'),ind)
+          tmpM=mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+                                dBB,ind,forcedSymm)
           if(same) then
             aa=aa+tmpM
             usedAA = usedAA.or..not.eris%isZeroBlock('aaaa')
@@ -19338,12 +19416,12 @@
           endif
         case ('general')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('aa'),ind)
+            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+                                  dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
-          tmpM=MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                integral%getBlock('bb'),ind)
+          tmpM=mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+                                dBB,ind,forcedSymm)
           if(same) then
             aa=aa+tmpM
             usedAA = usedAA.or..not.eris%isZeroBlock('aaaa')
@@ -19354,23 +19432,23 @@
             if (ia.lt.ib) then
               if(.not.eris%isZeroBlock('aaaa')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('ab'),ind)
+                                  dAB,ind)
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('aaaa')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('ba'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
+                                  dBA,ind)
+                usedBA = .not.skipBA
               endIf
             else
               if(.not.eris%isZeroBlock('aaaa')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('ab'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
+                                  dAB,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('aaaa')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('ba'),ind)
+                                  dBA,ind)
                 usedAB = .true.
               endIf
             endif
@@ -19381,36 +19459,36 @@
         select case (integral%type())
         case ('space')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('aa'),ind)
+            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+                                  dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbbb'),&
-                                  integral%getBlock('aa'),ind)
+            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+                                  dAA,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('aa'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dAA,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('aa'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dAA,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
             endif
@@ -19420,36 +19498,36 @@
           endif
         case ('spin')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('aa'),ind)
+            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+                                  dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbbb'),&
-                                  integral%getBlock('bb'),ind)
+            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+                                  dBB,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('bb'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('bb'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
             endif
@@ -19459,36 +19537,36 @@
           endif
         case ('general')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('aa'),ind)
+            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+                                  dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbbb'),&
-                                  integral%getBlock('bb'),ind)
+            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+                                  dBB,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('bb'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('bb'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
             endif
@@ -19497,23 +19575,23 @@
             if (ia.lt.ib) then
               if(.not.eris%isZeroBlock('bbaa')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('ab'),ind)
+                                  dAB,ind)
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('ba'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
+                                  dBA,ind)
+                usedBA = .not.skipBA
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('ab'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
+                                  dAB,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('ba'),ind)
+                                  dBA,ind)
                 usedAB = .true.
               endIf
             endif
@@ -19524,76 +19602,76 @@
         select case (integral%type())
         case ('space')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('aa'),ind)
+            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+                                  dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbbb'),&
-                                  integral%getBlock('aa'),ind)
+            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+                                  dAA,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('aa'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dAA,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('aaab')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                  integral%getBlock('aa'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
+                                  dAA,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbab')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                  integral%getBlock('aa'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
+                                  dAA,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('aaba')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                  integral%getBlock('aa'),ind)
+                                  dAA,ind)
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('bbba')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                  integral%getBlock('aa'),ind)
+                                  dAA,ind)
                 usedAB = .true.
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('aa'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dAA,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('abaa')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                  integral%getBlock('aa'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
+                                  dAA,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('abbb')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                  integral%getBlock('aa'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                  dAA,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('baaa')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                  integral%getBlock('aa'),ind)
+                                  dAA,ind)
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('babb')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                  integral%getBlock('aa'),ind)
+                                  dAA,ind)
                 usedAB = .true.
               endIf
             endif
@@ -19602,221 +19680,221 @@
             if (ia.lt.ib) then
               if (ib.eq.4) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 integral%getBlock('aa'),ind)
+                                                 dAA,ind)
                   usedAB = .true.
                 endIf
               endif
               if (ib.eq.3) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 integral%getBlock('aa'),ind)
+                                                 dAA,ind)
                   usedAB = .true.
                 endIf
               endif
               if(ia.eq.1.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('aa'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
+                                                   dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.1.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('aa'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
+                                                   dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.2.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('aa'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                                   dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.2.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('aa'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                                   dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
               endif
             else
               if (ia.eq.4) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 integral%getBlock('aa'),ind)
+                                                 dAA,ind)
                   usedAB = .true.
                 endIf
               endif
               if (ia.eq.3) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 integral%getBlock('aa'),ind)
+                                                 dAA,ind)
                   usedAB = .true.
                 endIf
               endif
               if(ib.eq.1.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('aa'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
+                                                   dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.1.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('aa'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
+                                                   dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.2.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('aa'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                                   dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.2.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('aa'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                                   dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
               endif
             endif
@@ -19824,76 +19902,76 @@
           endif
         case ('spin')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('aa'),ind)
+            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+                                  dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbbb'),&
-                                  integral%getBlock('bb'),ind)
+            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+                                  dBB,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('bb'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('aaab')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                  integral%getBlock('aa'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
+                                  dAA,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbab')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                  integral%getBlock('bb'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
+                                  dBB,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('aaba')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                  integral%getBlock('aa'),ind)
+                                  dAA,ind)
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('bbba')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                  integral%getBlock('bb'),ind)
+                                  dBB,ind)
                 usedAB = .true.
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('bb'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('abaa')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                  integral%getBlock('aa'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
+                                  dAA,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('abbb')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                  integral%getBlock('bb'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                  dBB,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('baaa')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                  integral%getBlock('aa'),ind)
+                                  dAA,ind)
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('babb')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                  integral%getBlock('bb'),ind)
+                                  dBB,ind)
                 usedAB = .true.
               endIf
             endif
@@ -19902,221 +19980,221 @@
             if (ia.lt.ib) then
               if (ib.eq.4) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 integral%getBlock('bb'),ind)
+                                                 dBB,ind)
                   usedAB = .true.
                 endIf
               endif
               if (ib.eq.3) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 integral%getBlock('bb'),ind)
+                                                 dBB,ind)
                   usedAB = .true.
                 endIf
               endif
               if(ia.eq.1.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
+                                                   dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.1.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
+                                                   dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.2.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                                   dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.2.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                                   dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
               endif
             else
               if (ia.eq.4) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 integral%getBlock('bb'),ind)
+                                                 dBB,ind)
                   usedAB = .true.
                 endIf
               endif
               if (ia.eq.3) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 integral%getBlock('bb'),ind)
+                                                 dBB,ind)
                   usedAB = .true.
                 endIf
               endif
               if(ib.eq.1.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
+                                                   dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.1.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
+                                                   dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.2.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                                   dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.2.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   integral%getBlock('aa'),ind)
+                                                   dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                                   dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
               endif
             endif
@@ -20124,241 +20202,241 @@
           endif
         case ('general')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  integral%getBlock('aa'),ind)
+            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+                                  dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbbb'),&
-                                  integral%getBlock('bb'),ind)
+            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+                                  dBB,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('bb'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('aaab')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                  integral%getBlock('aa'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
+                                  dAA,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbab')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                  integral%getBlock('bb'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
+                                  dBB,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('aaba')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                  integral%getBlock('aa'),ind)
+                                  dAA,ind)
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('bbba')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                  integral%getBlock('bb'),ind)
+                                  dBB,ind)
                 usedAB = .true.
               endIf
               if(ia.eq.1) then
                 if(.not.eris%isZeroBlock('abaa')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                  integral%getBlock('ba'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abaa'),&
+                                  dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                  integral%getBlock('ab'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baaa'),&
+                                  dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                  integral%getBlock('ba'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abbb'),&
+                                  dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                  integral%getBlock('ab'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('babb'),&
+                                  dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                  integral%getBlock('ba'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
+                                  dBA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                  integral%getBlock('ab'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
+                                  dAB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                  integral%getBlock('ab'),ind)
+                                  dAB,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                  integral%getBlock('ba'),ind)
+                                  dBA,ind)
                   usedAB = .true.
                 endIf
               else
                 if(.not.eris%isZeroBlock('baaa')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                  integral%getBlock('ba'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baaa'),&
+                                  dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                  integral%getBlock('ab'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abaa'),&
+                                  dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                  integral%getBlock('ba'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('babb'),&
+                                  dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                  integral%getBlock('ab'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abbb'),&
+                                  dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                  integral%getBlock('ab'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
+                                  dAB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                  integral%getBlock('ba'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
+                                  dBA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                  integral%getBlock('ba'),ind)
+                                  dBA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                  integral%getBlock('ab'),ind)
+                                  dAB,ind)
                   usedAB = .true.
                 endIf
               endif
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  integral%getBlock('bb'),ind)
+                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                                  dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  integral%getBlock('aa'),ind)
+                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                                  dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('abaa')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                  integral%getBlock('aa'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
+                                  dAA,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('abbb')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                  integral%getBlock('bb'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                  dBB,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('baaa')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                  integral%getBlock('aa'),ind)
+                                  dAA,ind)
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('babb')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                  integral%getBlock('bb'),ind)
+                                  dBB,ind)
                 usedAB = .true.
               endIf
               if(ia.eq.3) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                  integral%getBlock('ba'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaab'),&
+                                  dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                  integral%getBlock('ab'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaba'),&
+                                  dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                  integral%getBlock('ba'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbab'),&
+                                  dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                  integral%getBlock('ab'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbba'),&
+                                  dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                  integral%getBlock('ba'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
+                                  dBA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                  integral%getBlock('ab'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
+                                  dAB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                  integral%getBlock('ab'),ind)
+                                  dAB,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                  integral%getBlock('ba'),ind)
+                                  dBA,ind)
                   usedAB = .true.
                 endIf
               else
                 if(.not.eris%isZeroBlock('aaba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                  integral%getBlock('ba'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaba'),&
+                                  dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                  integral%getBlock('ab'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaab'),&
+                                  dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                  integral%getBlock('ba'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbba'),&
+                                  dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                  integral%getBlock('ab'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbab'),&
+                                  dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                  integral%getBlock('ab'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
+                                  dAB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                  integral%getBlock('ba'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
+                                  dBA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                  integral%getBlock('ba'),ind)
+                                  dBA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                  integral%getBlock('ab'),ind)
+                                  dAB,ind)
                   usedAB = .true.
                 endIf
               endif
@@ -20367,369 +20445,369 @@
           else
             if (ia.lt.ib) then
               if(.not.eris%isZeroBlock('aabb')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                               integral%getBlock('ba'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
+                                               dBA,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                               integral%getBlock('ab'),ind)
+                                               dAB,ind)
                 usedAB = .true.
               endIf
               if (ib.eq.4) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 integral%getBlock('ba'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaab'),&
+                                                 dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 integral%getBlock('ab'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbba'),&
+                                                 dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 integral%getBlock('bb'),ind)
+                                                 dBB,ind)
                   usedAB = .true.
                 endIf
               endif
               if (ib.eq.3) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 integral%getBlock('ba'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaba'),&
+                                                 dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 integral%getBlock('ab'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbab'),&
+                                                 dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 integral%getBlock('bb'),ind)
+                                                 dBB,ind)
                   usedAB = .true.
                 endIf
               endif
               if (ia.eq.1) then
                 if(.not.eris%isZeroBlock('abbb')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                 integral%getBlock('ba'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abbb'),&
+                                                 dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                 integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
+                                                 dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                 integral%getBlock('aa'),ind)
+                                                 dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                 integral%getBlock('ab'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baaa'),&
+                                                 dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
               endif
               if (ia.eq.2) then
                 if(.not.eris%isZeroBlock('abbb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                 integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                                 dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                 integral%getBlock('ba'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('babb'),&
+                                                 dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                 integral%getBlock('ab'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abaa'),&
+                                                 dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                 integral%getBlock('aa'),ind)
+                                                 dAA,ind)
                   usedAB = .true.
                 endIf
               endif
               if(ia.eq.1.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('ab'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
+                                                   dAB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('ba'),ind)
+                                                   dBA,ind)
                   usedAB = .true.
                 endIf
               elseif(ia.eq.1.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('ab'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
+                                                   dAB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('ba'),ind)
+                                                   dBA,ind)
                   usedAB = .true.
                 endIf
               elseif(ia.eq.2.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('ab'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
+                                                   dAB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('ba'),ind)
+                                                   dBA,ind)
                   usedAB = .true.
                 endIf
               elseif(ia.eq.2.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('ab'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
+                                                   dAB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('ba'),ind)
+                                                   dBA,ind)
                   usedAB = .true.
                 endIf
               endif
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                               integral%getBlock('ab'),ind)
-                usedBA = .true.
+                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
+                                               dAB,ind)
+                usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
                 ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                               integral%getBlock('ba'),ind)
+                                               dBA,ind)
                 usedAB = .true.
               endIf
               if (ia.eq.4) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 integral%getBlock('ab'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaab'),&
+                                                 dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 integral%getBlock('ba'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbba'),&
+                                                 dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 integral%getBlock('bb'),ind)
+                                                 dBB,ind)
                   usedAB = .true.
                 endIf
               endif
               if (ia.eq.3) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 integral%getBlock('ab'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaba'),&
+                                                 dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 integral%getBlock('ba'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbab'),&
+                                                 dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 integral%getBlock('aa'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
+                                                 dAA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 integral%getBlock('bb'),ind)
+                                                 dBB,ind)
                   usedAB = .true.
                 endIf
               endif
               if (ib.eq.1) then
                 if(.not.eris%isZeroBlock('abbb')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                 integral%getBlock('ab'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abbb'),&
+                                                 dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                 integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
+                                                 dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                 integral%getBlock('aa'),ind)
+                                                 dAA,ind)
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                 integral%getBlock('ba'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baaa'),&
+                                                 dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
               endif
               if (ib.eq.2) then
                 if(.not.eris%isZeroBlock('abbb')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                 integral%getBlock('bb'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
+                                                 dBB,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                 integral%getBlock('ab'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('babb'),&
+                                                 dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                 integral%getBlock('ba'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abaa'),&
+                                                 dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                 integral%getBlock('aa'),ind)
+                                                 dAA,ind)
                   usedAB = .true.
                 endIf
               endif
               if(ib.eq.1.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('ba'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
+                                                   dBA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('ab'),ind)
+                                                   dAB,ind)
                   usedAB = .true.
                 endIf
               elseif(ib.eq.1.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('ba'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
+                                                   dBA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('ab'),ind)
+                                                   dAB,ind)
                   usedAB = .true.
                 endIf
               elseif(ib.eq.2.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('ba'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
+                                                   dBA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('ab'),ind)
+                                                   dAB,ind)
                   usedAB = .true.
                 endIf
               elseif(ib.eq.2.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   integral%getBlock('aa'),ind)
+                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                                                   dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   integral%getBlock('bb'),ind)
+                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                                                   dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   integral%getBlock('ba'),ind)
-                  usedBA = .true.
+                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
+                                                   dBA,ind)
+                  usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
                   ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   integral%getBlock('ab'),ind)
+                                                   dAB,ind)
                   usedAB = .true.
                 endIf
               endif
@@ -20744,22 +20822,251 @@
       if(.not.usedAB) call mqc_deallocate_matrix(ab)
       if(.not.usedBA) call mqc_deallocate_matrix(ba)
       if(FinalType.eq.'general'.and..not.(usedAB.or.usedBA)) FinalType='spin'
+!     expected symmetry of the result from the block symmetries (each block labelled
+!     structurally by MQC_R4Tensor_Matrix_Contraction from the ERI block class, the
+!     contracted pair and the integral symmetry); allocate checks it and sets it when
+!     it holds (betaAlpha vs alphaBeta included), else the result stays 'unknown'
+      expSymm = mqc_integral_expected_symmetry(usedAA,aa,usedBB,bb)
+      if(forcedSymm.ne.'unknown') expSymm = forcedSymm
+!     general results: a hermitian J/K block is a sum of terms that are not hermitian one by
+!     one (mixed-spin ERI blocks with D^ba = dagger(D^ab)), so the block labels give no
+!     symmetry. From the global initial symmetries instead: ERIs with (pq|rs) = (rs|pq) and
+!     (pq|rs)* = (qp|sr) over all spin blocks (one coefficient set: storage 'symm'), a
+!     hermitian (antihermitian) density and a J-type (12, 34) or K-type (23, 14) pair give a
+!     hermitian (antihermitian) result
+      if(expSymm.eq.'unknown'.and.eris%storType().eq.'symm'.and. &
+        (integral%getSymm().eq.'hermitian'.or.integral%getSymm().eq.'antihermitian')) then
+        if(same.or.(min(ia,ib).eq.2.and.max(ia,ib).eq.3).or.(min(ia,ib).eq.1.and.max(ia,ib).eq.4)) &
+          expSymm = integral%getSymm()
+      endIf
       select case (FinalType)
       case ('space')
-        call mqc_integral_allocate(output,'','space',aa,&
+        if(expSymm.ne.'unknown') then
+          call mqc_integral_allocate(output,'','space',aa,&
+               nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
+               nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id),symmetry=expSymm)
+        else
+          call mqc_integral_allocate(output,'','space',aa,&
                nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
                nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id))
+        endIf
       case ('spin')
-        call mqc_integral_allocate(output,'','spin',aa,bb,&
+        if(expSymm.ne.'unknown') then
+          call mqc_integral_allocate(output,'','spin',aa,bb,&
+               nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
+               nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id),symmetry=expSymm)
+        else
+          call mqc_integral_allocate(output,'','spin',aa,bb,&
                nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
                nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id))
+        endIf
       case ('general')
-        call mqc_integral_allocate(output,'','general',aa,bb,ab,ba,&
+        if(expSymm.ne.'unknown') then
+          call mqc_integral_allocate(output,'','general',aa,bb,ab,ba,&
+               nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
+               nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id),symmetry=expSymm)
+        else
+          call mqc_integral_allocate(output,'','general',aa,bb,ab,ba,&
                nDimA1=size(eris,'alpha',ic),nDimA2=size(eris,'alpha',id),&
                nDimB1=size(eris,'beta',ic),nDimB2=size(eris,'beta',id))
+        endIf
       end select
 !
       end function mqc_eri_integral_contraction
+!
+!     PROCEDURE mqc_eri_block_contraction
+!
+!>    \brief <b> mqc_eri_block_contraction contracts one ERI block with an integral
+!>    block, with a forced result symmetry when one is given</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_R4Tensor_Matrix_Contraction(R4,M,ind), with ForceSym=forced when forced is
+!>    not 'unknown' (see mqc_eri_integral_contraction: the term is part of a sum
+!>    known to have that symmetry; only its lower triangle is computed).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_eri_block_contraction(R4,M,ind,forced) result(MC)
+!
+      implicit none
+      type(mqc_r4tensor),intent(in)::R4
+      type(mqc_matrix),intent(in)::M
+      integer(kind=int64),dimension(2),intent(in)::ind
+      character(len=*),intent(in)::forced
+      type(mqc_matrix)::MC
+!
+      if(trim(forced).ne.'unknown') then
+        MC = MQC_R4Tensor_Matrix_Contraction(R4,M,ind,ForceSym=forced)
+      else
+        MC = MQC_R4Tensor_Matrix_Contraction(R4,M,ind)
+      endIf
+!
+      end function mqc_eri_block_contraction
+!
+!     PROCEDURE mqc_integral_expected_symmetry
+!
+!>    \brief <b> mqc_integral_expected_symmetry returns the integral symmetry that
+!>    the diagonal spin blocks of a result allow</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Candidates hermitian, antihermitian, symmetric, antisymmetric (in this
+!>    order). Each used block keeps the candidates its storage label allows:
+!>      hermitian     -> hermitian (real data: also symmetric)
+!>      antihermitian -> antihermitian (real data: also antisymmetric)
+!>      symmetric     -> symmetric;  antisymmetric -> antisymmetric
+!>      diagonal      -> symmetric (real data: also hermitian)
+!>      fullsymmetric (zero) -> every candidate
+!>      unknown, asymmetric  -> none
+!>    A complex block labelled symmetric (antisymmetric) also allows hermitian
+!>    (antihermitian) when TestData (optional, default FALSE) is given and its
+!>    stored data is real (mqc_matrix_real_valued, O(n^2)).
+!>    Returns the first candidate allowed by every used block, 'unknown' if
+!>    none (or no used block). The off-diagonal blocks of a general integral
+!>    are not seen here: mqc_integral_allocate checks the whole integral.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] usedA,A,usedB,B
+!>    \verbatim
+!>        usedA, usedB are Logical; A, B are Type(MQC_Matrix): the alpha and
+!>        beta blocks and whether they were computed
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_expected_symmetry(usedA,A,usedB,B,TestData) result(label)
+!
+      implicit none
+      logical,intent(in)::usedA,usedB
+      type(mqc_matrix),intent(in)::A,B
+      logical,intent(in),optional::TestData
+      character(len=64)::label
+      character(len=16),dimension(4)::names
+      logical,dimension(4)::allowed
+      integer::k
+!
+      names = [character(len=16)::'hermitian','antihermitian','symmetric','antisymmetric']
+      allowed = usedA.or.usedB
+      if(usedA) allowed = allowed.and.mqc_matrix_allowed_symmetries(A,TestData)
+      if(usedB) allowed = allowed.and.mqc_matrix_allowed_symmetries(B,TestData)
+      label = 'unknown'
+      do k = 1, 4
+        if(allowed(k)) then
+          label = names(k)
+          exit
+        endIf
+      endDo
+!
+      end function mqc_integral_expected_symmetry
+!
+!     PROCEDURE mqc_matrix_allowed_symmetries
+!
+!>    \brief <b> mqc_matrix_allowed_symmetries returns which of hermitian,
+!>    antihermitian, symmetric, antisymmetric the storage label of a matrix
+!>    guarantees</b>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_matrix_allowed_symmetries(M,TestData) result(allowed)
+!
+      implicit none
+      type(mqc_matrix),intent(in)::M
+      logical,intent(in),optional::TestData
+      logical,dimension(4)::allowed
+      logical::isReal
+!
+      isReal = .not.mqc_matrix_havecomplex(M)
+      allowed = .false.
+      select case (trim(mqc_matrix_get_symmetry(M)))
+      case('hermitian')
+        allowed(1) = .true.
+        allowed(3) = isReal
+      case('antihermitian')
+        allowed(2) = .true.
+        allowed(4) = isReal
+      case('symmetric')
+!       real-valued complex data: real symmetric = hermitian
+        allowed(3) = .true.
+        allowed(1) = isReal.or.mqc_matrix_real_valued(M,TestData)
+      case('antisymmetric')
+!       real-valued complex data: real antisymmetric = antihermitian
+        allowed(4) = .true.
+        allowed(2) = isReal.or.mqc_matrix_real_valued(M,TestData)
+      case('diagonal')
+        allowed(3) = .true.
+        allowed(1) = isReal
+      case('fullsymmetric')
+        allowed = .true.
+      case('unknown','asymmetric','unallocated')
+        continue
+      case default
+        call mqc_error_a('Unknown matrix symmetry in mqc_matrix_allowed_symmetries',6, &
+          'label',mqc_matrix_get_symmetry(M))
+      end select
+!
+      end function mqc_matrix_allowed_symmetries
+!
+!     PROCEDURE mqc_matrix_real_valued
+!
+!>    \brief <b> mqc_matrix_real_valued tests whether the stored data of an MQC
+!>    matrix is real within MQC_very_small</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    TRUE for real or integer data. Complex data: with TestData (optional,
+!>    default FALSE) TRUE when every imaginary part of the stored data is
+!>    <= Max(MQC_very_small,0) (O(n^2) scan; packed storages are not unpacked),
+!>    without it FALSE (no scan).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_matrix_real_valued(M,TestData) result(isReal)
+!
+      implicit none
+      type(mqc_matrix),intent(in)::M
+      logical,intent(in),optional::TestData
+      logical::isReal,myTest
+      complex(kind=real64),dimension(:,:),allocatable::z
+!
+      myTest = .false.
+      if(present(TestData)) myTest = TestData
+      isReal = .not.mqc_matrix_havecomplex(M)
+!     O(n^2) scan of the imaginary parts only when requested
+      if(.not.isReal.and.myTest) then
+        z = M
+        isReal = maxval(abs(aimag(z))).le.max(MQC_very_small,0.0)
+      endIf
+!
+      end function mqc_matrix_real_valued
 !
 !
 !     PROCEDURE MQC_ERI_R4Tensor_Contraction
@@ -29554,12 +29861,12 @@
             integral = integral%changeType('spin')
             if(.not.integral%hasAlpha().and.nonZero)  &
                 call integral%alpha%init(integral%blockSize('alpha',1),integral%blockSize('alpha',2),zeroEl)
-            if(integral%hasAlpha()) call integral%alpha%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%alpha)) call integral%alpha%put(element,myI,myJ)
           else if(spinBlock.eq.'beta') then
             integral = integral%changeType('spin')
             if(.not.integral%hasBeta().and.nonZero)  &
                 call integral%beta%init(integral%blockSize('beta',1),integral%blockSize('beta',2),zeroEl)
-            if(integral%hasBeta()) call integral%beta%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%beta)) call integral%beta%put(element,myI,myJ)
           elseIf(spinBlock.eq.'alphabeta') then
             if(nonZero) then
               integral = integral%changeType('general')
@@ -29581,11 +29888,11 @@
           if(spinBlock.eq.'alpha') then
             if(.not.integral%hasAlpha().and.nonZero)  &
                 call integral%alpha%init(integral%blockSize('alpha',1),integral%blockSize('alpha',2),zeroEl)
-            if(integral%hasAlpha()) call integral%alpha%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%alpha)) call integral%alpha%put(element,myI,myJ)
           elseif(spinblock.eq.'beta') then
             if(.not.integral%hasBeta().and.nonZero)  &
                 call integral%beta%init(integral%blockSize('beta',1),integral%blockSize('beta',2),zeroEl)
-            if(integral%hasBeta()) call integral%beta%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%beta)) call integral%beta%put(element,myI,myJ)
           elseIf(spinBlock.eq.'alphabeta') then
             if(nonZero) then
               integral = integral%changeType('general')
@@ -29607,19 +29914,20 @@
           if(spinBlock.eq.'alpha') then
             if(.not.integral%hasAlpha().and.nonZero)  &
                 call integral%alpha%init(integral%blockSize('alpha',1),integral%blockSize('alpha',2),zeroEl)
-            if(integral%hasAlpha()) call integral%alpha%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%alpha)) call integral%alpha%put(element,myI,myJ)
           elseif(spinblock.eq.'beta') then
             if(.not.integral%hasBeta().and.nonZero)  &
                 call integral%beta%init(integral%blockSize('beta',1),integral%blockSize('beta',2),zeroEl)
-            if(integral%hasBeta()) call integral%beta%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%beta)) call integral%beta%put(element,myI,myJ)
           elseif(spinblock.eq.'alphabeta') then
             if(.not.integral%hasAlphaBeta().and.nonZero) &
                 call integral%alphabeta%init(integral%blockSize('beta',1),integral%blockSize('alpha',2),zeroEl)
-            if(integral%hasAlphaBeta()) call integral%alphaBeta%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%alphaBeta)) call integral%alphaBeta%put(element,myI,myJ)
           elseif(spinblock.eq.'betaalpha') then
             if(.not.integral%hasBetaAlpha().and.nonZero) &
                 call integral%betaalpha%init(integral%blockSize('alpha',1),integral%blockSize('beta',2),zeroEl)
-            if(integral%hasBetaAlpha()) call integral%betaAlpha%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%betaAlpha).or. &
+              (integral%isCompressed().and.MQC_Matrix_isAllocated(integral%alphaBeta))) call integral%betaAlpha%put(element,myI,myJ)
           else
             call mqc_error_A('SpinBlock type not valid in MQC_Integral_Put',6,'SpinBlock',SpinBlock)
           endIf
@@ -29631,14 +29939,14 @@
           if(myI.le.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             if(.not.integral%hasAlpha().and.nonZero)  &
                 call integral%alpha%init(integral%blockSize('alpha',1),integral%blockSize('alpha',2),zeroEl)
-            if(integral%hasAlpha()) call integral%alpha%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%alpha)) call integral%alpha%put(element,myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
             myJ = myJ - integral%blockSize('alpha',2)
             integral = integral%changeType('spin')
             if(.not.integral%hasBeta().and.nonZero)  &
                 call integral%beta%init(integral%blockSize('beta',1),integral%blockSize('beta',2),zeroEl)
-            if(integral%hasBeta()) call integral%beta%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%beta)) call integral%beta%put(element,myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             if(nonZero) then
               myI = myI - integral%blockSize('alpha',1)
@@ -29660,13 +29968,13 @@
           if(myI.le.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             if(.not.integral%hasAlpha().and.nonZero)  &
                 call integral%alpha%init(integral%blockSize('alpha',1),integral%blockSize('alpha',2),zeroEl)
-            if(integral%hasAlpha()) call integral%alpha%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%alpha)) call integral%alpha%put(element,myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
             myJ = myJ - integral%blockSize('alpha',2)
             if(.not.integral%hasBeta().and.nonZero)  &
                 call integral%beta%init(integral%blockSize('beta',1),integral%blockSize('beta',2),zeroEl)
-            if(integral%hasBeta()) call integral%beta%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%beta)) call integral%beta%put(element,myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             if(nonZero) then
               myI = myI - integral%blockSize('alpha',1)
@@ -29688,23 +29996,24 @@
           if(myI.le.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             if(.not.integral%hasAlpha().and.nonZero)  &
                 call integral%alpha%init(integral%blockSize('alpha',1),integral%blockSize('alpha',2),zeroEl)
-            if(integral%hasAlpha()) call integral%alpha%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%alpha)) call integral%alpha%put(element,myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
             if(.not.integral%hasAlphaBeta().and.nonZero) &
                 call integral%alphabeta%init(integral%blockSize('beta',1),integral%blockSize('alpha',2),zeroEl)
-            if(integral%hasAlphaBeta()) call integral%alphaBeta%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%alphaBeta)) call integral%alphaBeta%put(element,myI,myJ)
           elseIf(myI.le.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myJ = myJ - integral%blockSize('alpha',2)
             if(.not.integral%hasBetaAlpha().and.nonZero) &
                 call integral%betaalpha%init(integral%blockSize('alpha',1),integral%blockSize('beta',2),zeroEl)
-            if(integral%hasBetaAlpha()) call integral%betaAlpha%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%betaAlpha).or. &
+              (integral%isCompressed().and.MQC_Matrix_isAllocated(integral%alphaBeta))) call integral%betaAlpha%put(element,myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
             myJ = myJ - integral%blockSize('alpha',2)
             if(.not.integral%hasBeta().and.nonZero)  &
                 call integral%beta%init(integral%blockSize('beta',1),integral%blockSize('beta',2),zeroEl)
-            if(integral%hasBeta()) call integral%beta%put(element,myI,myJ)
+            if(MQC_Matrix_isAllocated(integral%beta)) call integral%beta%put(element,myI,myJ)
           endIf
         else
           call mqc_error_A('Array type not valid in MQC_Integral_Put',6,'Array_Type',integral%array_type)
@@ -33330,12 +33639,14 @@
 !>
 !>    The AO integrals are spin-free (ERIs block 'alpha'), so the MO block
 !>    (s1 s2|s3 s4) is the sum over the AO spin t12 of electron 1 and t34 of
-!>    electron 2 of R4_Trans_Full with the coefficient pieces (t,s) of each
+!>    electron 2 of the transforms with the coefficient pieces (t,s) of each
 !>    index: (a,a) 'alpha', (b,b) 'beta', (b,a) 'alphaBeta', (a,b) 'betaAlpha'.
-!>    Equal pieces of one set are passed to R4_Trans_Full once (same matrix),
-!>    so each block gets its symmetry structurally (e.g. R_8_1234 for one real
-!>    set, S_4_1234 for one complex set); different sets are compared by
-!>    R4_Trans_Full's Grouping.
+!>    The two sums are independent: each block is one R4_Two_Piece_Trans_Full
+!>    call with the t12 terms as bra pieces and the t34 terms as ket pieces
+!>    (no partial terms, no block sums). Equal pieces of one set are passed
+!>    once (same matrix), so each block gets its symmetry structurally (e.g.
+!>    R_8_1234 for one real set, S_4_1234 for one complex set, 4321* kept in
+!>    abba); different sets are compared by Grouping.
 !>
 !>    MO_ERIs: integralType 'space', 'spin' or 'general' from the coefficient
 !>    sets used; interactionType of ERIs; storageType 'symm' when every index
@@ -33399,16 +33710,19 @@
       Type(MQC_Matrix),Dimension(4,4)::P
       Logical,Dimension(4,4)::HasP
       Logical,Dimension(4)::Have,Used,IsSpace
-      Integer(kind=int64),Dimension(4)::my_Map,NA,NB,Pcs,Sts
+      Integer(kind=int64),Dimension(4)::my_Map,NA,NB,Sts
       Integer(kind=int64),Dimension(16)::TList
-      Integer(kind=int64)::K,K1,Q,IT,NT,Tau12,Tau34,Tau
+      Integer(kind=int64),Dimension(8)::KS,KP
+      Integer(kind=int64),Dimension(2,2)::Map12,Map34
+      Integer(kind=int64)::K,K1,Q,IT,NT,NM,NBra,NKet
       Logical,Dimension(16)::allocVec
       Type(MQC_R4Tensor),Dimension(16)::OutB
-      Type(MQC_R4Tensor)::aoAlpha,Contrib
+      Type(MQC_R4Tensor)::aoAlpha
+      Type(MQC_Matrix),Dimension(8)::MB
       Character(Len=4),Dimension(16)::TSpin
       Character(Len=15)::intType,StorType
       Character(Len=64)::myStorIntType,myIntegralType
-      Logical::SameAll,OK,Pair,AOExch
+      Logical::SameAll
 
       TSpin = [Character(Len=4)::'aaaa','bbbb','aabb','bbaa','abab','abba','baab','baba', &
         'aaab','aaba','abaa','baaa','bbba','bbab','babb','abbb']
@@ -33452,7 +33766,6 @@
         'supported for space-type [all-space-coefficient] output)',6,&
         'ERIs%intType()',ERIs%intType(),'intType',intType)
       aoAlpha = ERIs%getBlock('alpha')
-      AOExch = MQC_R4Tensor_Has_Op(aoAlpha,[3,4,1,2],.False.)
 !     coefficient pieces of the sets used: 1 alpha, 2 beta, 3 alphaBeta, 4 betaAlpha
       HasP = .False.
       IsSpace = .False.
@@ -33485,6 +33798,15 @@
       K1 = my_Map(1)
       Do K = 1, 4
         If(.not.Used(K).or.K.eq.K1) Cycle
+!       sets of another type or size (e.g. the NEF orbital spaces) are different
+        If(CSet(K1)%type().ne.CSet(K)%type().or. &
+          CSet(K1)%blockSize('alpha',1).ne.CSet(K)%blockSize('alpha',1).or. &
+          CSet(K1)%blockSize('alpha',2).ne.CSet(K)%blockSize('alpha',2).or. &
+          CSet(K1)%blockSize('beta',1).ne.CSet(K)%blockSize('beta',1).or. &
+          CSet(K1)%blockSize('beta',2).ne.CSet(K)%blockSize('beta',2)) then
+          SameAll = .False.
+          Exit
+        EndIf
         If(mqc_integral_norm(CSet(K1)-CSet(K)).ge.1.0e-14) then
           SameAll = .False.
           Exit
@@ -33513,46 +33835,23 @@
         Call MQC_Error_A('TwoERI_Trans_Full: unknown integral/storage type',6,'intType',intType, &
           'StorType',StorType)
       End Select
+!     each output block: one R4_Two_Piece_Trans_Full call, bra pieces = the AO spins t12
+!     of electron 1 with both index 1 and 2 pieces, ket pieces = the t34 of electron 2
+      Do Q = 1, 4
+        Sts(Q) = my_Map(Q)
+      EndDo
       allocVec = .False.
       Do IT = 1, NT
-        Do Tau12 = 1, 2
-          Do Tau34 = 1, 2
-            OK = .True.
-            Do Q = 1, 4
-              If(Q.le.2) then
-                Tau = Tau12
-              Else
-                Tau = Tau34
-              EndIf
-!             piece (AO spin, MO spin): (a,a) 1, (b,b) 2, (b,a) 3, (a,b) 4
-              If(TSpin(TList(IT))(Q:Q).eq.'a') then
-                Pcs(Q) = 1
-                If(Tau.eq.2) Pcs(Q) = 3
-              Else
-                Pcs(Q) = 2
-                If(Tau.eq.1) Pcs(Q) = 4
-              EndIf
-              Sts(Q) = my_Map(Q)
-              OK = OK.and.HasP(Sts(Q),Pcs(Q))
-            EndDo
-            If(.not.OK) Cycle
-!           The (b,a) AO-spin term is the (3412) image of the (a,b) term when the AO block
-!           has (3412) and the bra and ket use the same sets and spins: add it as the image
-            Pair = Tau12.ne.Tau34.and.AOExch.and.All(Sts(1:2).eq.Sts(3:4)).and. &
-              TSpin(TList(IT))(1:2).eq.TSpin(TList(IT))(3:4)
-            If(Pair.and.Tau12.eq.2) Cycle
-            Contrib = MQC_TwoERI_Block_Transform(aoAlpha,P,IsSpace,Sts,Pcs)
-            If(Pair) Contrib = MQC_R4Tensor_Add_Image(Contrib,[3,4,1,2])
-            If(allocVec(TList(IT))) then
-              OutB(TList(IT)) = OutB(TList(IT))+Contrib
-            Else
-              OutB(TList(IT)) = Contrib
-              allocVec(TList(IT)) = .True.
-            EndIf
-          EndDo
+        NM = 0
+        Call MQC_TwoERI_Pair_Pieces(TSpin(TList(IT))(1:2),Sts(1:2),HasP,IsSpace,KS,KP,NM,Map12,NBra)
+        Call MQC_TwoERI_Pair_Pieces(TSpin(TList(IT))(3:4),Sts(3:4),HasP,IsSpace,KS,KP,NM,Map34,NKet)
+        If(NBra.eq.0.or.NKet.eq.0) Cycle
+        Do K = 1, NM
+          MB(K) = P(KS(K),KP(K))
         EndDo
+        OutB(TList(IT)) = R4_Two_Piece_Trans_Full(aoAlpha,MB(1:NM),Map12(:,1:NBra),Map34(:,1:NKet))
+        allocVec(TList(IT)) = .True.
       EndDo
-!
       myStorIntType = Trim(StorType)//'-'//Trim(ERIs%intType())
       myIntegralType = intType
       Select Case(Trim(intType)//'-'//Trim(StorType))
@@ -33584,116 +33883,106 @@
       End Subroutine TwoERI_Trans_Full
 !
 !
-!     PROCEDURE MQC_TwoERI_Block_Transform
-!
-!>    \brief <b> MQC_TwoERI_Block_Transform transforms the spin-free AO integrals
-!>    with the coefficient pieces of one MO spin block</b>
+!     PROCEDURE MQC_TwoERI_Pair_Pieces
+!>    \brief <b> MQC_TwoERI_Pair_Pieces lists the coefficient pieces of one index
+!>    pair of an MO spin block for R4_Two_Piece_Trans_Full</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
 !>
-!>    Index q uses piece Pcs(q) of coefficient set Sts(q), i.e. the matrix
-!>    P(Sts(q),Pcs(q)) (pieces 1 alpha, 2 beta, 3 alphaBeta, 4 betaAlpha; the
-!>    beta piece of a 'space' set is its alpha piece). Equal (set, piece)
-!>    pairs become one matrix of R4_Trans_Full (Map), so it knows their
-!>    relations structurally; Conj is the chemist default [T,F,T,F].
+!>    For the AO spin t = alpha, beta of the electron of the pair, the piece
+!>    of index q of the pair is (t, Spin(q)): (a,a) 1 alpha, (b,b) 2 beta,
+!>    (b,a) 3 alphaBeta, (a,b) 4 betaAlpha, of coefficient set Sts(q). A t
+!>    whose two pieces exist (HasP) is one piece of the pair. Each distinct
+!>    (set, piece) gets one entry in KS/KP (the beta piece of a 'space' set is
+!>    its alpha piece); PMap(q,p) is the entry of index q in pair piece p.
 !>
 !>    \endverbatim
-!
 !     Arguments:
 !     ==========
-!>    \param[in] AO
+!>    \param[in] Spin,Sts
 !>    \verbatim
-!>        AO is Type(MQC_R4Tensor)
-!>        The spin-free AO integrals (mu nu|la si) (block 'alpha' of the input
-!>        ERIs).
+!>        Spin is Character(Len=2), the MO spins of the pair ('a'/'b');
+!>        Sts is Integer(kind=int64),Dimension(2), the coefficient sets
 !>    \endverbatim
 !>
-!>    \param[in] P
+!>    \param[in] HasP,IsSpace
 !>    \verbatim
-!>        P is Type(MQC_Matrix),Dimension(4,4)
-!>        The coefficient pieces P(set,piece): set 1..4 is MO_Coeff_1..4 of
-!>        TwoERI_Trans_Full; piece 1 alpha (alpha AO -> alpha MO), 2 beta (beta
-!>        AO -> beta MO), 3 alphaBeta (beta AO -> alpha MO), 4 betaAlpha (alpha
-!>        AO -> beta MO). Only the pieces of the sets in Sts are read.
+!>        HasP is Logical,Dimension(4,4): HasP(set,piece) the piece exists;
+!>        IsSpace is Logical,Dimension(4): the set is 'space' type
 !>    \endverbatim
 !>
-!>    \param[in] IsSpace
+!>    \param[in,out] KS,KP,NM
 !>    \verbatim
-!>        IsSpace is Logical,Dimension(4)
-!>        IsSpace(set) is TRUE for a 'space'-type coefficient set: its beta
-!>        piece is its alpha piece, P(set,1) (P(set,2) is not read), and the two
-!>        count as the same matrix.
+!>        KS, KP are Integer(kind=int64),Dimension(8): set and piece of the
+!>        distinct matrices so far; NM is Integer(kind=int64), their number
 !>    \endverbatim
 !>
-!>    \param[in] Sts
+!>    \param[out] PMap,NP
 !>    \verbatim
-!>        Sts is Integer(kind=int64),Dimension(4)
-!>        Sts(q) is the coefficient set of output index q (the Map of
-!>        TwoERI_Trans_Full).
+!>        PMap is Integer(kind=int64),Dimension(2,2): matrix entries of the
+!>        two indexes of each pair piece; NP is Integer(kind=int64), the
+!>        number of pair pieces (0, 1 or 2)
 !>    \endverbatim
-!>
-!>    \param[in] Pcs
-!>    \verbatim
-!>        Pcs is Integer(kind=int64),Dimension(4)
-!>        Pcs(q) is the piece of output index q, from the AO spin of the
-!>        electron of q and the MO spin of the block at q: (alpha,alpha) 1,
-!>        (beta,beta) 2, (beta,alpha) 3, (alpha,beta) 4. Index q is transformed
-!>        with P(Sts(q),Pcs(q)).
-!>    \endverbatim
-!
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
 !>    \date 2026
-!
-      Function MQC_TwoERI_Block_Transform(AO,P,IsSpace,Sts,Pcs) Result(R4Out)
+      Subroutine MQC_TwoERI_Pair_Pieces(Spin,Sts,HasP,IsSpace,KS,KP,NM,PMap,NP)
 
       Implicit None
-      Type(MQC_R4Tensor),Intent(In)::AO
-      Type(MQC_Matrix),Dimension(4,4),Intent(In)::P
+      Character(Len=2),Intent(In)::Spin
+      Integer(kind=int64),Dimension(2),Intent(In)::Sts
+      Logical,Dimension(4,4),Intent(In)::HasP
       Logical,Dimension(4),Intent(In)::IsSpace
-      Integer(kind=int64),Dimension(4),Intent(In)::Sts,Pcs
-      Type(MQC_R4Tensor)::R4Out
-      Integer(kind=int64),Dimension(4)::KS,KP,BMap,Pc
-      Integer(kind=int64)::Q,M,NM
+      Integer(kind=int64),Dimension(8),Intent(InOut)::KS,KP
+      Integer(kind=int64),Intent(InOut)::NM
+      Integer(kind=int64),Dimension(2,2),Intent(Out)::PMap
+      Integer(kind=int64),Intent(Out)::NP
+      Integer(kind=int64),Dimension(2)::Pcs
+      Integer(kind=int64)::Tau,Q,Pc,M,Idx
+      Logical::OK
 
-      NM = 0
-      Do Q = 1, 4
-        Pc(Q) = Pcs(Q)
-        If(IsSpace(Sts(Q)).and.Pc(Q).eq.2) Pc(Q) = 1
-        BMap(Q) = 0
-        Do M = 1, NM
-          If(KS(M).eq.Sts(Q).and.KP(M).eq.Pc(Q)) then
-            BMap(Q) = M
-            Exit
+      NP = 0
+      PMap = 0
+      Do Tau = 1, 2
+        OK = .True.
+        Do Q = 1, 2
+!         piece (AO spin, MO spin): (a,a) 1, (b,b) 2, (b,a) 3, (a,b) 4
+          If(Spin(Q:Q).eq.'a') then
+            Pcs(Q) = 1
+            If(Tau.eq.2) Pcs(Q) = 3
+          Else
+            Pcs(Q) = 2
+            If(Tau.eq.1) Pcs(Q) = 4
           EndIf
+          OK = OK.and.HasP(Sts(Q),Pcs(Q))
         EndDo
-        If(BMap(Q).eq.0) then
-          NM = NM+1
-          KS(NM) = Sts(Q)
-          KP(NM) = Pc(Q)
-          BMap(Q) = NM
-        EndIf
+        If(.not.OK) Cycle
+        NP = NP+1
+        Do Q = 1, 2
+          Pc = Pcs(Q)
+          If(IsSpace(Sts(Q)).and.Pc.eq.2) Pc = 1
+          Idx = 0
+          Do M = 1, NM
+            If(KS(M).eq.Sts(Q).and.KP(M).eq.Pc) then
+              Idx = M
+              Exit
+            EndIf
+          EndDo
+          If(Idx.eq.0) then
+            NM = NM+1
+            KS(NM) = Sts(Q)
+            KP(NM) = Pc
+            Idx = NM
+          EndIf
+          PMap(Q,NP) = Idx
+        EndDo
       EndDo
-      Select Case(NM)
-      Case(1)
-        R4Out = R4_Trans_Full(AO,P(KS(1),KP(1)),Map=BMap)
-      Case(2)
-        R4Out = R4_Trans_Full(AO,P(KS(1),KP(1)),P(KS(2),KP(2)),Map=BMap)
-      Case(3)
-        R4Out = R4_Trans_Full(AO,P(KS(1),KP(1)),P(KS(2),KP(2)),P(KS(3),KP(3)),Map=BMap)
-      Case(4)
-        R4Out = R4_Trans_Full(AO,P(KS(1),KP(1)),P(KS(2),KP(2)),P(KS(3),KP(3)),P(KS(4),KP(4)),Map=BMap)
-      Case Default
-        Call MQC_Error_I('MQC_TwoERI_Block_Transform: unknown number of matrices',6,'NM',NM)
-      End Select
 
-      End Function MQC_TwoERI_Block_Transform
-!
-!
+      End Subroutine MQC_TwoERI_Pair_Pieces
 !     PROCEDURE MQC_TwoERIs_Conjugate_Transpose
 !
 !>    \brief <b> MQC_TwoERIs_Conjugate_Transpose is used to compute the conjugate 

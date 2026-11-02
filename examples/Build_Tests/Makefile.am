@@ -53,7 +53,7 @@ unitTest06_SOURCES = ../../unitTests/src/unitTest06.f03
 unitTest07_SOURCES = ../../unitTests/src/unitTest07.f03
 unitTestIterative_SOURCES = ../../unitTests/src/unitTestIterative.f03
 ______unitTests_src_unitTest_twoERIs_SOURCES = \
-  ../../unitTests/src/unitTest_twoERIs.F03
+  ../../unitTests/src/unitTest_twoERIs.f03
 ______unitTests_src_unitTest_NEF_collapse_expand_SOURCES = \
   ../../unitTests/src/unitTest_NEF_collapse_expand.F03
 ______unitTests_src_unitTest_NEF_set_algebra_SOURCES = \

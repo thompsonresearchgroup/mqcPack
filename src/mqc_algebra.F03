@@ -13292,7 +13292,7 @@
       call output%init(size(A)*size(B))
       do i=1,size(A)
         do j=1,size(B)
-          call output%put(A%at(i)+B%at(j),(i-1)*size(A)+j)
+          call output%put(A%at(i)+B%at(j),(i-1)*size(B)+j)
         endDo
       endDo
 !

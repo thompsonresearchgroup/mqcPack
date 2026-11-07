@@ -19181,12 +19181,12 @@
                 if(integral%array_type.eq.'general') then
                   if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
                     call alphaBetaLoc%put(alphaBetaLoc%at(l,k)-&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n+nBasis),l,k)
+                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n),l,k)
                   endIf
                 !BA Block
                   if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
                     call betaAlphaLoc%put(betaAlphaLoc%at(l,k)-&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n),l,k)
+                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n+nBasis),l,k)
                   endIf
                 endIf
               end do
@@ -22378,12 +22378,15 @@
       Integer(kind=int64)::ia,ja,ka,la,ib,jb,kb,lb,i,j,k,l
       Integer(kind=int64)::dimAi,dimAj,dimAk,dimAl,dimBi,dimBj,dimBk,dimBl
       character(len=4)::str1,str2,active_conf
+      character(len=4),dimension(16)::full_array
       character(len=4),dimension(4)::allowed_spin,a_bbb_array,aaa_b_array
       character(len=4),dimension(6)::aa_bb_array
 !
       aa_bb_array=['aabb','abab','abba','baab','baba','bbaa']
       a_bbb_array=['abbb','babb','bbab','bbba']
       aaa_b_array=['baaa','abaa','aaba','aaab']
+      full_array=['aaaa','bbbb','aabb','abab','abba','baab','baba','bbaa',&
+                  'abbb','babb','bbab','bbba','baaa','abaa','aaba','aaab']
 
 !
       if(present(index1)) then
@@ -22633,81 +22636,41 @@
             end if
           end do
         case ('general')
-          intType='spin'
-          if(.not.(eris1%isZeroBlock('bbbb').or.eris2%isZeroBlock('bbbb'))) &
-            bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-              eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
-          do i=1,6
-            active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
-            if (active_conf(3:4).eq.'aa') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            else if (active_conf(3:4).eq.'bb') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            else if (active_conf(3:4).eq.'ab') then
-              intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            else if (active_conf(3:4).eq.'ba') then
-              intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            end if
-          end do
-          do i=1,4
-            active_conf=a_bbb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
-            if (active_conf(3:4) == 'aa') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            else if (active_conf(3:4) == 'bb') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            else if (active_conf(3:4) == 'ab') then
-              intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            else if (active_conf(3:4) == 'ba') then
-              intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            end if
-          end do
-          do i=1,4
-            active_conf=aaa_b_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
-            if (active_conf(3:4) == 'aa') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            else if (active_conf(3:4) == 'bb') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            else if (active_conf(3:4) == 'ab') then
-              intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            else if (active_conf(3:4) == 'ba') then
-              intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
-            end if
+          intType='general'
+          call aa%init(eris1%blockSize('alpha',ka),eris1%blockSize('alpha',la))
+          call ab%init(eris1%blockSize('alpha',ka),eris1%blockSize('beta',la))
+          call ba%init(eris1%blockSize('beta',ka),eris1%blockSize('alpha',la))
+          call bb%init(eris1%blockSize('beta',ka),eris1%blockSize('beta',la))
+          do i=1,16
+            str1=full_array(i)
+            if(eris1%isZeroBlock(str1)) cycle
+            do j=1,16
+              str2=full_array(j)
+              if(eris2%isZeroBlock(str2)) cycle
+              if(str1(ia:ia).ne.str2(ib:ib).or.&
+                 str1(ja:ja).ne.str2(jb:jb).or.&
+                 str1(ka:ka).ne.str2(kb:kb).or.&
+                 str1(la:la).ne.str2(lb:lb)) cycle
+              active_conf=str1(ka:ka)//str1(la:la)
+              select case(active_conf)
+              case('aa')
+                aa=aa+MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),&
+                     [ia,ja,ka,la],[ib,jb,kb,lb])
+              case('bb')
+                bb=bb+MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),&
+                     [ia,ja,ka,la],[ib,jb,kb,lb])
+              case('ab')
+                ab=ab+MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),&
+                     [ia,ja,ka,la],[ib,jb,kb,lb])
+              case('ba')
+                ba=ba+MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),&
+                     [ia,ja,ka,la],[ib,jb,kb,lb])
+              end select
+            end do
           end do
         case default
           call mqc_error_a('Unrecognized 2ERI integral type',6,&
@@ -22722,7 +22685,10 @@
       elseif (intType.eq.'spin') then
         call mqc_integral_allocate(IntOut,'full','spin',aa,bb)
       elseif (intType.eq.'general') then
-        call mqc_integral_allocate(IntOut,'full','general',aa,bb,ab,ba)
+        ! The local names describe the row/column spins: ab is the
+        ! alpha-row/beta-column (betaAlpha) block, while ba is the
+        ! beta-row/alpha-column (alphaBeta) block.
+        call mqc_integral_allocate(IntOut,'full','general',aa,bb,ba,ab)
       endif
  
 !
@@ -30173,10 +30139,10 @@
             if(integral%hasAlpha()) element = integral%alpha%at(myI,myJ)
           elseIf(myI.le.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myJ = myJ - integral%blockSize('alpha',2)
-            if(integral%hasAlphaBeta()) element = integral%alphaBeta%at(myI,myJ)
+            if(integral%hasBetaAlpha()) element = integral%baElement(myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
-            if(integral%hasBetaAlpha()) element = integral%baElement(myI,myJ)
+            if(integral%hasAlphaBeta()) element = integral%alphaBeta%at(myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
             myJ = myJ - integral%blockSize('alpha',2)

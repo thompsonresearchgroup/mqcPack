@@ -26,13 +26,15 @@
       type(mqc_scalar)::sc
       type(mqc_twoERIs)::eriA,eriB,eriC
       type(mqc_twoERIs)::eriAO,eriX,eriHalf,eriPartial,eriTrans,eriTransLR,eriFull,eriSymm
+      type(mqc_twoERISet)::eriSetTest
       type(mqc_twoERIs)::eriAsymAO,eriDegenAO
-      type(mqc_matrix)::mA,mB,mC,mD,outBlk
+      type(mqc_matrix)::mA,mB,mC,mD,outBlk,oracleMat
       type(mqc_matrix)::moAA,moBB,moAB,moBA,moFull,moAA2,moBB2,moAB2,moBA2,moFull2
       type(mqc_matrix)::moAAk,moBBk,moABk,moBAk
       type(mqc_matrix),dimension(4)::coeffMoFull
       type(mqc_scf_integral)::intSp,intSpin,intGen,intOut
       type(mqc_scf_integral)::generalMO,generalMO2
+      type(mqc_scf_integral)::gRegular,gSquare
       type(mqc_scf_integral),dimension(4)::coeffFull
       real(kind=real64)::got,expected
       real(kind=real64)::partialError,transError,fullError,atError
@@ -41,6 +43,7 @@
       complex(kind=real64)::directValue,partialValue,transValue
       complex(kind=real64)::coef1,coef2,coef3,coef4
       integer::p,q,r,s,mu,nu,lambda,sigma,spin1,spin2,iblock,jblock,iinteraction,kCoeff
+      integer(kind=int64)::indexA(4),indexB(4)
       integer::colP,colQ,colR,colS
       character(len=4),dimension(16)::spinLabels
       character(len=9),dimension(3)::interactionLabels
@@ -3616,6 +3619,41 @@
       call mqc_integral_allocate(generalMO,'complex general test MOs','general',&
                                  moAA,moBB,moAB,moBA)
       moFull=generalMO%getBlock('full')
+
+!     The scalar accessor must use the same off-diagonal placement as the
+!     assembled rectangular spin-orbital matrix.
+      fullError=0.0_real64
+      do p=1,2*n
+        do q=1,2*n
+          sc=generalMO%at(p,q)
+          directValue=sc%cval()
+          sc=moFull%at(p,q)
+          fullError=max(fullError,abs(directValue-sc%cval()))
+        end do
+      end do
+      if(fullError.lt.tol) then
+        write(*,1000) 'general integral at agrees with full block'
+      else
+        write(*,1010) 'general integral at agrees with full block',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
+!     The optimized ERI-set contraction and the explicit square contraction
+!     must select the same lower-left/upper-right density blocks.
+      call eriSetTest%addToSet(eriAO)
+      gRegular=contraction(eriSetTest,generalMO,0.0_real64)
+      gSquare=contraction(eriSetTest,generalMO,0.0_real64,'coulomb')+&
+              contraction(eriSetTest,generalMO,0.0_real64,'exchange')
+      outBlk=gRegular%getBlock('full')-gSquare%getBlock('full')
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular and square contractions agree'
+      else
+        write(*,1010) 'general regular and square contractions agree',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
       eriX=generalMO%outer2ERI(dagger(generalMO))
       eriHalf=mqc_eri_eri_partial_contraction_2ERI(eriAO,eriX,&
                                                    [4,3,1,2],[1,4,3,2])
@@ -3677,6 +3715,34 @@
           nfail=nfail+1
         end if
       end do
+
+!     Compare representative general/general partial contractions with the
+!     same contractions performed on the complete spin-orbital tensors.
+      tD=eriTrans%getBlock('full')
+      indexA=[2_int64,3_int64,4_int64,1_int64]
+      fullError=0.0_real64
+      do iinteraction=1,3
+        select case(iinteraction)
+        case(1)
+          indexB=[2_int64,4_int64,1_int64,3_int64]
+        case(2)
+          indexB=[1_int64,2_int64,3_int64,4_int64]
+        case(3)
+          indexB=[1_int64,3_int64,2_int64,4_int64]
+        end select
+        oracleMat=MQC_R4Tensor_R4Tensor_Partial_Contraction(tD,tD,indexA,indexB)
+        intOut=mqc_eri_eri_partial_contraction(eriTrans,eriTrans,indexA,indexB)
+        outBlk=intOut%getBlock('full')-oracleMat
+        sc=outBlk%norm('M')
+        fullError=max(fullError,sc%rval())
+      end do
+      if(fullError.lt.tol) then
+        write(*,1000) 'general ERI partial contractions agree with full oracle'
+      else
+        write(*,1010) 'general ERI partial contractions agree with full oracle',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
 
 !--------------------------------------------------------------------
 !     Test 159b: different complex-general bra and ket transformations.

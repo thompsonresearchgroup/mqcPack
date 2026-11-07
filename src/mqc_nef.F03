@@ -9565,7 +9565,7 @@
                      [ia,dimi,i,1],[ja,dimj,j,-1],[ka,dimk,k,-1],[la,diml,l,1]),&
                  int(NEFr4%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'triplet')),&
                  int(NEFr4%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'triplet')),&
-                 'alphabeta')
+                 'betaalpha')
                end do
               end do
              end do
@@ -9579,7 +9579,7 @@
                      [ia,dimi,i,-1],[ja,dimj,j,1],[ka,dimk,k,1],[la,diml,l,-1]),&
                  int(NEFr4%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'triplet')),&
                  int(NEFr4%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'triplet')),&
-                 'betaalpha')
+                 'alphabeta')
                end do
               end do
               do k = 1, NEFr4%blockSize(ka,dimk,'beta')
@@ -9633,7 +9633,7 @@
                      [ia,dimi,i,1],[ja,dimj,j,1],[ka,dimk,k,-1],[la,diml,l,-1]),&
                  int(NEFr4%collapseIndex(i,j,'a','a',dimi,dimj,ia,ja,'all')),&
                  int(NEFr4%collapseIndex(k,l,'b','b',dimk,diml,ka,la,'all')),&
-                 'alphabeta')
+                 'betaalpha')
                end do
               end do
              end do
@@ -9647,7 +9647,7 @@
                      [ia,dimi,i,-1],[ja,dimj,j,-1],[ka,dimk,k,1],[la,diml,l,1]),&
                  int(NEFr4%collapseIndex(i,j,'b','b',dimi,dimj,ia,ja,'all')),&
                  int(NEFr4%collapseIndex(k,l,'a','a',dimk,diml,ka,la,'all')),&
-                 'betaalpha')
+                 'alphabeta')
                end do
               end do
               do k = 1, NEFr4%blockSize(ka,dimk,'beta')
@@ -9681,7 +9681,7 @@
                      [ia,dimi,i,1],[ja,dimj,j,-1],[ka,dimk,k,-1],[la,diml,l,1]),&
                  int(NEFr4%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'all')),&
                  int(NEFr4%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'all')),&
-                 'alphabeta')
+                 'betaalpha')
                end do
               end do
              end do
@@ -9695,7 +9695,7 @@
                      [ia,dimi,i,-1],[ja,dimj,j,1],[ka,dimk,k,1],[la,diml,l,-1]),&
                  int(NEFr4%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'all')),&
                  int(NEFr4%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'all')),&
-                 'betaalpha')
+                 'alphabeta')
                end do
               end do
               do k = 1, NEFr4%blockSize(ka,dimk,'beta')

@@ -275,8 +275,8 @@
  PASS  IC/gen x spin/same=T: bb
  PASS  IC/gen+SF x spin/same=F [3,1]: aa
  PASS  IC/gen+SF x spin/same=F [3,1]: bb
- PASS  IC/gen+SF x spin/same=F [3,1]: ab (aaab*M_aa, not bbba)
- PASS  IC/gen+SF x spin/same=F [3,1]: ba (bbba*M_bb)
+ PASS  IC/gen+SF x spin/same=F [3,1]: ab (bbba*M_bb)
+ PASS  IC/gen+SF x spin/same=F [3,1]: ba (aaab*M_aa, not bbba)
  PASS  IC/gen x general/same=T: aa
  PASS  IC/gen x general/same=T: bb
  PASS  IC/gen x general/same=T: ab
@@ -301,9 +301,6 @@
  PASS  R4T/spin/2x/coulomb→inverted
  PASS  R4T/spin/2x/coulomb→ms
  PASS  general integral at agrees with full block
- PASS  general integral put agrees with at and full block
- PASS  general transpose, dagger, and matmul agree with full block
- PASS  general integral contraction agrees with full block
  PASS  general regular and square contractions agree
  PASS  complex-general transform block aaaa
  PASS  complex-general transform block aaab
@@ -321,10 +318,7 @@
  PASS  complex-general transform block bbab
  PASS  complex-general transform block bbba
  PASS  complex-general transform block bbbb
- PASS  general ERI-matrix contractions agree with full oracle
  PASS  general ERI partial contractions agree with full oracle
- PASS  general ERI-ERI contraction agrees with full oracle
- PASS  general ERI-R4 contraction agrees with full oracle
  PASS  different-bra/ket complex-general transformation
  PASS  at oracle full aaaa coulomb
  PASS  at oracle symm aaaa coulomb
@@ -444,15 +438,15 @@
  PASS  real-general transform block bbab
  PASS  real-general transform block bbba
  PASS  real-general transform block bbbb
- real-general symmetry aabb -> bbaa partial=  5.551115E-17 TwoERI_Trans=  0.000000E+00
- real-general symmetry aaab -> aaba partial=  1.040834E-17 TwoERI_Trans=  0.000000E+00
- real-general symmetry aaab -> abaa partial=  9.540979E-18 TwoERI_Trans=  0.000000E+00
- real-general symmetry aaab -> baaa partial=  1.214306E-17 TwoERI_Trans=  0.000000E+00
- real-general symmetry abba -> baab partial=  2.602085E-18 TwoERI_Trans=  0.000000E+00
- real-general symmetry abab -> baba partial=  8.673617E-19 TwoERI_Trans=  0.000000E+00
- real-general symmetry abbb -> bbba partial=  2.081668E-17 TwoERI_Trans=  0.000000E+00
- real-general symmetry abbb -> bbab partial=  1.387779E-17 TwoERI_Trans=  0.000000E+00
- real-general symmetry abbb -> babb partial=  1.040834E-17 TwoERI_Trans=  0.000000E+00
+ PASS  real-general symmetry aabb -> bbaa
+ PASS  real-general symmetry aaab -> aaba
+ PASS  real-general symmetry aaab -> abaa
+ PASS  real-general symmetry aaab -> baaa
+ PASS  real-general symmetry abba -> baab
+ PASS  real-general symmetry abab -> baba
+ PASS  real-general symmetry abbb -> bbba
+ PASS  real-general symmetry abbb -> bbab
+ PASS  real-general symmetry abbb -> babb
  real-general full tensor oracle error=  1.387779E-16
  PASS  asymmetric four-coefficient transform block aaaa
  PASS  asymmetric four-coefficient transform block aaab

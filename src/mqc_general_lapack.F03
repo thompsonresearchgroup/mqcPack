@@ -39,6 +39,32 @@
 !                                                               |
 !----------------------------------------------------------------
 !
+!
+!PROCEDURE mqc_check_blas_integer_kind
+      subroutine mqc_check_blas_integer_kind()
+!
+!     Checks once that the linked BLAS/LAPACK uses the integer size this build was
+!     compiled for (MQC_BlasInt: int64 with -DMQC_BLAS_ILP64, int32 otherwise).
+!     DPOTRF on a 2x2 non-positive-definite matrix must return INFO = 2 and must
+!     leave the neighbouring integer untouched.
+!
+      implicit none
+      logical,save::checked=.false.
+      real(kind=real64),dimension(2,2)::P
+      integer(kind=MQC_BlasInt),dimension(2)::nn,info
+!
+      if(checked) return
+      P = reshape([1.0,2.0,2.0,1.0],[2,2])
+      nn = [2,0]
+      info = [-1,-1]
+      call dpotrf('L',nn(1),P,nn(1),info(1))
+      if(info(1).ne.2.or.info(2).ne.-1) call mqc_error_i('BLAS/LAPACK integer size does not &
+        &match this mqcPack build (rebuild with or without -DMQC_BLAS_ILP64)',6, &
+        'MQC_BlasInt',int(MQC_BlasInt),'info(1)',int(info(1)),'info(2)',int(info(2)))
+      checked = .true.
+!
+      end subroutine mqc_check_blas_integer_kind
+!
 !PROCEDURE mqc_dsyev_eigensystem_symmFull
       subroutine mqc_dsyev_eigensystem_symmFull(matrix,eigenValues,eigenVectors)
 !
@@ -48,6 +74,7 @@
 !     H. P. Hratchian, 2020
 !
       implicit none
+      integer(kind=MQC_BlasInt)::mqcBlasInfo
       real(kind=real64),dimension(:,:),intent(in)::matrix
       real(kind=real64),dimension(:),allocatable,intent(out)::eigenValues
       real(kind=real64),dimension(:,:),allocatable,OPTIONAL,intent(out)::eigenVectors
@@ -95,12 +122,18 @@
 !     Call LAPCK routine DSYEV. 
 !
       Info = 0
-      call dsyev(JOBZ,'L',N,matrixCopy,N,eigenValues,WorkTmp,-1,INFO)    
+      call mqc_check_blas_integer_kind()
+      call dsyev(JOBZ,'L',int(N,kind=MQC_BlasInt),matrixCopy,int(N,kind=MQC_BlasInt),eigenValues,WorkTmp,&
+           int(-1,kind=MQC_BlasInt),mqcBlasInfo)
+      INFO = mqcBlasInfo
       if(INFO.ne.0) call mqc_error(  &
         'mqc_eigensystem_symmMatrixFull: Failure in DSYEV getting WORK length.')
       LWork = WorkTmp(1)
       Allocate(Work(LWork))
-      call dsyev(JOBZ,'L',N,matrixCopy,N,eigenValues,Work,LWork,INFO)    
+      call mqc_check_blas_integer_kind()
+      call dsyev(JOBZ,'L',int(N,kind=MQC_BlasInt),matrixCopy,int(N,kind=MQC_BlasInt),eigenValues,Work,&
+           int(LWork,kind=MQC_BlasInt),mqcBlasInfo)
+      INFO = mqcBlasInfo
       if(INFO.ne.0) call mqc_error(  &
         'mqc_eigensystem_symmMatrixFull: Failure in DSYEV diagonalizing matrix.')
       if(PRESENT(eigenVectors)) then
@@ -125,6 +158,7 @@
 !     H. P. Hratchian, 2022
 !
       implicit none
+      integer(kind=MQC_BlasInt)::mqcBlasInfo
       real(kind=real64),dimension(:,:),intent(in)::matrix
       real(kind=real64),dimension(:),allocatable,intent(out)::eigenValues
       real(kind=real64),dimension(:),allocatable,OPTIONAL,intent(out)::eigenValuesImaginary
@@ -194,16 +228,20 @@
 !     Call LAPCK routine DSYEV. 
 !
       Info = 0
-      call dgeev(JOBVL,JOBVR,N,matrixCopy,N,eigenValues,  &
-        myEigenValuesImaginary,leftEigenVectors,LDVL,rightEigenVectors,LDVR,  &
-        WorkTmp,-1,INFO)
+      call mqc_check_blas_integer_kind()
+      call dgeev(JOBVL,JOBVR,int(N,kind=MQC_BlasInt),matrixCopy,int(N,kind=MQC_BlasInt),eigenValues,&
+           myEigenValuesImaginary,leftEigenVectors,int(LDVL,kind=MQC_BlasInt),rightEigenVectors,&
+           int(LDVR,kind=MQC_BlasInt),WorkTmp,int(-1,kind=MQC_BlasInt),mqcBlasInfo)
+      INFO = mqcBlasInfo
       if(INFO.ne.0) call mqc_error(  &
         'mqc_eigensystem_MatrixFull: Failure in DGEEV getting WORK length.')
       LWork = WorkTmp(1)
       Allocate(Work(LWork))
-      call dgeev(JOBVL,JOBVR,N,matrixCopy,N,eigenValues,  &
-        myEigenValuesImaginary,leftEigenVectors,LDVL,rightEigenVectors,LDVR,  &
-        Work,LWork,INFO)
+      call mqc_check_blas_integer_kind()
+      call dgeev(JOBVL,JOBVR,int(N,kind=MQC_BlasInt),matrixCopy,int(N,kind=MQC_BlasInt),eigenValues,&
+           myEigenValuesImaginary,leftEigenVectors,int(LDVL,kind=MQC_BlasInt),rightEigenVectors,&
+           int(LDVR,kind=MQC_BlasInt),Work,int(LWork,kind=MQC_BlasInt),mqcBlasInfo)
+      INFO = mqcBlasInfo
       if(INFO.ne.0) call mqc_error(  &
         'mqc_eigensystem_MatrixFull: Failure in DGEEV diagonalizing matrix.')
       if(PRESENT(leftEigenVectors)) then
@@ -252,6 +290,7 @@
 !
 !
       implicit none
+      integer(kind=MQC_BlasInt)::mqcBlasInfo,mqcBlasM
       real(kind=real64),dimension(:,:),intent(in)::matrix
       real(kind=real64),dimension(:),allocatable,intent(out)::eigenValues
       real(kind=real64),dimension(:,:),allocatable,optional,intent(out)::eigenVectors
@@ -261,7 +300,7 @@
       real(kind=real64)::ABSTOL
       real(kind=real64),dimension(:,:),allocatable::matrixCopy,Zloc
       real(kind=real64),dimension(:),allocatable::Work,Wtmp
-      integer,dimension(:),allocatable::IWork,IWtmp,ISUPPZ
+      integer(kind=MQC_BlasInt),dimension(:),allocatable::IWork,IWtmp,ISUPPZ
 !
 !     Quick checks and setup
 !
@@ -314,8 +353,13 @@
       allocate(Wtmp(1), IWtmp(1))
       ABSTOL = 2.0_real64 * mqc_small
       INFO   = 0
-      call dsyevr(JOBZ,'A','L',N,matrixCopy,LDA,0.0_real64,0.0_real64,0,0,&
-        ABSTOL,M,eigenValues,Zloc,LDZ,ISUPPZ,Wtmp,-1,IWtmp,-1,INFO)
+      call mqc_check_blas_integer_kind()
+      call dsyevr(JOBZ,'A','L',int(N,kind=MQC_BlasInt),matrixCopy,int(LDA,kind=MQC_BlasInt),0.0_real64,&
+           0.0_real64,int(0,kind=MQC_BlasInt),int(0,kind=MQC_BlasInt),ABSTOL,mqcBlasM,eigenValues,Zloc,&
+           int(LDZ,kind=MQC_BlasInt),ISUPPZ,Wtmp,int(-1,kind=MQC_BlasInt),IWtmp,int(-1,kind=MQC_BlasInt),&
+           mqcBlasInfo)
+      M = mqcBlasM
+      INFO = mqcBlasInfo
       if(INFO.ne.0) call mqc_error( &
      &  'mqc_dsyevr_eigensystem_symmFull: Workspace query failed in DSYEVR.')
 
@@ -327,8 +371,13 @@
 !     Actual computation (RANGE='A' ⇒ all eigenpairs; eigenvalues ascending)
 !
       INFO = 0
-      call dsyevr(JOBZ,'A','L',N,matrixCopy,LDA,0.0_real64,0.0_real64,0,0,&
-        ABSTOL,M,eigenValues,Zloc,LDZ,ISUPPZ,Work,LWORK,IWork,LIWORK,INFO)
+      call mqc_check_blas_integer_kind()
+      call dsyevr(JOBZ,'A','L',int(N,kind=MQC_BlasInt),matrixCopy,int(LDA,kind=MQC_BlasInt),0.0_real64,&
+           0.0_real64,int(0,kind=MQC_BlasInt),int(0,kind=MQC_BlasInt),ABSTOL,mqcBlasM,eigenValues,Zloc,&
+           int(LDZ,kind=MQC_BlasInt),ISUPPZ,Work,int(LWORK,kind=MQC_BlasInt),IWork,&
+           int(LIWORK,kind=MQC_BlasInt),mqcBlasInfo)
+      M = mqcBlasM
+      INFO = mqcBlasInfo
       if(INFO.ne.0) call mqc_error(  &
         'mqc_dsyevr_eigensystem_symmFull: Failure in DSYEVR.')
 !
@@ -359,6 +408,7 @@
 !     H. P. Hratchian, 2025.
 !
       implicit none
+      integer(kind=MQC_BlasInt)::mqcBlasInfo
       real(kind=real64),dimension(:,:),intent(in)::matrix
       real(kind=real64),dimension(:),allocatable,intent(out)::singularValues
       real(kind=real64),dimension(:,:),allocatable,OPTIONAL,intent(out)::leftSingularVectors
@@ -426,19 +476,25 @@
 !
 !     Call LAPack routine DGESVD.
 !
-      call dgesvd(JOBU,JOBVT,M,N,matrixCopy,M,singularValues,  &
-        merge(leftSingularVectors,Utmp, PRESENT(leftSingularVectors)),LDU,  &
-        merge(rightSingularVectorsT,VTtmp, PRESENT(rightSingularVectorsT)),LDVT,  &
-        WorkTmp,-1,INFO)
+      call mqc_check_blas_integer_kind()
+      call dgesvd(JOBU,JOBVT,int(M,kind=MQC_BlasInt),int(N,kind=MQC_BlasInt),matrixCopy,&
+           int(M,kind=MQC_BlasInt),singularValues,&
+           merge(leftSingularVectors,Utmp, PRESENT(leftSingularVectors)),int(LDU,kind=MQC_BlasInt),&
+           merge(rightSingularVectorsT,VTtmp, PRESENT(rightSingularVectorsT)),int(LDVT,kind=MQC_BlasInt),&
+           WorkTmp,int(-1,kind=MQC_BlasInt),mqcBlasInfo)
+      INFO = mqcBlasInfo
       if(INFO.ne.0) call mqc_error(  &
         'mqc_dgesvd_svd_Full: Failure in DGESVD getting WORK length.')
       LWORK = int(WorkTmp(1))
       if(LWORK.lt.1) LWORK = 1
       Allocate(Work(LWORK))
-      call dgesvd(JOBU,JOBVT,M,N,matrixCopy,M,singularValues,  &
-        merge(leftSingularVectors,Utmp, PRESENT(leftSingularVectors)),LDU,  &
-        merge(rightSingularVectorsT,VTtmp, PRESENT(rightSingularVectorsT)),LDVT,  &
-        Work,LWORK,INFO)
+      call mqc_check_blas_integer_kind()
+      call dgesvd(JOBU,JOBVT,int(M,kind=MQC_BlasInt),int(N,kind=MQC_BlasInt),matrixCopy,&
+           int(M,kind=MQC_BlasInt),singularValues,&
+           merge(leftSingularVectors,Utmp, PRESENT(leftSingularVectors)),int(LDU,kind=MQC_BlasInt),&
+           merge(rightSingularVectorsT,VTtmp, PRESENT(rightSingularVectorsT)),int(LDVT,kind=MQC_BlasInt),Work,&
+           int(LWORK,kind=MQC_BlasInt),mqcBlasInfo)
+      INFO = mqcBlasInfo
       if(INFO.gt.0) then
         call mqc_error('mqc_dgesvd_svd_Full: DGESVD did not converge.')
       elseIf(INFO.lt.0) then
@@ -463,13 +519,14 @@
 !
 !
       implicit none
+      integer(kind=MQC_BlasInt)::mqcBlasInfo
       real(kind=real64),intent(in)::A(:,:)
       real(kind=real64),intent(in)::B(:,:)
       real(kind=real64),allocatable,intent(out)::X(:,:)
       integer,intent(out),optional::infoOut
 !
       integer::N,NRHS,LDA,LDB,INFO
-      integer,dimension(:),allocatable::IPIV
+      integer(kind=MQC_BlasInt),dimension(:),allocatable::IPIV
       real(kind=real64),dimension(:,:),allocatable::Acopy,Bcopy
 !
 !     Carry out shape checks.
@@ -503,7 +560,10 @@
       LDB = N
       allocate(IPIV(N))
       INFO = 0
-      call dgesv(N,NRHS,Acopy,LDA,IPIV,Bcopy,LDB,INFO)
+      call mqc_check_blas_integer_kind()
+      call dgesv(int(N,kind=MQC_BlasInt),int(NRHS,kind=MQC_BlasInt),Acopy,int(LDA,kind=MQC_BlasInt),IPIV,&
+           Bcopy,int(LDB,kind=MQC_BlasInt),mqcBlasInfo)
+      INFO = mqcBlasInfo
 !
 !     Check for errors in the LAPack run.
 !
@@ -534,13 +594,14 @@
 !
 !
       implicit none
+      integer(kind=MQC_BlasInt)::mqcBlasInfo
       real(kind=real64),intent(in)::A(:,:)
       real(kind=real64),intent(in)::b(:)
       real(kind=real64),allocatable,intent(out)::x(:)
       integer(kind=int64),intent(out),optional::infoOut
 !
       integer(kind=int64)::N,NRHS,LDA,LDB,INFO
-      integer(kind=int64),allocatable::IPIV(:)
+      integer(kind=MQC_BlasInt),allocatable::IPIV(:)
       real(kind=real64),allocatable::Acopy(:,:),Bcopy(:,:)
 !
 !     Carry out shape checks.
@@ -573,7 +634,10 @@
       LDB = N
       allocate(IPIV(N))
       INFO = 0
-      call dgesv(N,NRHS,Acopy,LDA,IPIV,Bcopy,LDB,INFO)
+      call mqc_check_blas_integer_kind()
+      call dgesv(int(N,kind=MQC_BlasInt),int(NRHS,kind=MQC_BlasInt),Acopy,int(LDA,kind=MQC_BlasInt),IPIV,&
+           Bcopy,int(LDB,kind=MQC_BlasInt),mqcBlasInfo)
+      INFO = mqcBlasInfo
 !
 !     Check for errors in the LAPack run.
 !

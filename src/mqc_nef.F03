@@ -116,6 +116,7 @@
         Procedure, Public::pinv => mqc_nef_matrix_block_diagonal_pinv
         Procedure, Public::getRotation => mqc_nef_matrix_get_generator_rotation
         Procedure, Public::getBlockRotation => mqc_nef_matrix_get_block_rotation
+        Procedure, Public::exp => mqc_nef_matrix_exp
       End Type
 !
 !>    \brief <b> </b>
@@ -8946,12 +8947,15 @@
 !>    generators (Ka0,KaZ,Ks0,KsZ -- off blocks untouched), and
 !>    alphaBeta(p,q), alphaBeta(q,p), betaAlpha(p,q), betaAlpha(q,p) for
 !>    the 4 spin-flip generators (KaX,KsX,KaY,KsY -- same/beta blocks
-!>    untouched). Each pair's 8 slots are matched against the 8 known
-!>    +-1/+-i sign templates; a match recovers theta exactly (no small-
-!>    angle approximation -- the finite rotation is then built with exact
-!>    cos/sin of that theta). A pair with all 8 slots at zero is skipped;
-!>    a pair whose nonzero content matches none of the 8 templates is an
-!>    error.
+!>    untouched). The 8 slots of a pair must form an anti-Hermitian
+!>    generator, X(q,p) = -conjg(X(p,q)) (for a real theta this is exactly
+!>    one of the 8 templates or a combination of them); anything else is an
+!>    error. Each pair is rotated exactly on its disjoint 2x2 planes: for
+!>    X(a,b) = z, R(a,a) = R(b,b) = cos|z|, R(a,b) = z/|z| sin|z| and
+!>    R(b,a) = -conjg(z)/|z| sin|z|, so complex entries give a unitary
+!>    rotation. Same-spin planes (alpha_p,alpha_q),(beta_p,beta_q) form one
+!>    factor and spin-flip planes (beta_p,alpha_q),(alpha_p,beta_q) a
+!>    second one. A pair with all 8 slots at zero is skipped.
 !>
 !>    Elementary rotations are applied in ascending (space,orbital)
 !>    order -- an arbitrary but fixed choice, since these generators do
@@ -9020,71 +9024,16 @@
 !
       contains
 !
-        subroutine classifyPair(V,genIdx,theta,theta2,isError)
+        subroutine buildPlanes(si,p,sj,q,zFirst,zSecond,spinFlip)
+!       Exact exponential of the pair generator on two disjoint 2x2 planes:
+!       same-spin (alpha_p,alpha_q)<-zFirst, (beta_p,beta_q)<-zSecond;
+!       spin-flip (beta_p,alpha_q)<-zFirst, (alpha_p,beta_q)<-zSecond.
         implicit none
-        complex(kind=real64),dimension(8),intent(in)::V
-        integer,intent(out)::genIdx
-        complex(kind=real64),intent(out)::theta,theta2
-        logical,intent(out)::isError
-        integer::g,k
-        complex(kind=real64),dimension(8)::Kt
-        complex(kind=real64)::ratio,refRatio
-        logical::anyNonzero,allConsistent
-!
-        genIdx = 0
-        theta = (0.0d0,0.0d0)
-        theta2 = (0.0d0,0.0d0)
-        isError = .false.
-        if(maxval(abs(V)).le.myThresh) return
-!
-        do g = 1, 8
-          call mqc_nef_generator_template(g,Kt)
-          anyNonzero = .false.
-          allConsistent = .true.
-          refRatio = (0.0d0,0.0d0)
-          do k = 1, 8
-            if(abs(Kt(k)).gt.0.5) then
-              ratio = V(k)/Kt(k)
-              if(.not.anyNonzero) then
-                refRatio = ratio
-                anyNonzero = .true.
-              else if(abs(ratio-refRatio).gt.myThresh) then
-                allConsistent = .false.
-              end if
-            else
-              if(abs(V(k)).gt.myThresh) allConsistent = .false.
-            end if
-          end do
-          if(allConsistent.and.anyNonzero) then
-            genIdx = g
-            theta = refRatio
-            return
-          end if
-        end do
-!
-        if(maxval(abs(V(5:8))).le.myThresh.and.&
-           abs(V(1)+V(2)).le.myThresh.and.abs(V(3)+V(4)).le.myThresh) then
-          genIdx = 9
-          theta = V(1)
-          theta2 = V(3)
-          return
-        end if
-        isError = .true.
-        end subroutine classifyPair
-!
-        subroutine buildElementary(si,p,sj,q,genIdx,theta)
-        implicit none
-        integer,intent(in)::si,sj,p,q,genIdx
-        complex(kind=real64),intent(in)::theta
+        integer,intent(in)::si,sj,p,q
+        complex(kind=real64),intent(in)::zFirst,zSecond
+        logical,intent(in)::spinFlip
         type(mqc_nef_matrix)::Rk
-        type(mqc_scalar)::sElement
-        complex(kind=real64),dimension(8)::Kt
-        complex(kind=real64)::c,s
         integer::idDiagI,idDiagJ,idFwd,idBwd,rowSeed
-!
-        c = cos(theta)
-        s = sin(theta)
-        call mqc_nef_generator_template(genIdx,Kt)
 !
         call Rk%init(ThetaMat%Map_Matrix_Row,&
              initial_map_matrix_col=ThetaMat%Map_Matrix_Col)
@@ -9097,21 +9046,12 @@
           Rk%Zero_Flag(idDiagI) = .false.
         end do
 !
-!       Diagonal: cos(theta) at (p,p),(q,q), both spins -- same for all
-!       8 generators.
-        sElement = c
         idDiagI = Rk%blockIndex([1,si],[2,si])
-        call Rk%Main_Matrix(idDiagI)%put(sElement,p,p,'alpha')
-        call Rk%Main_Matrix(idDiagI)%put(sElement,p,p,'beta')
         idDiagJ = Rk%blockIndex([1,sj],[2,sj])
-        call Rk%Main_Matrix(idDiagJ)%put(sElement,q,q,'alpha')
-        call Rk%Main_Matrix(idDiagJ)%put(sElement,q,q,'beta')
 !
-!       Off-diagonal: sin(theta)*K at whichever of the 8 slots this
-!       generator's template has nonzero. idFwd=idBwd when si==sj (the
-!       diagonal block itself, already non-zero-flagged above); when
-!       si/=sj these are the two cross-space blocks, zero-flagged until
-!       the first write below.
+!       Off-diagonal blocks: idFwd=idBwd when si==sj (the diagonal block
+!       itself, already non-zero-flagged above); when si/=sj these are the
+!       two cross-space blocks, zero-flagged until initialized here.
         idFwd = Rk%blockIndex([1,si],[2,sj])
         idBwd = Rk%blockIndex([1,sj],[2,si])
         if(Rk%Zero_Flag(idFwd)) then
@@ -9127,19 +9067,45 @@
           Rk%Zero_Flag(idBwd) = .false.
         end if
 !
-        call mqc_nef_generator_write_slots(Rk,idFwd,idBwd,p,q,s,Kt)
+        if(spinFlip) then
+          call putPlane(Rk,idDiagI,idDiagJ,idFwd,idBwd,p,q,zFirst,'beta','alpha','alphaBeta','betaAlpha')
+          call putPlane(Rk,idDiagI,idDiagJ,idFwd,idBwd,p,q,zSecond,'alpha','beta','betaAlpha','alphaBeta')
+        else
+          call putPlane(Rk,idDiagI,idDiagJ,idFwd,idBwd,p,q,zFirst,'alpha','alpha','alpha','alpha')
+          call putPlane(Rk,idDiagI,idDiagJ,idFwd,idBwd,p,q,zSecond,'beta','beta','beta','beta')
+        end if
 !
         RotOut = matmul(RotOut,Rk)
-        end subroutine buildElementary
+        end subroutine buildPlanes
+!
+        subroutine putPlane(Rk,idDiagI,idDiagJ,idFwd,idBwd,p,q,z,spinP,spinQ,blockFwd,blockBwd)
+!       One 2x2 plane (a,b) of exp(X) with X(a,b) = z, X(b,a) = -conjg(z).
+        implicit none
+        type(mqc_nef_matrix),intent(inout)::Rk
+        integer,intent(in)::idDiagI,idDiagJ,idFwd,idBwd,p,q
+        complex(kind=real64),intent(in)::z
+        character(len=*),intent(in)::spinP,spinQ,blockFwd,blockBwd
+        type(mqc_scalar)::sElement
+        real(kind=real64)::r
+        complex(kind=real64)::cVal
+!
+        r = abs(z)
+        if(r.le.myThresh) return
+        cVal = cos(r); sElement = cVal
+        call Rk%Main_Matrix(idDiagI)%put(sElement,p,p,spinP)
+        call Rk%Main_Matrix(idDiagJ)%put(sElement,q,q,spinQ)
+        cVal = z/r*sin(r); sElement = cVal
+        call Rk%Main_Matrix(idFwd)%put(sElement,p,q,blockFwd)
+        cVal = -conjg(z)/r*sin(r); sElement = cVal
+        call Rk%Main_Matrix(idBwd)%put(sElement,q,p,blockBwd)
+        end subroutine putPlane
 !
         subroutine applyPair(si,sj)
         implicit none
         integer,intent(in)::si,sj
-        integer::p,q,qStart,sizeI,sizeJ,genIdx
+        integer::p,q,qStart,sizeI,sizeJ
         type(mqc_scalar)::sElement
         complex(kind=real64),dimension(8)::V
-        complex(kind=real64)::theta,theta2
-        logical::isError
 !
         sizeI = ThetaMat%Size_vector_alpha_row(si)
         sizeJ = ThetaMat%Size_vector_alpha_row(sj)
@@ -9158,17 +9124,16 @@
             sElement = ThetaMat%at(q,p,sj,si,'alphaBeta'); V(6) = sElement
             sElement = ThetaMat%at(p,q,si,sj,'betaAlpha'); V(7) = sElement
             sElement = ThetaMat%at(q,p,sj,si,'betaAlpha'); V(8) = sElement
-            call classifyPair(V,genIdx,theta,theta2,isError)
-            if(isError) call mqc_error_i('mqc_nef_matrix_get_generator_rotation: '//&
-                 'entries at this orbital pair match none of the 8 known '//&
-                 'generator sign patterns (Ka0/KaZ/Ks0/KsZ/KaX/KsX/KaY/KsY) or Zero',6,&
+            if(maxval(abs(V)).le.myThresh) cycle
+            if(abs(V(2)+conjg(V(1))).gt.myThresh.or.abs(V(4)+conjg(V(3))).gt.myThresh.or.&
+               abs(V(8)+conjg(V(5))).gt.myThresh.or.abs(V(6)+conjg(V(7))).gt.myThresh) &
+              call mqc_error_i('mqc_nef_matrix_get_generator_rotation: generator is not '//&
+                 'anti-Hermitian at this orbital pair',6,&
                  'space si',si,'space sj',sj,'orbital p',p,'orbital q',q)
-            if(genIdx.eq.9) then
-              call buildElementary(si,p,sj,q,1,(theta+theta2)/2)
-              call buildElementary(si,p,sj,q,2,(theta-theta2)/2)
-            else if(genIdx.gt.0) then
-              call buildElementary(si,p,sj,q,genIdx,theta)
-            end if
+            if(abs(V(1)).gt.myThresh.or.abs(V(3)).gt.myThresh) &
+              call buildPlanes(si,p,sj,q,V(1),V(3),.false.)
+            if(abs(V(5)).gt.myThresh.or.abs(V(7)).gt.myThresh) &
+              call buildPlanes(si,p,sj,q,V(5),V(7),.true.)
           end do
         end do
         end subroutine applyPair
@@ -9390,6 +9355,56 @@
       end subroutine mqc_nef_generator_write_slots
 !
 !
+!     PROCEDURE MQC_NEF_Generator_Write_AntiHermitian
+!
+!>    \brief <b> Writes one orbital pair of an anti-Hermitian generator into a
+!>    ThetaMat: forward slots get mag*K, each backward slot gets minus the complex
+!>    conjugate of its forward partner. Identical to MQC_NEF_Generator_Write_Slots
+!>    for a real mag; for a complex mag the generator stays anti-Hermitian, so the
+!>    rotation built from it is unitary. </b>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_nef_generator_write_antihermitian(TargetMat,idFwd,idBwd,p,q,mag,K)
+!
+      implicit none
+      type(mqc_nef_matrix),intent(inout)::TargetMat
+      integer,intent(in)::idFwd,idBwd,p,q
+      complex(kind=real64),intent(in)::mag
+      complex(kind=real64),dimension(8),intent(in)::K
+      complex(kind=real64),dimension(8)::V
+      type(mqc_scalar)::sElement
+!
+!     Forward slots alpha(p,q), beta(p,q), alphaBeta(p,q), betaAlpha(p,q);
+!     partners alpha(q,p), beta(q,p), betaAlpha(q,p), alphaBeta(q,p).
+      V = mag*K
+      V(2) = -conjg(V(1))
+      V(4) = -conjg(V(3))
+      V(8) = -conjg(V(5))
+      V(6) = -conjg(V(7))
+      if(abs(K(1)).gt.0.5) then
+        sElement = V(1); call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'alpha')
+        sElement = V(2); call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'alpha')
+      end if
+      if(abs(K(3)).gt.0.5) then
+        sElement = V(3); call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'beta')
+        sElement = V(4); call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'beta')
+      end if
+      if(abs(K(5)).gt.0.5) then
+        sElement = V(5); call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'alphaBeta')
+        sElement = V(8); call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'betaAlpha')
+      end if
+      if(abs(K(7)).gt.0.5) then
+        sElement = V(7); call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'betaAlpha')
+        sElement = V(6); call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'alphaBeta')
+      end if
+!
+      end subroutine mqc_nef_generator_write_antihermitian
+!
+!
 !     PROCEDURE MQC_NEF_Matrix_Get_Block_Rotation
 !
 !>    \brief <b> MQC_NEF_Matrix_Get_Block_Rotation builds the rotation
@@ -9412,7 +9427,7 @@
 !>    (p,q) of that block is a (generally complex) rotation angle theta;
 !>    a fresh ThetaMat, shaped like TemplateMat and zero everywhere except
 !>    the two blocks at TemplatePair and its reverse, is populated at
-!>    every (p,q) via mqc_nef_generator_write_slots(...,mag=theta,...),
+!>    every (p,q) via mqc_nef_generator_write_antihermitian(...,mag=theta,...),
 !>    then handed to %getRotation() to build the actual rotation. When
 !>    TemplatePair's two space-indices are equal (intra-space), only the
 !>    upper triangle (p<q) of the input block is used, matching
@@ -9548,9 +9563,9 @@
               sElement = baseBlockAlpha%at(p,q); thetaAlpha = sElement
               sElement = baseBlockBeta%at(p,q); thetaBeta = sElement
               if(abs(thetaAlpha).gt.myThresh) &
-                call mqc_nef_generator_write_slots(ThetaMat,idFwd,idBwd,p,q,thetaAlpha,KAlphaOnly)
+                call mqc_nef_generator_write_antihermitian(ThetaMat,idFwd,idBwd,p,q,thetaAlpha,KAlphaOnly)
               if(abs(thetaBeta).gt.myThresh) &
-                call mqc_nef_generator_write_slots(ThetaMat,idFwd,idBwd,p,q,thetaBeta,KBetaOnly)
+                call mqc_nef_generator_write_antihermitian(ThetaMat,idFwd,idBwd,p,q,thetaBeta,KBetaOnly)
             end do
           end do
         else
@@ -9569,7 +9584,7 @@
               sElement = baseBlock%at(p,q)
               theta = sElement
               if(abs(theta).le.myThresh) cycle
-              call mqc_nef_generator_write_slots(ThetaMat,idFwd,idBwd,p,q,theta,K)
+              call mqc_nef_generator_write_antihermitian(ThetaMat,idFwd,idBwd,p,q,theta,K)
             end do
           end do
         end if
@@ -9578,6 +9593,148 @@
       RotOut = ThetaMat%getRotation(thresh=myThresh)
 !
       end function mqc_nef_matrix_get_block_rotation
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Exp
+!
+!>    \brief <b> MQC_NEF_Matrix_Exp returns the matrix exponential exp(A) of a
+!>    square NEF Matrix</b>
+!>    \par Purpose:
+!     =============
+!>    \verbatim
+!>    Scaling and squaring with a Taylor series. A is scaled by 2**(-s) so its
+!>    Frobenius norm is at most 0.5, the series is summed until the Frobenius
+!>    norm of the last term is below thresh, and the sum is squared s times.
+!>    Works on the NEF block structure directly (no export); the row and column
+!>    maps of A must describe the same spaces. For an anti-Hermitian A
+!>    (A = i*t*H, H Hermitian) the result is unitary to roundoff.
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] NEFMat
+!>    \verbatim
+!>        NEFMat is Class(MQC_NEF_Matrix)
+!>        The square NEF Matrix A.
+!>    \endverbatim
+!>
+!>    \param[in] thresh
+!>    \verbatim
+!>        thresh is real(kind=real64),optional
+!>        Convergence threshold on the Frobenius norm of the last Taylor term.
+!>        Default 1.0e-16.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_matrix_exp(NEFMat,thresh) result(ExpOut)
+!
+      implicit none
+      class(mqc_nef_matrix),intent(in)::NEFMat
+      real(kind=real64),intent(in),optional::thresh
+      type(mqc_nef_matrix)::ExpOut
+      type(mqc_nef_matrix)::scaledMat,term
+      type(mqc_scalar)::factor
+      real(kind=real64)::myThresh,matNorm
+      integer::nSquare,k,row
+      integer,parameter::maxTerms=40
+!
+      if(present(thresh)) then
+        myThresh = thresh
+      else
+        myThresh = 1.0e-16
+      end if
+!
+      if(NEFMat%NumSpace_row.ne.NEFMat%NumSpace_col) call mqc_error_i(&
+        'mqc_nef_matrix_exp: NEF Matrix is not square',6,&
+        'NumSpace_row',NEFMat%NumSpace_row,'NumSpace_col',NEFMat%NumSpace_col)
+      do row = 1, NEFMat%NumSpace_row
+        if(NEFMat%Size_vector_alpha_row(row).ne.NEFMat%Size_vector_alpha_col(row).or.&
+           NEFMat%Size_vector_beta_row(row).ne.NEFMat%Size_vector_beta_col(row)) &
+          call mqc_error_i('mqc_nef_matrix_exp: NEF Matrix is not square',6,'space',row)
+      end do
+!
+      matNorm = mqc_nef_matrix_frobenius(NEFMat)
+      nSquare = 0
+      if(matNorm.gt.0.5) nSquare = ceiling(log(matNorm/0.5)/log(2.0))
+      factor = 1.0/(2.0**nSquare)
+      scaledMat = NEFMat*factor
+!
+      ExpOut = mqc_nef_matrix_identity(NEFMat)
+      term = ExpOut
+      do k = 1, maxTerms
+        factor = 1.0/real(k,kind=real64)
+        term = matmul(term,scaledMat)*factor
+        ExpOut = ExpOut + term
+        if(mqc_nef_matrix_frobenius(term).le.myThresh) exit
+      end do
+      do k = 1, nSquare
+        ExpOut = matmul(ExpOut,ExpOut)
+      end do
+!
+      end function mqc_nef_matrix_exp
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Identity
+!
+!>    \brief <b> Identity NEF Matrix with the row/column structure of a square
+!>    template NEF Matrix</b>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_matrix_identity(Template) result(IdentOut)
+!
+      implicit none
+      class(mqc_nef_matrix),intent(in)::Template
+      type(mqc_nef_matrix)::IdentOut
+      integer::row,idx
+!
+      call IdentOut%init(Template%Map_Matrix_Row,&
+           initial_map_matrix_col=Template%Map_Matrix_Col)
+      do row = 1, IdentOut%NumSpace_row
+        idx = IdentOut%blockIndex([1,row],[2,row])
+        IdentOut%Main_Matrix(idx) = mqc_integral_identity_func(&
+             IdentOut%Size_vector_alpha_row(row),IdentOut%Size_vector_beta_row(row),&
+             nAlpha2=IdentOut%Size_vector_alpha_col(row),&
+             nBeta2=IdentOut%Size_vector_beta_col(row))
+        IdentOut%Zero_Flag(idx) = .false.
+      end do
+!
+      end function mqc_nef_matrix_identity
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Frobenius
+!
+!>    \brief <b> Frobenius norm of a NEF Matrix (non-zero blocks only)</b>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_matrix_frobenius(NEFMat) result(normOut)
+!
+      implicit none
+      class(mqc_nef_matrix),intent(in)::NEFMat
+      real(kind=real64)::normOut
+      type(mqc_scalar)::blockNorm
+      integer::idx
+!
+      normOut = 0.0
+      do idx = 1, size(NEFMat%Zero_Flag)
+        if(NEFMat%Zero_Flag(idx)) cycle
+        blockNorm = NEFMat%Main_Matrix(idx)%norm('F')
+        normOut = normOut + abs(blockNorm%cval())**2
+      end do
+      normOut = sqrt(normOut)
+!
+      end function mqc_nef_matrix_frobenius
 !
 !
 !     PROCEDURE MQC_NEF_R4_Dimension_Swap
@@ -10285,39 +10442,26 @@
         end subroutine setAxisMap
 !
         function rawAxisTransform(rawIn,axisRow,axisCol,coeffRowDense,coeffColDense) result(rawOut)
+!       Transforms the axes (axisRow,axisCol) = (3,4), otherwise (1,2), of rawIn:
+!       out(..p..q..) = sum conjg(coeffRow(x,p)) coeffCol(y,q) in(..x..y..), with
+!       R4_Trans_Full (identity on the two other axes, which keeps their symmetry).
         implicit none
         type(mqc_r4tensor),intent(in)::rawIn
         integer(kind=int64),intent(in)::axisRow,axisCol
         type(mqc_matrix),intent(in)::coeffRowDense,coeffColDense
         type(mqc_r4tensor)::rawOut
-        type(mqc_matrix)::X
-        integer(kind=int64)::i,j,nOther1,nOther2,nRowOutLocal,nColOutLocal
-!
-        nRowOutLocal = size(coeffRowDense,2)
-        nColOutLocal = size(coeffColDense,2)
+        type(mqc_matrix)::Id1,Id2
 !
         if(axisRow.eq.3.and.axisCol.eq.4) then
-          nOther1 = size(rawIn,1)
-          nOther2 = size(rawIn,2)
-          call rawOut%init(nOther1,nOther2,nRowOutLocal,nColOutLocal)
-          do i=1,nOther1
-            do j=1,nOther2
-              X = rawIn%mat([i],[j],[0],[0])
-              X = Dagger(coeffRowDense).dot.X.dot.coeffColDense
-              call rawOut%mput(X,[i],[j],[0],[0])
-            end do
-          end do
+          Id1 = identity(size(rawIn,1),size(rawIn,1))
+          Id2 = identity(size(rawIn,2),size(rawIn,2))
+          rawOut = R4_Trans_Full(rawIn,coeffRowDense,coeffColDense,Id1,Id2,Map=[3,4,1,2], &
+            Conj=[.false.,.false.,.true.,.false.])
         else
-          nOther1 = size(rawIn,3)
-          nOther2 = size(rawIn,4)
-          call rawOut%init(nRowOutLocal,nColOutLocal,nOther1,nOther2)
-          do i=1,nOther1
-            do j=1,nOther2
-              X = rawIn%mat([0],[0],[i],[j])
-              X = Dagger(coeffRowDense).dot.X.dot.coeffColDense
-              call rawOut%mput(X,[0],[0],[i],[j])
-            end do
-          end do
+          Id1 = identity(size(rawIn,3),size(rawIn,3))
+          Id2 = identity(size(rawIn,4),size(rawIn,4))
+          rawOut = R4_Trans_Full(rawIn,coeffRowDense,coeffColDense,Id1,Id2,Map=[1,2,3,4], &
+            Conj=[.true.,.false.,.false.,.false.])
         end if
         end function rawAxisTransform
 !

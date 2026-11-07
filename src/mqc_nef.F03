@@ -7223,7 +7223,7 @@
                      [ia,dimi,i,1],[ja,dimj,j,-1],[ka,dimk,k,-1],[la,diml,l,1]),&
                  int(NEFr4%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'triplet')),&
                  int(NEFr4%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'triplet')),&
-                 'alphabeta')
+                 'betaalpha')
                end do
               end do
              end do
@@ -7237,7 +7237,7 @@
                      [ia,dimi,i,-1],[ja,dimj,j,1],[ka,dimk,k,1],[la,diml,l,-1]),&
                  int(NEFr4%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'triplet')),&
                  int(NEFr4%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'triplet')),&
-                 'betaalpha')
+                 'alphabeta')
                end do
               end do
               do k = 1, NEFr4%blockSize(ka,dimk,'beta')
@@ -7291,7 +7291,7 @@
                      [ia,dimi,i,1],[ja,dimj,j,1],[ka,dimk,k,-1],[la,diml,l,-1]),&
                  int(NEFr4%collapseIndex(i,j,'a','a',dimi,dimj,ia,ja,'all')),&
                  int(NEFr4%collapseIndex(k,l,'b','b',dimk,diml,ka,la,'all')),&
-                 'alphabeta')
+                 'betaalpha')
                end do
               end do
              end do
@@ -7305,7 +7305,7 @@
                      [ia,dimi,i,-1],[ja,dimj,j,-1],[ka,dimk,k,1],[la,diml,l,1]),&
                  int(NEFr4%collapseIndex(i,j,'b','b',dimi,dimj,ia,ja,'all')),&
                  int(NEFr4%collapseIndex(k,l,'a','a',dimk,diml,ka,la,'all')),&
-                 'betaalpha')
+                 'alphabeta')
                end do
               end do
               do k = 1, NEFr4%blockSize(ka,dimk,'beta')
@@ -7339,7 +7339,7 @@
                      [ia,dimi,i,1],[ja,dimj,j,-1],[ka,dimk,k,-1],[la,diml,l,1]),&
                  int(NEFr4%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'all')),&
                  int(NEFr4%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'all')),&
-                 'alphabeta')
+                 'betaalpha')
                end do
               end do
              end do
@@ -7353,7 +7353,7 @@
                      [ia,dimi,i,-1],[ja,dimj,j,1],[ka,dimk,k,1],[la,diml,l,-1]),&
                  int(NEFr4%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'all')),&
                  int(NEFr4%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'all')),&
-                 'betaalpha')
+                 'alphabeta')
                end do
               end do
               do k = 1, NEFr4%blockSize(ka,dimk,'beta')
@@ -7975,7 +7975,8 @@
       end if 
     case ('all','full')
       if (j_spin.eq.'b') then
-        idOut = (i-1)*nefM%blockSize(dimj,j_space,'beta') + j
+        idOut = (i-1)*(nefM%blockSize(dimj,j_space,'beta') + &
+                       nefM%blockSize(dimj,j_space,'alpha')) + j
       else
         idOut = (i-1)*(nefM%blockSize(dimj,j_space,'beta') + &
                        nefM%blockSize(dimj,j_space,'alpha')) + &
@@ -10038,15 +10039,19 @@
                   call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-coulomb','spin',&
                        tAlpha,tBeta,tAlphaBeta,tBetaAlpha)
                 case('exchange')
-                  tABBA = sliceCorner(fullTensor,'a','b','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
-                  tBAAB = sliceCorner(fullTensor,'b','a','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  ! Exchange spin storage uses the alphaBeta/betaAlpha
+                  ! fields for the physical ABBA/BAAB tensor blocks.
+                  tAlphaBeta = sliceCorner(fullTensor,'a','b','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tBetaAlpha = sliceCorner(fullTensor,'b','a','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
                   call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-exchange','spin',&
-                       tAlpha,tBeta,abba=tABBA,baab=tBAAB)
+                       tAlpha,tBeta,tAlphaBeta,tBetaAlpha)
                 case('inverted')
-                  tABAB = sliceCorner(fullTensor,'a','b','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
-                  tBABA = sliceCorner(fullTensor,'b','a','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  ! Inverted spin storage similarly uses those fields for
+                  ! the physical ABAB/BABA tensor blocks.
+                  tAlphaBeta = sliceCorner(fullTensor,'a','b','a','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
+                  tBetaAlpha = sliceCorner(fullTensor,'b','a','b','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
                   call mqc_twoeris_allocate(NEFR4Out%Main_R4(idOut),'full-inverted','spin',&
-                       tAlpha,tBeta,abab=tABAB,baba=tBABA)
+                       tAlpha,tBeta,tAlphaBeta,tBetaAlpha)
                 case('doublebar')
                   tAlphaBeta = sliceCorner(fullTensor,'a','a','b','b',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)
                   tBetaAlpha = sliceCorner(fullTensor,'b','b','a','a',nA1,nB1,nA2,nB2,nA3,nB3,nA4,nB4)

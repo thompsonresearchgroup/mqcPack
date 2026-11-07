@@ -6492,10 +6492,10 @@
                   [nDimAlpha2+1,nDimTotal2],[1,nDimAlpha3],[1,nDimAlpha4])
               case('exchange')
                 call r4tOut%tput(eris%alphaBeta,[nDimAlpha1+1,nDimTotal1],&
-                  [1,nDimTotal2],[1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4]) 
+                  [1,nDimAlpha2],[1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
               case('inverted')
                 call r4tOut%tput(eris%alphaBeta,[nDimAlpha1+1,nDimTotal1],&
-                  [1,nDimTotal2],[nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4]) 
+                  [1,nDimAlpha2],[nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
               case default
                 call mqc_error_a('Unrecognized interaction type in mqc_2ERIs_Output_Block',6,&
                   'eris%intType()',eris%intType())
@@ -6510,10 +6510,10 @@
                 [nDimAlpha2+1,nDimTotal2],[1,nDimAlpha3],[1,nDimAlpha4])
             case('exchange')
               call r4tOut%tput(eris%betaAlpha,[nDimAlpha1+1,nDimTotal1],&
-                [1,nDimTotal2],[1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4]) 
+                [1,nDimAlpha2],[1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
             case('inverted')
               call r4tOut%tput(eris%betaAlpha,[nDimAlpha1+1,nDimTotal1],&
-                [1,nDimTotal2],[nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4]) 
+                [1,nDimAlpha2],[nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
             case default
               call mqc_error_a('Unrecognized interaction type in mqc_2ERIs_Output_Block',6,&
                 'eris%intType()',eris%intType())
@@ -6525,27 +6525,27 @@
               [nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
             if(eris%storageType.eq.'symm'.or.eris%type().eq.'space') then
               call r4tOut%tput(eris%abba,[nDimAlpha1+1,nDimTotal1],&
-                [1,nDimTotal2],[1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
+                [1,nDimAlpha2],[1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
             endIf
           endIf
           if(eris%storageType.eq.'full'.and..not.eris%type().eq.'space'.and.&
             (eris%inttype().eq.'doublebar'.or.eris%inttype().eq.'ms').and.&
             eris%hasSpinBlock('baab')) then
             call r4tOut%tput(eris%baab,[nDimAlpha1+1,nDimTotal1],&
-              [1,nDimTotal2],[1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
+              [1,nDimAlpha2],[1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
           endIf
           if(eris%inttype().eq.'ms'.and.eris%hasSpinBlock('abab')) then
             call r4tOut%tput(eris%abab,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
               [1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
             if(eris%storageType.eq.'symm') then
               call r4tOut%tput(eris%abab,[nDimAlpha1+1,nDimTotal1],&
-                [1,nDimTotal2],[nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
+                [1,nDimAlpha2],[nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
             endIf
           endIf
           if((eris%storageType.eq.'full'.and.eris%inttype().eq.'ms').and.&
             eris%hasSpinBlock('baba')) then
             call r4tOut%tput(eris%baba,[nDimAlpha1+1,nDimTotal1],&
-              [1,nDimTotal2],[nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
+              [1,nDimAlpha2],[nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
           endIf
 
         elseIf (eris%type().eq.'general') then

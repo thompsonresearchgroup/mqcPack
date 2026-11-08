@@ -27699,7 +27699,7 @@
       select case (fullMat%getSymm())
       case('hermitian','antihermitian','symmetric','antisymmetric','diagonal')
         call MQC_Matrix_Packed_Block_Split(fullMat,nA,nB,alpha,alphaBeta,beta)
-      case('unknown')
+      case('unknown','asymmetric')
         if(nA.gt.0) alpha = fullMat%mat([1,nA],[1,nA])
         if(nB.gt.0) beta = fullMat%mat([nA+1,nA+nB],[nA+1,nA+nB])
         if(nA.gt.0.and.nB.gt.0) then

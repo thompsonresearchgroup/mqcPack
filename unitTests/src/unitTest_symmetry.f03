@@ -516,6 +516,10 @@
       MF2 = cfill(2*n,2*n,18)
       call mqc_integral_allocate(AI,'i','general',nDimA1=n,nDimA2=n,nDimB1=n,nDimB2=n)
       call timp('T12 imp general',AI,MF2,'general','unknown')
+      call MF2%classify()
+      call check('T12 imp general source classified asymmetric',&
+        MF2%getSymm().eq.'asymmetric')
+      call timp('T12 imp classified asymmetric',AI,MF2,'general','unknown')
       call mqc_integral_allocate(AI,'i','spin',nDimA1=n,nDimA2=n,nDimB1=n,nDimB2=n)
       call timp('T12 imp spin promoted to general',AI,MF2,'general','unknown')
       call mqc_integral_allocate(A,'a','spin',Ha,Hb)

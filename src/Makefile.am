@@ -54,6 +54,7 @@ mqc_gaussian.$(OBJEXT): mqc_general.$(OBJEXT) mqc_files.$(OBJEXT) \
 mqc_FullWavefunction.$(OBJEXT): mqc_algebra.$(OBJEXT) \
   mqc_datastructures.$(OBJEXT) mqc_files.$(OBJEXT) \
   mqc_est.$(OBJEXT) mqc_gaussian.$(OBJEXT)
+mqc_nef.$(OBJEXT): mqc_est.$(OBJEXT)
 mqc_interface.$(OBJEXT): mqc_general.$(OBJEXT)
 
 $(MQC_MODULE_FILES): libmqc.a

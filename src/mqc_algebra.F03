@@ -977,6 +977,7 @@
         Module Procedure MQC_RealNEScalar
         Module Procedure MQC_ScalarNEComplex
         Module Procedure MQC_ComplexNEScalar
+        Module Procedure MQC_VectorNE
       End Interface
 !
 !>    \brief <b> Determines if two variables are equal</b>
@@ -988,6 +989,7 @@
         Module Procedure MQC_RealEQScalar
         Module Procedure MQC_ScalarEQComplex
         Module Procedure MQC_ComplexEQScalar
+        Module Procedure MQC_VectorEQ
       End Interface
 !
 !>    \brief <b> Determines if a variable is less than another</b>
@@ -1317,7 +1319,19 @@
         MQC_Matrix_Zero_Element,MQC_Matrix_Zero_Thresh,MQC_Matrix_Zero_To_Data,MQC_Vector_Is_Zero, &
         MQC_Matrix_Promote_Type,MQC_Matrix_As_Type,MQC_Matrix_Zero_Matrix, &
         MQC_Matrix_Scalar_Zero_Info,MQC_Matrix_Full_Zeros, &
-        MQC_R4TwoP_Same_Basis
+        MQC_R4TwoP_Same_Basis,MQC_R4Contract_SPMV_I,MQC_R4Contract_R8_I,MQC_R4Contract_R8_R, &
+        MQC_R4Contract_R8_C,MQC_R4Contract_GEMV_I,MQC_R4Contract_Block_I,MQC_R4Contract_Block_R, &
+        MQC_R4Contract_Block_C,MQC_R4Contract_Orbit_I,MQC_R4Contract_Orbit_R,MQC_R4Contract_Orbit_C, &
+        MQC_R4Contract_S4_I,MQC_R4Contract_S4_R,MQC_R4Contract_S4_C,MQC_R4Contract_Has_Kernel, &
+        MQC_R4Contract_Packed_I,MQC_R4Contract_Packed_R,MQC_R4Contract_Packed_C,MQC_R4Contract_SPMV2_C, &
+        MQC_R4Contract_R4_I,MQC_R4Contract_R4_R,MQC_R4Contract_R4_C, &
+        MQC_R4Contract_SPMV1_C,MQC_R4Contract_GEMVR_I,MQC_R4Contract_R2_I,MQC_R4Contract_R2_R, &
+        MQC_R4Contract_R2_C,MQC_R4Contract_S213_I,MQC_R4Contract_S213_R,MQC_R4Contract_S213_C, &
+        MQC_R4Contract_S2P_Row_I,MQC_R4Contract_S2P_Row_R,MQC_R4Contract_S2P_Row_C,MQC_R4Contract_S2P_I, &
+        MQC_R4Contract_S2P_R,MQC_R4Contract_S2P_C, &
+        MQC_R4Contract_S4J_I,MQC_R4Contract_S4J_R,MQC_R4Contract_S4J_C,MQC_R4Contract_Run_I, &
+        MQC_R4Contract_Run_R,MQC_R4Contract_Run_C,MQC_R4Contract_S4J_RowP_I,MQC_R4Contract_S4J_RowP_R, &
+        MQC_R4Contract_S4J_RowP_C,MQC_R4Contract_S4J_RowC,MQC_R4Contract_S4K_Row_R
 !
       CONTAINS
 !
@@ -4375,6 +4389,53 @@
       End Function MQC_ScalarNEComplex
 !
 !
+!     PROCEDURE MQC_VectorNE
+!
+!>    \brief <b> MQC_VectorNE is a function that returns TRUE if two MQC_Vector
+!>    variables are not equal</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>       
+!>    MQC_VectorNE is a function that returns TRUE if two MQC_Vector variables 
+!>    are not equal.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Vector1
+!>    \verbatim
+!>        Vector1 is Type(MQC_Vector)
+!>        The first MQC_Vector that will be tested.
+!>    \endverbatim
+!>
+!>    \param[in] Vector2
+!>    \verbatim
+!>        Vector2 is Type(MQC_Vector)
+!>        The second MQC_Vector that will be tested.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_VectorNE(Vector1,Vector2)
+!
+!     Variable Declarations.
+      Implicit None
+      Logical::MQC_VectorNE
+      Type(MQC_Vector),Intent(In)::Vector1,Vector2
+!
+      MQC_VectorNE = .not.Vector1.eq.Vector2
+!
+      End Function MQC_VectorNE
+!
+!
+!
 !     PROCEDURE MQC_ScalarEQ
 !
 !>    \brief <b> MQC_ScalarEQ is a function that returns TRUE if two MQC_Scalar
@@ -4797,6 +4858,65 @@
 !
       Return
       End Function MQC_ScalarEQComplex
+!
+!
+!     PROCEDURE MQC_VectorEQ
+!
+!>    \brief <b> MQC_VectorEQ is a function that returns TRUE if two MQC_Vector
+!>    variables are equal</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>       
+!>    MQC_VectorEQ is a function that returns TRUE if two MQC_Vector variables 
+!>    are equal.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] Vector1
+!>    \verbatim
+!>        Vector1 is Type(MQC_Vector)
+!>        The first MQC_Vector that will be tested.
+!>    \endverbatim
+!>
+!>    \param[in] Vector2
+!>    \verbatim
+!>        Vector2 is Type(MQC_Vector)
+!>        The second MQC_Vector that will be tested.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_VectorEQ(Vector1,Vector2)
+!
+!     Variable Declarations.
+      Implicit None
+      Logical::MQC_VectorEQ
+      Type(MQC_Vector),Intent(In)::Vector1,Vector2
+      Real(kind=real64)::Thresh
+      integer::i
+!
+      If(MQC_very_small.gt.0.0) then
+        thresh = MQC_very_small
+      Else
+        thresh = 1e-10
+      EndIf
+!
+      MQC_VectorEQ = .False.
+      if(size(Vector1).ne.size(Vector2)) return
+      do i =1, size(Vector1)
+        if(abs(Vector1%at(i)-Vector2%at(i)).ge.thresh) return
+      end do
+      MQC_VectorEQ = .True.
+!
+      End Function MQC_VectorEQ
 !
 !
 !     PROCEDURE MQC_ScalarLT
@@ -40196,6 +40316,5454 @@
 
 !
 !
+!     PROCEDURE MQC_R4Contract_SPMV_I
+!
+!>    \brief <b> MQC_R4Contract_SPMV_I adds the product of a packed symmetric
+!>    integer matrix and a vector to a vector (Y = Y + A X)</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Integer counterpart of DSPMV('U',M,1,AP,X,1,1,Y,1): AP holds the upper
+!>    triangle by columns (A(r,c), r <= c, at r+c(c-1)/2).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_SPMV_I(M,AP,X,Y)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::M
+      Integer(kind=int64),Dimension(*),Intent(In)::AP,X
+      Integer(kind=int64),Dimension(*),Intent(InOut)::Y
+      Integer(kind=int64)::C,R,O,XC,S,V
+
+      O = 0
+      Do C = 1, M
+        XC = X(C)
+        S = 0
+        Do R = 1, C-1
+          V = AP(O+R)
+          Y(R) = Y(R)+V*XC
+          S = S+V*X(R)
+        EndDo
+        Y(C) = Y(C)+S+AP(O+C)*XC
+        O = O+C
+      EndDo
+
+      End Subroutine MQC_R4Contract_SPMV_I
+!
+!
+!     PROCEDURE MQC_R4Contract_R8_I
+!
+!>    \brief <b> MQC_R4Contract_R8_I contracts a packed R_8_1234 integer tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 1 (R_8_1234), in
+!>    the stored (chemist) frame. AP holds the slots
+!>    AP(Tri(Tri(i,j),Tri(k,l))). Every operation of the class keeps the pair
+!>    structure {1,2},{3,4}, so two cases cover every contracted pair:
+!>
+!>    Same = TRUE (the contracted indices are one stored pair):
+!>      Acc(a,b) += J(Tri(a,b)), J(P) = sum_Q T(P,Q) d(Q), d(Tri(r,s)) =
+!>      MB(r,s)+MB(s,r) (r /= s), MB(r,r); T(P,Q) is a packed symmetric matrix.
+!>    Same = FALSE (one contracted index in each stored pair):
+!>      K(q,s) = sum_pr T(p,q,r,s) MB(p,r), with MB(x_ca,x_cb) and the free
+!>      index in the pair of ca as q; Acc += K, or Acc += K^T when Swap.
+!>      Stored row P=(i,j), i >= j, holds the slots Q <= P contiguously:
+!>      the block k,l < i is a packed symmetric (i-1) x (i-1) matrix V(k,l) =
+!>      T(i,j,k,l) (four products with columns i,j of MB and MB^T), then the
+!>      remainder k = i, l < j (eight images each, four when i = j)
+!>      and the slot (ij|ij).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] N
+!>    \verbatim
+!>        N is Integer(kind=int64), the dimension of every index.
+!>    \endverbatim
+!>
+!>    \param[in] AP
+!>    \verbatim
+!>        AP is Integer(kind=int64),Dimension(*), the stored slots.
+!>    \endverbatim
+!>
+!>    \param[in] Same,Swap
+!>    \verbatim
+!>        Same, Swap are Logical (see Purpose).
+!>    \endverbatim
+!>
+!>    \param[in] MB
+!>    \verbatim
+!>        MB is Integer(kind=int64),Dimension(N,N), indexed (x_ca,x_cb).
+!>    \endverbatim
+!>
+!>    \param[in,out] Acc
+!>    \verbatim
+!>        Acc is Integer(kind=int64),Dimension(N,N), the result is added.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_R8_I(N,AP,Same,Swap,MB,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N
+      Integer(kind=int64),Dimension(*),Intent(In)::AP
+      Logical,Intent(In)::Same,Swap
+      Integer(kind=int64),Dimension(N,N),Intent(In)::MB
+      Integer(kind=int64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,L,M,P,Base,O,NP
+      Integer(kind=int64)::V,A1,A2,A3,A4,DII,DIJ,DJI
+      Integer(kind=int64),Dimension(:),Allocatable::DP,JP
+      Integer(kind=int64),Dimension(:,:),Allocatable::MBT,KL,KTL
+
+      If(Same) then
+        NP = N*(N+1)/2
+        Allocate(DP(NP),JP(NP))
+        Do J = 1, N
+          Do I = J, N
+            DP(I*(I-1)/2+J) = MB(I,J)
+            If(I.ne.J) DP(I*(I-1)/2+J) = MB(I,J)+MB(J,I)
+          EndDo
+        EndDo
+        JP = 0
+        Call MQC_R4Contract_SPMV_I(NP,AP,DP,JP)
+        Do J = 1, N
+          Do I = 1, N
+            Acc(I,J) = Acc(I,J)+JP(Max(I,J)*(Max(I,J)-1)/2+Min(I,J))
+          EndDo
+        EndDo
+      Else
+        Allocate(MBT(N,N))
+        MBT = Transpose(MB)
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N,AP,MB,MBT,Acc,Swap), &
+!$OMP PRIVATE(I,J,L,M,P,Base,O,V,A1,A2,A3,A4,DII,DIJ,DJI,KL,KTL)
+        Allocate(KL(N,N),KTL(N,N))
+        KL = 0
+        KTL = 0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = N, 1, -1
+          Do J = 1, I
+            P = I*(I-1)/2+J
+            Base = P*(P-1)/2
+            M = I-1
+            If(M.gt.0) then
+              Call MQC_R4Contract_SPMV_I(M,AP(Base+1),MBT(1,I),KTL(1,J))
+              Call MQC_R4Contract_SPMV_I(M,AP(Base+1),MB(1,I),KL(1,J))
+              If(I.ne.J) then
+                Call MQC_R4Contract_SPMV_I(M,AP(Base+1),MBT(1,J),KTL(1,I))
+                Call MQC_R4Contract_SPMV_I(M,AP(Base+1),MB(1,J),KL(1,I))
+              EndIf
+            EndIf
+!           remainder (ij|il), l < j: images (ij|il),(il|ij),(ij|li),(li|ij) here,
+!           (ji|il),(il|ji),(ji|li),(li|ji) below (they coincide with the first four when i = j)
+            O = Base+I*(I-1)/2
+            DII = MB(I,I)
+            A1 = 0
+            A3 = 0
+            Do L = 1, J-1
+              V = AP(O+L)
+              KTL(L,J) = KTL(L,J)+DII*V
+              KL(L,J) = KL(L,J)+DII*V
+              A1 = A1+V*MB(I,L)
+              A3 = A3+V*MB(L,I)
+            EndDo
+            KL(J,I) = KL(J,I)+A1
+            KL(I,J) = KL(I,J)+A3
+            If(I.ne.J) then
+              DIJ = MB(I,J)
+              DJI = MB(J,I)
+              A2 = 0
+              A4 = 0
+              Do L = 1, J-1
+                V = AP(O+L)
+                KTL(L,I) = KTL(L,I)+DJI*V
+                KL(L,I) = KL(L,I)+DIJ*V
+                A2 = A2+V*MB(J,L)
+                A4 = A4+V*MB(L,J)
+              EndDo
+              KL(I,I) = KL(I,I)+A2+A4
+            EndIf
+!           slot (ij|ij)
+            V = AP(Base+P)
+            If(I.ne.J) then
+              KL(J,J) = KL(J,J)+V*MB(I,I)
+              KL(I,I) = KL(I,I)+V*MB(J,J)
+              KL(J,I) = KL(J,I)+V*MB(I,J)
+              KL(I,J) = KL(I,J)+V*MB(J,I)
+            Else
+              KL(I,I) = KL(I,I)+V*MB(I,I)
+            EndIf
+          EndDo
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_R8_I_Acc)
+        If(Swap) then
+          Acc = Acc+Transpose(KL)+KTL
+        Else
+          Acc = Acc+KL+Transpose(KTL)
+        EndIf
+!$OMP END CRITICAL (MQC_R4Contract_R8_I_Acc)
+        Deallocate(KL,KTL)
+!$OMP END PARALLEL
+      EndIf
+
+      End Subroutine MQC_R4Contract_R8_I
+!
+!
+!     PROCEDURE MQC_R4Contract_R8_R
+!
+!>    \brief <b> MQC_R4Contract_R8_R contracts a packed R_8_1234 real tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 1 (R_8_1234), in
+!>    the stored (chemist) frame. AP holds the slots
+!>    AP(Tri(Tri(i,j),Tri(k,l))). Every operation of the class keeps the pair
+!>    structure {1,2},{3,4}, so two cases cover every contracted pair:
+!>
+!>    Same = TRUE (the contracted indices are one stored pair):
+!>      Acc(a,b) += J(Tri(a,b)), J(P) = sum_Q T(P,Q) d(Q), d(Tri(r,s)) =
+!>      MB(r,s)+MB(s,r) (r /= s), MB(r,r); T(P,Q) is a packed symmetric matrix.
+!>    Same = FALSE (one contracted index in each stored pair):
+!>      K(q,s) = sum_pr T(p,q,r,s) MB(p,r), with MB(x_ca,x_cb) and the free
+!>      index in the pair of ca as q; Acc += K, or Acc += K^T when Swap.
+!>      Stored row P=(i,j), i >= j, holds the slots Q <= P contiguously:
+!>      the block k,l < i is a packed symmetric (i-1) x (i-1) matrix V(k,l) =
+!>      T(i,j,k,l) (four products with columns i,j of MB and MB^T), then the
+!>      remainder k = i, l < j (eight images each, four when i = j)
+!>      and the slot (ij|ij).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] N
+!>    \verbatim
+!>        N is Integer(kind=int64), the dimension of every index.
+!>    \endverbatim
+!>
+!>    \param[in] AP
+!>    \verbatim
+!>        AP is Real(kind=real64),Dimension(*), the stored slots.
+!>    \endverbatim
+!>
+!>    \param[in] Same,Swap
+!>    \verbatim
+!>        Same, Swap are Logical (see Purpose).
+!>    \endverbatim
+!>
+!>    \param[in] MB
+!>    \verbatim
+!>        MB is Real(kind=real64),Dimension(N,N), indexed (x_ca,x_cb).
+!>    \endverbatim
+!>
+!>    \param[in,out] Acc
+!>    \verbatim
+!>        Acc is Real(kind=real64),Dimension(N,N), the result is added.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_R8_R(N,AP,Same,Swap,MB,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N
+      Real(kind=real64),Dimension(*),Intent(In)::AP
+      Logical,Intent(In)::Same,Swap
+      Real(kind=real64),Dimension(N,N),Intent(In)::MB
+      Real(kind=real64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,L,M,P,Base,O,NP
+      Real(kind=real64)::V,A1,A2,A3,A4,DII,DIJ,DJI
+      Real(kind=real64),Dimension(:),Allocatable::DP,JP
+      Real(kind=real64),Dimension(:,:),Allocatable::MBT,KL,KTL
+
+      If(Same) then
+        NP = N*(N+1)/2
+        Allocate(DP(NP),JP(NP))
+        Do J = 1, N
+          Do I = J, N
+            DP(I*(I-1)/2+J) = MB(I,J)
+            If(I.ne.J) DP(I*(I-1)/2+J) = MB(I,J)+MB(J,I)
+          EndDo
+        EndDo
+        JP = 0
+        Call DSPMV('U',int(NP,kind=MQC_BlasInt),1.0,AP,DP, &
+                int(1,kind=MQC_BlasInt),1.0,JP,int(1,kind=MQC_BlasInt))
+        Do J = 1, N
+          Do I = 1, N
+            Acc(I,J) = Acc(I,J)+JP(Max(I,J)*(Max(I,J)-1)/2+Min(I,J))
+          EndDo
+        EndDo
+      Else
+        Allocate(MBT(N,N))
+        MBT = Transpose(MB)
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N,AP,MB,MBT,Acc,Swap), &
+!$OMP PRIVATE(I,J,L,M,P,Base,O,V,A1,A2,A3,A4,DII,DIJ,DJI,KL,KTL)
+        Allocate(KL(N,N),KTL(N,N))
+        KL = 0
+        KTL = 0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = N, 1, -1
+          Do J = 1, I
+            P = I*(I-1)/2+J
+            Base = P*(P-1)/2
+            M = I-1
+            If(M.gt.0) then
+              Call DSPMV('U',int(M,kind=MQC_BlasInt),1.0,AP(Base+1),MBT(1,I),int(1,kind=MQC_BlasInt),1.0, &
+                KTL(1,J),int(1,kind=MQC_BlasInt))
+              Call DSPMV('U',int(M,kind=MQC_BlasInt),1.0,AP(Base+1),MB(1,I),int(1,kind=MQC_BlasInt),1.0, &
+                KL(1,J),int(1,kind=MQC_BlasInt))
+              If(I.ne.J) then
+                Call DSPMV('U',int(M,kind=MQC_BlasInt),1.0,AP(Base+1),MBT(1,J),int(1,kind=MQC_BlasInt),1.0, &
+                KTL(1,I),int(1,kind=MQC_BlasInt))
+                Call DSPMV('U',int(M,kind=MQC_BlasInt),1.0,AP(Base+1),MB(1,J),int(1,kind=MQC_BlasInt),1.0, &
+                KL(1,I),int(1,kind=MQC_BlasInt))
+              EndIf
+            EndIf
+!           remainder (ij|il), l < j: images (ij|il),(il|ij),(ij|li),(li|ij) here,
+!           (ji|il),(il|ji),(ji|li),(li|ji) below (they coincide with the first four when i = j)
+            O = Base+I*(I-1)/2
+            DII = MB(I,I)
+            A1 = 0
+            A3 = 0
+            Do L = 1, J-1
+              V = AP(O+L)
+              KTL(L,J) = KTL(L,J)+DII*V
+              KL(L,J) = KL(L,J)+DII*V
+              A1 = A1+V*MB(I,L)
+              A3 = A3+V*MB(L,I)
+            EndDo
+            KL(J,I) = KL(J,I)+A1
+            KL(I,J) = KL(I,J)+A3
+            If(I.ne.J) then
+              DIJ = MB(I,J)
+              DJI = MB(J,I)
+              A2 = 0
+              A4 = 0
+              Do L = 1, J-1
+                V = AP(O+L)
+                KTL(L,I) = KTL(L,I)+DJI*V
+                KL(L,I) = KL(L,I)+DIJ*V
+                A2 = A2+V*MB(J,L)
+                A4 = A4+V*MB(L,J)
+              EndDo
+              KL(I,I) = KL(I,I)+A2+A4
+            EndIf
+!           slot (ij|ij)
+            V = AP(Base+P)
+            If(I.ne.J) then
+              KL(J,J) = KL(J,J)+V*MB(I,I)
+              KL(I,I) = KL(I,I)+V*MB(J,J)
+              KL(J,I) = KL(J,I)+V*MB(I,J)
+              KL(I,J) = KL(I,J)+V*MB(J,I)
+            Else
+              KL(I,I) = KL(I,I)+V*MB(I,I)
+            EndIf
+          EndDo
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_R8_R_Acc)
+        If(Swap) then
+          Acc = Acc+Transpose(KL)+KTL
+        Else
+          Acc = Acc+KL+Transpose(KTL)
+        EndIf
+!$OMP END CRITICAL (MQC_R4Contract_R8_R_Acc)
+        Deallocate(KL,KTL)
+!$OMP END PARALLEL
+      EndIf
+
+      End Subroutine MQC_R4Contract_R8_R
+!
+!
+!     PROCEDURE MQC_R4Contract_R8_C
+!
+!>    \brief <b> MQC_R4Contract_R8_C contracts a packed R_8_1234 complex tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 1 (R_8_1234), in
+!>    the stored (chemist) frame. AP holds the slots
+!>    AP(Tri(Tri(i,j),Tri(k,l))). Every operation of the class keeps the pair
+!>    structure {1,2},{3,4}, so two cases cover every contracted pair:
+!>
+!>    Same = TRUE (the contracted indices are one stored pair):
+!>      Acc(a,b) += J(Tri(a,b)), J(P) = sum_Q T(P,Q) d(Q), d(Tri(r,s)) =
+!>      MB(r,s)+MB(s,r) (r /= s), MB(r,r); T(P,Q) is a packed symmetric matrix,
+!>      read by rows (ZGEMV dot + ZAXPY per row; ZSPMV is not tuned).
+!>    Same = FALSE (one contracted index in each stored pair):
+!>      K(q,s) = sum_pr T(p,q,r,s) MB(p,r), with MB(x_ca,x_cb) and the free
+!>      index in the pair of ca as q; Acc += K, or Acc += K^T when Swap.
+!>      Stored row P=(i,j), i >= j, holds the slots Q <= P contiguously:
+!>      the block k,l < i is a packed symmetric (i-1) x (i-1) matrix V(k,l) =
+!>      T(i,j,k,l) (dense copy, one ZGEMM with columns i,j of MB and MB^T),
+!>      then the remainder k = i, l < j (eight images each, four when
+!>      i = j) and the slot (ij|ij).
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] N
+!>    \verbatim
+!>        N is Integer(kind=int64), the dimension of every index.
+!>    \endverbatim
+!>
+!>    \param[in] AP
+!>    \verbatim
+!>        AP is Complex(kind=real64),Dimension(*), the stored slots.
+!>    \endverbatim
+!>
+!>    \param[in] Same,Swap
+!>    \verbatim
+!>        Same, Swap are Logical (see Purpose).
+!>    \endverbatim
+!>
+!>    \param[in] MB
+!>    \verbatim
+!>        MB is Complex(kind=real64),Dimension(N,N), indexed (x_ca,x_cb).
+!>    \endverbatim
+!>
+!>    \param[in,out] Acc
+!>    \verbatim
+!>        Acc is Complex(kind=real64),Dimension(N,N), the result is added.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_R8_C(N,AP,Same,Swap,MB,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N
+      Complex(kind=real64),Dimension(*),Intent(In)::AP
+      Logical,Intent(In)::Same,Swap
+      Complex(kind=real64),Dimension(N,N),Intent(In)::MB
+      Complex(kind=real64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,L,M,P,Base,O,NP
+      Complex(kind=real64)::V,A1,A2,A3,A4,DII,DIJ,DJI
+      Complex(kind=real64),Dimension(:),Allocatable::DP,JP,JL
+      Complex(kind=real64),Dimension(:,:),Allocatable::MBT,KL,KTL,VB,XB,YB
+      Integer(kind=int64)::NR
+
+      If(Same) then
+        NP = N*(N+1)/2
+        Allocate(DP(NP),JP(NP))
+        Do J = 1, N
+          Do I = J, N
+            DP(I*(I-1)/2+J) = MB(I,J)
+            If(I.ne.J) DP(I*(I-1)/2+J) = MB(I,J)+MB(J,I)
+          EndDo
+        EndDo
+        JP = (0.0,0.0)
+!       row P holds T(P,1:P): J(P) += T(P,1:P).d(1:P), J(1:P-1) += T(P,1:P-1) d(P)
+!$OMP PARALLEL DEFAULT(NONE), SHARED(NP,AP,DP,JP), PRIVATE(P,Base,JL)
+        Allocate(JL(NP))
+        JL = (0.0,0.0)
+!$OMP DO SCHEDULE(DYNAMIC,16)
+        Do P = NP, 1, -1
+          Base = P*(P-1)/2
+          Call ZGEMV('T',int(P,kind=MQC_BlasInt),int(1,kind=MQC_BlasInt),(1.0,0.0),AP(Base+1), &
+            int(P,kind=MQC_BlasInt),DP,int(1,kind=MQC_BlasInt),(1.0,0.0),JL(P),int(1,kind=MQC_BlasInt))
+          If(P.gt.1) Call ZAXPY(int(P-1,kind=MQC_BlasInt),DP(P),AP(Base+1),int(1,kind=MQC_BlasInt), &
+            JL,int(1,kind=MQC_BlasInt))
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_R8_C_J)
+        JP = JP+JL
+!$OMP END CRITICAL (MQC_R4Contract_R8_C_J)
+        Deallocate(JL)
+!$OMP END PARALLEL
+        Do J = 1, N
+          Do I = 1, N
+            Acc(I,J) = Acc(I,J)+JP(Max(I,J)*(Max(I,J)-1)/2+Min(I,J))
+          EndDo
+        EndDo
+      Else
+        Allocate(MBT(N,N))
+        MBT = Transpose(MB)
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N,AP,MB,MBT,Acc,Swap), &
+!$OMP PRIVATE(I,J,L,M,P,Base,O,V,A1,A2,A3,A4,DII,DIJ,DJI,KL,KTL,VB,XB,YB,NR)
+        Allocate(KL(N,N),KTL(N,N),VB(N,N),XB(N,4),YB(N,4))
+        KL = 0
+        KTL = 0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = N, 1, -1
+          Do J = 1, I
+            P = I*(I-1)/2+J
+            Base = P*(P-1)/2
+            M = I-1
+            If(M.gt.0) then
+!             dense copy of the symmetric block (ZSPMV is not tuned), one ZGEMM on the
+!             2 or 4 right-hand sides
+              O = Base
+              Do L = 1, M
+                VB(1:L,L) = AP(O+1:O+L)
+                VB(L,1:L-1) = AP(O+1:O+L-1)
+                O = O+L
+              EndDo
+              XB(1:M,1) = MBT(1:M,I)
+              XB(1:M,2) = MB(1:M,I)
+              NR = 2
+              If(I.ne.J) then
+                XB(1:M,3) = MBT(1:M,J)
+                XB(1:M,4) = MB(1:M,J)
+                NR = 4
+              EndIf
+              Call ZGEMM('N','N',int(M,kind=MQC_BlasInt),int(NR,kind=MQC_BlasInt),int(M,kind=MQC_BlasInt), &
+                (1.0,0.0),VB,int(N,kind=MQC_BlasInt),XB,int(N,kind=MQC_BlasInt),(0.0,0.0),YB, &
+                int(N,kind=MQC_BlasInt))
+              KTL(1:M,J) = KTL(1:M,J)+YB(1:M,1)
+              KL(1:M,J) = KL(1:M,J)+YB(1:M,2)
+              If(I.ne.J) then
+                KTL(1:M,I) = KTL(1:M,I)+YB(1:M,3)
+                KL(1:M,I) = KL(1:M,I)+YB(1:M,4)
+              EndIf
+            EndIf
+!           remainder (ij|il), l < j: images (ij|il),(il|ij),(ij|li),(li|ij) here,
+!           (ji|il),(il|ji),(ji|li),(li|ji) below (they coincide with the first four when i = j)
+            O = Base+I*(I-1)/2
+            DII = MB(I,I)
+            A1 = 0
+            A3 = 0
+            Do L = 1, J-1
+              V = AP(O+L)
+              KTL(L,J) = KTL(L,J)+DII*V
+              KL(L,J) = KL(L,J)+DII*V
+              A1 = A1+V*MB(I,L)
+              A3 = A3+V*MB(L,I)
+            EndDo
+            KL(J,I) = KL(J,I)+A1
+            KL(I,J) = KL(I,J)+A3
+            If(I.ne.J) then
+              DIJ = MB(I,J)
+              DJI = MB(J,I)
+              A2 = 0
+              A4 = 0
+              Do L = 1, J-1
+                V = AP(O+L)
+                KTL(L,I) = KTL(L,I)+DJI*V
+                KL(L,I) = KL(L,I)+DIJ*V
+                A2 = A2+V*MB(J,L)
+                A4 = A4+V*MB(L,J)
+              EndDo
+              KL(I,I) = KL(I,I)+A2+A4
+            EndIf
+!           slot (ij|ij)
+            V = AP(Base+P)
+            If(I.ne.J) then
+              KL(J,J) = KL(J,J)+V*MB(I,I)
+              KL(I,I) = KL(I,I)+V*MB(J,J)
+              KL(J,I) = KL(J,I)+V*MB(I,J)
+              KL(I,J) = KL(I,J)+V*MB(J,I)
+            Else
+              KL(I,I) = KL(I,I)+V*MB(I,I)
+            EndIf
+          EndDo
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_R8_C_Acc)
+        If(Swap) then
+          Acc = Acc+Transpose(KL)+KTL
+        Else
+          Acc = Acc+KL+Transpose(KTL)
+        EndIf
+!$OMP END CRITICAL (MQC_R4Contract_R8_C_Acc)
+        Deallocate(KL,KTL,VB,XB,YB)
+!$OMP END PARALLEL
+      EndIf
+
+      End Subroutine MQC_R4Contract_R8_C
+!
+!
+!     PROCEDURE MQC_R4Contract_GEMV_I
+!
+!>    \brief <b> MQC_R4Contract_GEMV_I adds the product of an integer matrix
+!>    block (or its transpose) and a vector to a vector</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Integer counterpart of DGEMV(Trans,M,M,1,V,LDV,X,1,1,Y,1):
+!>    Trans = 'N': Y = Y + V X; Trans = 'T': Y = Y + V^T X.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_GEMV_I(Trans,M,V,LDV,X,Y)
+
+      Implicit None
+      Character(Len=1),Intent(In)::Trans
+      Integer(kind=int64),Intent(In)::M,LDV
+      Integer(kind=int64),Dimension(LDV,*),Intent(In)::V
+      Integer(kind=int64),Dimension(*),Intent(In)::X
+      Integer(kind=int64),Dimension(*),Intent(InOut)::Y
+      Integer(kind=int64)::K,L,S
+
+      If(Trans.eq.'T') then
+        Do L = 1, M
+          S = 0
+          Do K = 1, M
+            S = S+V(K,L)*X(K)
+          EndDo
+          Y(L) = Y(L)+S
+        EndDo
+      Else
+        Do L = 1, M
+          Do K = 1, M
+            Y(K) = Y(K)+V(K,L)*X(L)
+          EndDo
+        EndDo
+      EndIf
+
+      End Subroutine MQC_R4Contract_GEMV_I
+!
+!
+!     PROCEDURE MQC_R4Contract_Block_C
+!
+!>    \brief <b> MQC_R4Contract_Block_C adds the contributions of a dense block
+!>    of a packed complex rank-4 tensor and its symmetry images to a
+!>    contraction</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The block is V(k,l) = T(x), x = (XI,XJ,k,l) in the stored (chemist)
+!>    frame, k,l = 1..M. Image g maps x to y with y(t) = x(GP(t,g)); Src(r,g)
+!>    = GP(Roles(r),g) is the position of x read by role r (1,2: contracted
+!>    indices MB(y_r1,y_r2); 3,4: result indices Acc(y_r3,y_r4)), and Cj(g)
+!>    conjugates the value. Per image, by where k and l land:
+!>      both contracted: one number, sum_kl V(k,l) MB(.,.) -> Acc(.,.);
+!>      both free: Acc(k,l) (or Acc(l,k), into AccT) += MB(.,.) V(k,l);
+!>      one of each: one ZGEMV into a column of Acc or of AccT.
+!>    AccT holds the transpose of a part of the result (the caller adds it).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Block_C(N,M,V,XI,XJ,NImg,Src,Cj,MB,MBT,Acc,AccT,XB,YB)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N,M,XI,XJ,NImg
+      Complex(kind=real64),Dimension(N,N),Intent(In)::V,MB,MBT
+      Integer(kind=int64),Dimension(4,NImg),Intent(In)::Src
+      Logical,Dimension(NImg),Intent(In)::Cj
+      Complex(kind=real64),Dimension(N,N),Intent(InOut)::Acc,AccT
+      Complex(kind=real64),Dimension(N),Intent(InOut)::XB,YB
+      Integer(kind=int64)::G,RC,RO,OC,OF,W,F
+      Integer(kind=int64),Dimension(4)::Val
+      Complex(kind=real64)::S,Coef
+
+      Val = [XI,XJ,0,0]
+      Do G = 1, NImg
+        If(Src(1,G).ge.3.and.Src(2,G).ge.3) then
+!         both block indices contracted: one number
+          If(Src(1,G).eq.3) then
+            If(Cj(G)) then
+              S = Conjg(Sum(V(1:M,1:M)*Conjg(MB(1:M,1:M))))
+            Else
+              S = Sum(V(1:M,1:M)*MB(1:M,1:M))
+            EndIf
+          Else
+            If(Cj(G)) then
+              S = Conjg(Sum(V(1:M,1:M)*Conjg(MBT(1:M,1:M))))
+            Else
+              S = Sum(V(1:M,1:M)*MBT(1:M,1:M))
+            EndIf
+          EndIf
+          Acc(Val(Src(3,G)),Val(Src(4,G))) = Acc(Val(Src(3,G)),Val(Src(4,G)))+S
+        ElseIf(Src(3,G).ge.3.and.Src(4,G).ge.3) then
+!         both block indices free: a block of the result
+          Coef = MB(Val(Src(1,G)),Val(Src(2,G)))
+          If(Src(3,G).eq.3) then
+            If(Cj(G)) then
+              Acc(1:M,1:M) = Acc(1:M,1:M)+Coef*Conjg(V(1:M,1:M))
+            Else
+              Acc(1:M,1:M) = Acc(1:M,1:M)+Coef*V(1:M,1:M)
+            EndIf
+          Else
+            If(Cj(G)) then
+              AccT(1:M,1:M) = AccT(1:M,1:M)+Coef*Conjg(V(1:M,1:M))
+            Else
+              AccT(1:M,1:M) = AccT(1:M,1:M)+Coef*V(1:M,1:M)
+            EndIf
+          EndIf
+        Else
+!         one contracted and one free block index: matrix-vector product
+          If(Src(1,G).ge.3) then
+            RC = 1
+            OC = 2
+          Else
+            RC = 2
+            OC = 1
+          EndIf
+          If(Src(3,G).ge.3) then
+            RO = 3
+            OF = 4
+          Else
+            RO = 4
+            OF = 3
+          EndIf
+          W = Val(Src(OC,G))
+          F = Val(Src(OF,G))
+          If(RC.eq.1) then
+            XB(1:M) = MB(1:M,W)
+          Else
+            XB(1:M) = MBT(1:M,W)
+          EndIf
+          If(Src(RC,G).eq.3) then
+!           k contracted: sum_k V(k,l) x(k)
+            If(Cj(G)) then
+              Call ZGEMV('C',int(M,kind=MQC_BlasInt),int(M,kind=MQC_BlasInt),(1.0,0.0),V, &
+                int(N,kind=MQC_BlasInt),XB,int(1,kind=MQC_BlasInt),(0.0,0.0),YB,int(1,kind=MQC_BlasInt))
+            Else
+              Call ZGEMV('T',int(M,kind=MQC_BlasInt),int(M,kind=MQC_BlasInt),(1.0,0.0),V, &
+                int(N,kind=MQC_BlasInt),XB,int(1,kind=MQC_BlasInt),(0.0,0.0),YB,int(1,kind=MQC_BlasInt))
+            EndIf
+          Else
+!           l contracted: sum_l V(k,l) x(l); conjg(V) x = conjg(V conjg(x))
+            If(Cj(G)) XB(1:M) = Conjg(XB(1:M))
+            Call ZGEMV('N',int(M,kind=MQC_BlasInt),int(M,kind=MQC_BlasInt),(1.0,0.0),V, &
+              int(N,kind=MQC_BlasInt),XB,int(1,kind=MQC_BlasInt),(0.0,0.0),YB,int(1,kind=MQC_BlasInt))
+            If(Cj(G)) YB(1:M) = Conjg(YB(1:M))
+          EndIf
+          If(RO.eq.3) then
+            Acc(1:M,F) = Acc(1:M,F)+YB(1:M)
+          Else
+            AccT(1:M,F) = AccT(1:M,F)+YB(1:M)
+          EndIf
+        EndIf
+      EndDo
+
+      End Subroutine MQC_R4Contract_Block_C
+!
+!
+!     PROCEDURE MQC_R4Contract_Orbit_C
+!
+!>    \brief <b> MQC_R4Contract_Orbit_C adds the contributions of one element of
+!>    a packed complex rank-4 tensor and its distinct symmetry images to a
+!>    contraction</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    X is the element (stored frame) and Val its value; image g is
+!>    y = X(GP(:,g)), conjugated when GC(g). Each distinct image is used once:
+!>    Acc(y_Roles(3),y_Roles(4)) += T(y) MB(y_Roles(1),y_Roles(2)).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Orbit_C(N,X,Val,NG,GP,GC,Roles,MB,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N,NG
+      Integer(kind=int64),Dimension(4),Intent(In)::X,Roles
+      Complex(kind=real64),Intent(In)::Val
+      Integer(kind=int64),Dimension(4,NG),Intent(In)::GP
+      Logical,Dimension(NG),Intent(In)::GC
+      Complex(kind=real64),Dimension(N,N),Intent(In)::MB
+      Complex(kind=real64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64),Dimension(4,8)::Img
+      Integer(kind=int64),Dimension(4)::Y
+      Integer(kind=int64)::G,H,NImg
+      Logical::Dup
+      Complex(kind=real64)::V
+
+      NImg = 0
+      Do G = 1, NG
+        Y = X(GP(:,G))
+        Dup = .False.
+        Do H = 1, NImg
+          If(All(Img(:,H).eq.Y)) Dup = .True.
+        EndDo
+        If(.not.Dup) then
+          NImg = NImg+1
+          Img(:,NImg) = Y
+          V = Val
+          If(GC(G)) V = Conjg(V)
+          Acc(Y(Roles(3)),Y(Roles(4))) = Acc(Y(Roles(3)),Y(Roles(4)))+V*MB(Y(Roles(1)),Y(Roles(2)))
+        EndIf
+      EndDo
+
+      End Subroutine MQC_R4Contract_Orbit_C
+!
+!
+!     PROCEDURE MQC_R4Contract_S4_C
+!
+!>    \brief <b> MQC_R4Contract_S4_C contracts a packed S_4_1234 complex tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 2 (S_4_1234), in
+!>    the stored (chemist) frame. Contracted indices in one stored pair:
+!>    MQC_R4Contract_S4J. Otherwise, for any contracted pair: Roles = chemist
+!>    positions of (ia,ib,ic,id); Acc(x_Roles(3),x_Roles(4)) +=
+!>    sum T(x) MB(x_Roles(1),x_Roles(2)). Group: (3412), (2143)*, (4321)*
+!>    (no conjugation when Plain).
+!>    Off-diagonal stored row A=(i,j), i>j (slots 2(S2-1)+G+1 after A(A-1)):
+!>      block B=(k,l), k,l < i, k /= l: V(k,l) = T(i,j,k,l) (G=0 for k>l,
+!>      G=1 for k<l), V(k,k) = 0, with its four images (MQC_R4Contract_Block_C);
+!>      remainder B=(i,l), l<j: runs (MQC_R4Contract_Run); self B=A:
+!>      element by element.
+!>    Diagonal row (c,c): W(k,l) = T(c,c,k,l) (stored for k>l, the (2143)
+!>      image for k<l), W(d,d) = T(c,c,d,d) for d < c (d > c comes from row
+!>      d), with the images e and (3412); T(c,c,c,c) element by element.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] N
+!>    \verbatim
+!>        N is Integer(kind=int64), the dimension of every index.
+!>    \endverbatim
+!>
+!>    \param[in] AP
+!>    \verbatim
+!>        AP is Complex(kind=real64),Dimension(*), the stored slots.
+!>    \endverbatim
+!>
+!>    \param[in] Plain
+!>    \verbatim
+!>        Plain is Logical, TRUE for the plain (Klein) equalities.
+!>    \endverbatim
+!>
+!>    \param[in] Roles
+!>    \verbatim
+!>        Roles is Integer(kind=int64),Dimension(4), chemist positions of the
+!>        contracted (1,2) and free (3,4) indices.
+!>    \endverbatim
+!>
+!>    \param[in] MB
+!>    \verbatim
+!>        MB is Complex(kind=real64),Dimension(N,N).
+!>    \endverbatim
+!>
+!>    \param[in,out] Acc
+!>    \verbatim
+!>        Acc is Complex(kind=real64),Dimension(N,N), the result is added.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S4_C(N,AP,Plain,Roles,MB,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N
+      Complex(kind=real64),Dimension(*),Intent(In)::AP
+      Logical,Intent(In)::Plain
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Complex(kind=real64),Dimension(N,N),Intent(In)::MB
+      Complex(kind=real64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64),Dimension(4,4)::GP,Src
+      Logical,Dimension(4)::GC
+      Integer(kind=int64)::I,J,K,L,M,A,Base,O,Off,C,G
+      Complex(kind=real64)::V
+      Complex(kind=real64),Dimension(:,:),Allocatable::MBT,KL,KTL,VB
+      Complex(kind=real64),Dimension(:),Allocatable::XB,YB,RB
+      Complex(kind=real64),Dimension(:,:),Allocatable::MX,JT
+      Logical::Same
+
+      Same = (Roles(1)+1)/2.eq.(Roles(2)+1)/2
+      If(Same) then
+!       contracted indices in one stored pair: MX(r,s) = MB(x_Roles(1),x_Roles(2)) with r,s the
+!       first and second index of that pair; the result transposed when Roles(3) is a second index
+        If(Mod(Roles(1),2).eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        If(Mod(Roles(3),2).eq.1) then
+          Call MQC_R4Contract_S4J_C(N,AP,Plain,MX,Acc)
+        Else
+          Allocate(JT(N,N))
+          JT = (0.0,0.0)
+          Call MQC_R4Contract_S4J_C(N,AP,Plain,MX,JT)
+          Acc = Acc+Transpose(JT)
+        EndIf
+      Else
+        GP = Reshape([1,2,3,4, 3,4,1,2, 2,1,4,3, 4,3,2,1],[4,4])
+        GC = [.False.,.False.,.not.Plain,.not.Plain]
+        Do G = 1, 4
+          Src(:,G) = GP(Roles,G)
+        EndDo
+        Off = N*(N-1)/2
+        Allocate(MBT(N,N))
+        MBT = Transpose(MB)
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N,AP,MB,MBT,Acc,GP,GC,Src,Roles,Off), &
+!$OMP PRIVATE(I,J,K,L,M,A,Base,O,C,V,KL,KTL,VB,XB,YB,RB)
+        Allocate(KL(N,N),KTL(N,N),VB(N,N),XB(N),YB(N),RB(N))
+        KL = (0.0,0.0)
+        KTL = (0.0,0.0)
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = N, 2, -1
+          Do J = 1, I-1
+            A = (I-1)*(I-2)/2+J
+            Base = A*(A-1)
+            M = I-1
+            If(M.ge.2) then
+              Do K = 1, M
+                VB(K,K) = (0.0,0.0)
+                O = Base+(K-1)*(K-2)
+                Do L = 1, K-1
+                  VB(K,L) = AP(O+2*L-1)
+                  VB(L,K) = AP(O+2*L)
+                EndDo
+              EndDo
+              Call MQC_R4Contract_Block_C(N,M,VB,I,J,4,Src,GC,MB,MBT,KL,KTL,XB,YB)
+            EndIf
+!           remainder (ij|il), (ij|li), l < j: runs; self (ij|ij), (ij|ji): element by element
+            O = Base+(I-1)*(I-2)
+            Do L = 1, J-1
+              RB(L) = AP(O+2*L-1)
+            EndDo
+            Call MQC_R4Contract_Run_C(N,J-1,RB,[I,J,I,0],4,4,Src,GC,MB,MBT,KL,KTL)
+            Do L = 1, J-1
+              RB(L) = AP(O+2*L)
+            EndDo
+            Call MQC_R4Contract_Run_C(N,J-1,RB,[I,J,0,I],3,4,Src,GC,MB,MBT,KL,KTL)
+            Call MQC_R4Contract_Orbit_C(N,[I,J,I,J],AP(O+2*J-1),4,GP,GC,Roles,MB,KL)
+            Call MQC_R4Contract_Orbit_C(N,[I,J,J,I],AP(O+2*J),4,GP,GC,Roles,MB,KL)
+          EndDo
+        EndDo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do C = 1, N
+          Base = Off*(Off+1)/2+(Off+C)*(Off+C-1)/2
+          Do K = 1, N
+            O = Base+(K-1)*(K-2)/2
+            Do L = 1, K-1
+              V = AP(O+L)
+              VB(K,L) = V
+              If(GC(3)) V = Conjg(V)
+              VB(L,K) = V
+            EndDo
+            VB(K,K) = (0.0,0.0)
+            If(K.lt.C) VB(K,K) = AP(Base+Off+K)
+          EndDo
+          Call MQC_R4Contract_Block_C(N,N,VB,C,C,2,Src(:,1:2),GC(1:2),MB,MBT,KL,KTL,XB,YB)
+          Call MQC_R4Contract_Orbit_C(N,[C,C,C,C],AP(Base+Off+C),4,GP,GC,Roles,MB,KL)
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S4_C_Acc)
+        Acc = Acc+KL+Transpose(KTL)
+!$OMP END CRITICAL (MQC_R4Contract_S4_C_Acc)
+        Deallocate(KL,KTL,VB,XB,YB,RB)
+!$OMP END PARALLEL
+      EndIf
+
+      End Subroutine MQC_R4Contract_S4_C
+!
+!
+!     PROCEDURE MQC_R4Contract_Block_R
+!
+!>    \brief <b> MQC_R4Contract_Block_R adds the contributions of a dense block
+!>    of a packed real rank-4 tensor and its symmetry images to a
+!>    contraction</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The block is V(k,l) = T(x), x = (XI,XJ,k,l) in the stored (chemist)
+!>    frame, k,l = 1..M. Image g maps x to y with y(t) = x(GP(t,g)); Src(r,g)
+!>    = GP(Roles(r),g) is the position of x read by role r (1,2: contracted
+!>    indices MB(y_r1,y_r2); 3,4: result indices Acc(y_r3,y_r4)). Per image,
+!>    by where k and l land:
+!>      both contracted: one number, sum_kl V(k,l) MB(.,.) -> Acc(.,.);
+!>      both free: Acc(k,l) (or Acc(l,k), into AccT) += MB(.,.) V(k,l);
+!>      one of each: one DGEMV into a column of Acc or of AccT.
+!>    AccT holds the transpose of a part of the result (the caller adds it).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Block_R(N,M,V,XI,XJ,NImg,Src,MB,MBT,Acc,AccT,XB,YB)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N,M,XI,XJ,NImg
+      Real(kind=real64),Dimension(N,N),Intent(In)::V,MB,MBT
+      Integer(kind=int64),Dimension(4,NImg),Intent(In)::Src
+      Real(kind=real64),Dimension(N,N),Intent(InOut)::Acc,AccT
+      Real(kind=real64),Dimension(N),Intent(InOut)::XB,YB
+      Integer(kind=int64)::G,RC,RO,OC,OF,W,F
+      Integer(kind=int64),Dimension(4)::Val
+      Real(kind=real64)::S,Coef
+
+      Val = [XI,XJ,0,0]
+      Do G = 1, NImg
+        If(Src(1,G).ge.3.and.Src(2,G).ge.3) then
+!         both block indices contracted: one number
+          If(Src(1,G).eq.3) then
+            S = Sum(V(1:M,1:M)*MB(1:M,1:M))
+          Else
+            S = Sum(V(1:M,1:M)*MBT(1:M,1:M))
+          EndIf
+          Acc(Val(Src(3,G)),Val(Src(4,G))) = Acc(Val(Src(3,G)),Val(Src(4,G)))+S
+        ElseIf(Src(3,G).ge.3.and.Src(4,G).ge.3) then
+!         both block indices free: a block of the result
+          Coef = MB(Val(Src(1,G)),Val(Src(2,G)))
+          If(Src(3,G).eq.3) then
+            Acc(1:M,1:M) = Acc(1:M,1:M)+Coef*V(1:M,1:M)
+          Else
+            AccT(1:M,1:M) = AccT(1:M,1:M)+Coef*V(1:M,1:M)
+          EndIf
+        Else
+!         one contracted and one free block index: matrix-vector product
+          If(Src(1,G).ge.3) then
+            RC = 1
+            OC = 2
+          Else
+            RC = 2
+            OC = 1
+          EndIf
+          If(Src(3,G).ge.3) then
+            RO = 3
+            OF = 4
+          Else
+            RO = 4
+            OF = 3
+          EndIf
+          W = Val(Src(OC,G))
+          F = Val(Src(OF,G))
+          If(RC.eq.1) then
+            XB(1:M) = MB(1:M,W)
+          Else
+            XB(1:M) = MBT(1:M,W)
+          EndIf
+          If(Src(RC,G).eq.3) then
+!           k contracted: sum_k V(k,l) x(k)
+            Call DGEMV('T',int(M,kind=MQC_BlasInt),int(M,kind=MQC_BlasInt),1.0,V, &
+              int(N,kind=MQC_BlasInt),XB,int(1,kind=MQC_BlasInt),0.0,YB,int(1,kind=MQC_BlasInt))
+          Else
+!           l contracted: sum_l V(k,l) x(l)
+            Call DGEMV('N',int(M,kind=MQC_BlasInt),int(M,kind=MQC_BlasInt),1.0,V, &
+              int(N,kind=MQC_BlasInt),XB,int(1,kind=MQC_BlasInt),0.0,YB,int(1,kind=MQC_BlasInt))
+          EndIf
+          If(RO.eq.3) then
+            Acc(1:M,F) = Acc(1:M,F)+YB(1:M)
+          Else
+            AccT(1:M,F) = AccT(1:M,F)+YB(1:M)
+          EndIf
+        EndIf
+      EndDo
+
+      End Subroutine MQC_R4Contract_Block_R
+!
+!
+!     PROCEDURE MQC_R4Contract_Orbit_R
+!
+!>    \brief <b> MQC_R4Contract_Orbit_R adds the contributions of one element of
+!>    a packed real rank-4 tensor and its distinct symmetry images to a
+!>    contraction</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    X is the element (stored frame) and Val its value; image g is
+!>    y = X(GP(:,g)), conjugated when GC(g). Each distinct image is used once:
+!>    Acc(y_Roles(3),y_Roles(4)) += T(y) MB(y_Roles(1),y_Roles(2)).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Orbit_R(N,X,Val,NG,GP,GC,Roles,MB,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N,NG
+      Integer(kind=int64),Dimension(4),Intent(In)::X,Roles
+      Real(kind=real64),Intent(In)::Val
+      Integer(kind=int64),Dimension(4,NG),Intent(In)::GP
+      Logical,Dimension(NG),Intent(In)::GC
+      Real(kind=real64),Dimension(N,N),Intent(In)::MB
+      Real(kind=real64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64),Dimension(4,8)::Img
+      Integer(kind=int64),Dimension(4)::Y
+      Integer(kind=int64)::G,H,NImg
+      Logical::Dup
+      Real(kind=real64)::V
+
+      NImg = 0
+      Do G = 1, NG
+        Y = X(GP(:,G))
+        Dup = .False.
+        Do H = 1, NImg
+          If(All(Img(:,H).eq.Y)) Dup = .True.
+        EndDo
+        If(.not.Dup) then
+          NImg = NImg+1
+          Img(:,NImg) = Y
+          V = Val
+          If(GC(G)) V = (V)
+          Acc(Y(Roles(3)),Y(Roles(4))) = Acc(Y(Roles(3)),Y(Roles(4)))+V*MB(Y(Roles(1)),Y(Roles(2)))
+        EndIf
+      EndDo
+
+      End Subroutine MQC_R4Contract_Orbit_R
+!
+!
+!     PROCEDURE MQC_R4Contract_S4K_Row_R
+!
+!>    \brief <b> MQC_R4Contract_S4K_Row_R applies the dense block of one
+!>    off-diagonal S_4_1234 row (real) to two vectors from each side in one
+!>    pass over the stored slots</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The block V(k,l), k,l <= M, k /= l, is read where it is stored:
+!>    R(2(S-1)+1) = V(k,l), R(2(S-1)+2) = V(l,k), S = (k-1)(k-2)/2+l, l < k
+!>    (V(k,k) = 0); the last row k = M stops at l = LJ (so the remainder of a
+!>    stored row is the partial row k = i). YT(:,c) += V^T XT(:,c) and
+!>    YN(:,c) += V XN(:,c), c = 1,2, with SIMD reductions for the row sums.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S4K_Row_R(M,LJ,LD,R,XT,XN,YT,YN)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::M,LJ,LD
+      Real(kind=real64),Dimension(*),Intent(In)::R
+      Real(kind=real64),Dimension(LD,2),Intent(In)::XT,XN
+      Real(kind=real64),Dimension(LD,2),Intent(InOut)::YT,YN
+      Integer(kind=int64)::K,L,O,LE
+      Real(kind=real64)::G0,G1,T1,T2,N1,N2,XT1,XT2,XN1,XN2
+
+      Do K = 2, M
+        O = (K-1)*(K-2)
+        LE = K-1
+        If(K.eq.M) LE = LJ
+        XT1 = XT(K,1)
+        XT2 = XT(K,2)
+        XN1 = XN(K,1)
+        XN2 = XN(K,2)
+        T1 = 0.0
+        T2 = 0.0
+        N1 = 0.0
+        N2 = 0.0
+!$OMP SIMD REDUCTION(+:T1,T2,N1,N2)
+        Do L = 1, LE
+          G0 = R(O+2*L-1)
+          G1 = R(O+2*L)
+          YT(L,1) = YT(L,1)+G0*XT1
+          YT(L,2) = YT(L,2)+G0*XT2
+          T1 = T1+G1*XT(L,1)
+          T2 = T2+G1*XT(L,2)
+          N1 = N1+G0*XN(L,1)
+          N2 = N2+G0*XN(L,2)
+          YN(L,1) = YN(L,1)+G1*XN1
+          YN(L,2) = YN(L,2)+G1*XN2
+        EndDo
+        YT(K,1) = YT(K,1)+T1
+        YT(K,2) = YT(K,2)+T2
+        YN(K,1) = YN(K,1)+N1
+        YN(K,2) = YN(K,2)+N2
+      EndDo
+
+      End Subroutine MQC_R4Contract_S4K_Row_R
+!
+!
+!     PROCEDURE MQC_R4Contract_S4_R
+!
+!>    \brief <b> MQC_R4Contract_S4_R contracts a packed S_4_1234 real tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 2 (S_4_1234), in
+!>    the stored (chemist) frame. Contracted indices in one stored pair:
+!>    MQC_R4Contract_S4J. Otherwise, for any contracted pair: Roles = chemist
+!>    positions of (ia,ib,ic,id); Acc(x_Roles(3),x_Roles(4)) +=
+!>    sum T(x) MB(x_Roles(1),x_Roles(2)). Group: (3412), (2143)*, (4321)*
+!>    (no conjugation when Plain).
+!>    Off-diagonal stored row A=(i,j), i>j (slots 2(S2-1)+G+1 after A(A-1)):
+!>      block B=(k,l), k,l < i, k /= l: V(k,l) = T(i,j,k,l) (G=0 for k>l,
+!>      G=1 for k<l), V(k,k) = 0, with its four images (MQC_R4Contract_Block_R);
+!>      remainder B=(i,l), l<j: runs (MQC_R4Contract_Run); self B=A:
+!>      element by element.
+!>    Diagonal row (c,c): W(k,l) = T(c,c,k,l) (stored for k>l, the (2143)
+!>      image for k<l), W(d,d) = T(c,c,d,d) for d < c (d > c comes from row
+!>      d), with the images e and (3412); T(c,c,c,c) element by element.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] N
+!>    \verbatim
+!>        N is Integer(kind=int64), the dimension of every index.
+!>    \endverbatim
+!>
+!>    \param[in] AP
+!>    \verbatim
+!>        AP is Real(kind=real64),Dimension(*), the stored slots.
+!>    \endverbatim
+!>
+!>    \param[in] Plain
+!>    \verbatim
+!>        Plain is Logical, TRUE for the plain (Klein) equalities.
+!>    \endverbatim
+!>
+!>    \param[in] Roles
+!>    \verbatim
+!>        Roles is Integer(kind=int64),Dimension(4), chemist positions of the
+!>        contracted (1,2) and free (3,4) indices.
+!>    \endverbatim
+!>
+!>    \param[in] MB
+!>    \verbatim
+!>        MB is Real(kind=real64),Dimension(N,N).
+!>    \endverbatim
+!>
+!>    \param[in,out] Acc
+!>    \verbatim
+!>        Acc is Real(kind=real64),Dimension(N,N), the result is added.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S4_R(N,AP,Plain,Roles,MB,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N
+      Real(kind=real64),Dimension(*),Intent(In)::AP
+      Logical,Intent(In)::Plain
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Real(kind=real64),Dimension(N,N),Intent(In)::MB
+      Real(kind=real64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64),Dimension(4,4)::GP,Src
+      Logical,Dimension(4)::GC
+      Integer(kind=int64)::I,J,K,L,M,A,Base,O,Off,C,G
+      Real(kind=real64)::V
+      Real(kind=real64),Dimension(:,:),Allocatable::MBT,KL,KTL,VB
+      Real(kind=real64),Dimension(:),Allocatable::XB,YB,RB
+      Real(kind=real64),Dimension(:,:),Allocatable::MX,JT
+      Logical::Same,Fused
+      Integer(kind=int64)::NT,NN
+      Integer(kind=int64),Dimension(4)::KRC,KW,KRO,KF,KCol
+      Real(kind=real64),Dimension(:,:),Allocatable::XT,XN,YT,YN
+
+      Same = (Roles(1)+1)/2.eq.(Roles(2)+1)/2
+      If(Same) then
+!       contracted indices in one stored pair: MX(r,s) = MB(x_Roles(1),x_Roles(2)) with r,s the
+!       first and second index of that pair; the result transposed when Roles(3) is a second index
+        If(Mod(Roles(1),2).eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        If(Mod(Roles(3),2).eq.1) then
+          Call MQC_R4Contract_S4J_R(N,AP,MX,Acc)
+        Else
+          Allocate(JT(N,N))
+          JT = 0.0
+          Call MQC_R4Contract_S4J_R(N,AP,MX,JT)
+          Acc = Acc+Transpose(JT)
+        EndIf
+      Else
+        GP = Reshape([1,2,3,4, 3,4,1,2, 2,1,4,3, 4,3,2,1],[4,4])
+        GC = [.False.,.False.,.not.Plain,.not.Plain]
+        Do G = 1, 4
+          Src(:,G) = GP(Roles,G)
+        EndDo
+        Off = N*(N-1)/2
+        Allocate(MBT(N,N))
+        MBT = Transpose(MB)
+!       one contracted and one free block index in every image: two images use V^T, two V,
+!       done in one pass over the stored row (MQC_R4Contract_S4K_Row_R); per image: the
+!       vector MB(:,W) (KRC=1) or MBT(:,W) (KRC=2), W = i (KW=1) or j (KW=2), and the target
+!       column F = i or j (KF) of Acc (KRO=3) or AccT (KRO=4)
+        NT = 0
+        NN = 0
+        Fused = .True.
+        Do G = 1, 4
+          If((Src(1,G).ge.3).eqv.(Src(2,G).ge.3)) Fused = .False.
+          If((Src(3,G).ge.3).eqv.(Src(4,G).ge.3)) Fused = .False.
+        EndDo
+        If(Fused) then
+          Do G = 1, 4
+            If(Src(1,G).ge.3) then
+              KRC(G) = 1
+              KW(G) = Src(2,G)
+              K = Src(1,G)
+            Else
+              KRC(G) = 2
+              KW(G) = Src(1,G)
+              K = Src(2,G)
+            EndIf
+            If(Src(3,G).ge.3) then
+              KRO(G) = 3
+              KF(G) = Src(4,G)
+            Else
+              KRO(G) = 4
+              KF(G) = Src(3,G)
+            EndIf
+            If(K.eq.3) then
+              NT = NT+1
+              KCol(G) = NT
+            Else
+              NN = NN+1
+              KCol(G) = -NN
+            EndIf
+          EndDo
+          Fused = NT.eq.2.and.NN.eq.2
+        EndIf
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N,AP,MB,MBT,Acc,GP,GC,Src,Roles,Off,Fused,KRC,KW,KRO,KF,KCol), &
+!$OMP PRIVATE(I,J,K,L,M,A,Base,O,C,G,V,KL,KTL,VB,XB,YB,RB,XT,XN,YT,YN)
+        Allocate(KL(N,N),KTL(N,N),VB(N,N),XB(N),YB(N),RB(N),XT(N,2),XN(N,2),YT(N,2),YN(N,2))
+        KL = 0.0
+        KTL = 0.0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = N, 2, -1
+          Do J = 1, I-1
+            A = (I-1)*(I-2)/2+J
+            Base = A*(A-1)
+            M = I-1
+            If(Fused) then
+!             block k,l < i and remainder (k = i, l < j) in one pass
+              Do G = 1, 4
+                If(KRC(G).eq.1) then
+                  XB(1:I) = MB(1:I,Merge(I,J,KW(G).eq.1))
+                Else
+                  XB(1:I) = MBT(1:I,Merge(I,J,KW(G).eq.1))
+                EndIf
+                If(KCol(G).gt.0) then
+                  XT(1:I,KCol(G)) = XB(1:I)
+                Else
+                  XN(1:I,-KCol(G)) = XB(1:I)
+                EndIf
+              EndDo
+              YT(1:I,:) = 0.0
+              YN(1:I,:) = 0.0
+              Call MQC_R4Contract_S4K_Row_R(I,J-1,N,AP(Base+1),XT,XN,YT,YN)
+              Do G = 1, 4
+                If(KCol(G).gt.0) then
+                  YB(1:I) = YT(1:I,KCol(G))
+                Else
+                  YB(1:I) = YN(1:I,-KCol(G))
+                EndIf
+                If(KRO(G).eq.3) then
+                  KL(1:I,Merge(I,J,KF(G).eq.1)) = KL(1:I,Merge(I,J,KF(G).eq.1))+YB(1:I)
+                Else
+                  KTL(1:I,Merge(I,J,KF(G).eq.1)) = KTL(1:I,Merge(I,J,KF(G).eq.1))+YB(1:I)
+                EndIf
+              EndDo
+            ElseIf(M.ge.2) then
+              Do K = 1, M
+                VB(K,K) = 0.0
+                O = Base+(K-1)*(K-2)
+                Do L = 1, K-1
+                  VB(K,L) = AP(O+2*L-1)
+                  VB(L,K) = AP(O+2*L)
+                EndDo
+              EndDo
+              Call MQC_R4Contract_Block_R(N,M,VB,I,J,4,Src,MB,MBT,KL,KTL,XB,YB)
+            EndIf
+!           remainder (ij|il), (ij|li), l < j: runs (in the fused pass above); self (ij|ij),
+!           (ij|ji): element by element
+            O = Base+(I-1)*(I-2)
+            If(.not.Fused) then
+              Do L = 1, J-1
+                RB(L) = AP(O+2*L-1)
+              EndDo
+              Call MQC_R4Contract_Run_R(N,J-1,RB,[I,J,I,0],4,4,Src,MB,MBT,KL,KTL)
+              Do L = 1, J-1
+                RB(L) = AP(O+2*L)
+              EndDo
+              Call MQC_R4Contract_Run_R(N,J-1,RB,[I,J,0,I],3,4,Src,MB,MBT,KL,KTL)
+            EndIf
+            Call MQC_R4Contract_Orbit_R(N,[I,J,I,J],AP(O+2*J-1),4,GP,GC,Roles,MB,KL)
+            Call MQC_R4Contract_Orbit_R(N,[I,J,J,I],AP(O+2*J),4,GP,GC,Roles,MB,KL)
+          EndDo
+        EndDo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do C = 1, N
+          Base = Off*(Off+1)/2+(Off+C)*(Off+C-1)/2
+          Do K = 1, N
+            O = Base+(K-1)*(K-2)/2
+            Do L = 1, K-1
+              V = AP(O+L)
+              VB(K,L) = V
+              VB(L,K) = V
+            EndDo
+            VB(K,K) = 0.0
+            If(K.lt.C) VB(K,K) = AP(Base+Off+K)
+          EndDo
+          Call MQC_R4Contract_Block_R(N,N,VB,C,C,2,Src(:,1:2),MB,MBT,KL,KTL,XB,YB)
+          Call MQC_R4Contract_Orbit_R(N,[C,C,C,C],AP(Base+Off+C),4,GP,GC,Roles,MB,KL)
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S4_R_Acc)
+        Acc = Acc+KL+Transpose(KTL)
+!$OMP END CRITICAL (MQC_R4Contract_S4_R_Acc)
+        Deallocate(KL,KTL,VB,XB,YB,RB,XT,XN,YT,YN)
+!$OMP END PARALLEL
+      EndIf
+
+      End Subroutine MQC_R4Contract_S4_R
+!
+!
+!     PROCEDURE MQC_R4Contract_Block_I
+!
+!>    \brief <b> MQC_R4Contract_Block_I adds the contributions of a dense block
+!>    of a packed integer rank-4 tensor and its symmetry images to a
+!>    contraction</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The block is V(k,l) = T(x), x = (XI,XJ,k,l) in the stored (chemist)
+!>    frame, k,l = 1..M. Image g maps x to y with y(t) = x(GP(t,g)); Src(r,g)
+!>    = GP(Roles(r),g) is the position of x read by role r (1,2: contracted
+!>    indices MB(y_r1,y_r2); 3,4: result indices Acc(y_r3,y_r4)). Per image,
+!>    by where k and l land:
+!>      both contracted: one number, sum_kl V(k,l) MB(.,.) -> Acc(.,.);
+!>      both free: Acc(k,l) (or Acc(l,k), into AccT) += MB(.,.) V(k,l);
+!>      one of each: one ZGEMV into a column of Acc or of AccT.
+!>    AccT holds the transpose of a part of the result (the caller adds it).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Block_I(N,M,V,XI,XJ,NImg,Src,MB,MBT,Acc,AccT,XB,YB)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N,M,XI,XJ,NImg
+      Integer(kind=int64),Dimension(N,N),Intent(In)::V,MB,MBT
+      Integer(kind=int64),Dimension(4,NImg),Intent(In)::Src
+      Integer(kind=int64),Dimension(N,N),Intent(InOut)::Acc,AccT
+      Integer(kind=int64),Dimension(N),Intent(InOut)::XB,YB
+      Integer(kind=int64)::G,RC,RO,OC,OF,W,F
+      Integer(kind=int64),Dimension(4)::Val
+      Integer(kind=int64)::S,Coef
+
+      Val = [XI,XJ,0,0]
+      Do G = 1, NImg
+        If(Src(1,G).ge.3.and.Src(2,G).ge.3) then
+!         both block indices contracted: one number
+          If(Src(1,G).eq.3) then
+            S = Sum(V(1:M,1:M)*MB(1:M,1:M))
+          Else
+            S = Sum(V(1:M,1:M)*MBT(1:M,1:M))
+          EndIf
+          Acc(Val(Src(3,G)),Val(Src(4,G))) = Acc(Val(Src(3,G)),Val(Src(4,G)))+S
+        ElseIf(Src(3,G).ge.3.and.Src(4,G).ge.3) then
+!         both block indices free: a block of the result
+          Coef = MB(Val(Src(1,G)),Val(Src(2,G)))
+          If(Src(3,G).eq.3) then
+            Acc(1:M,1:M) = Acc(1:M,1:M)+Coef*V(1:M,1:M)
+          Else
+            AccT(1:M,1:M) = AccT(1:M,1:M)+Coef*V(1:M,1:M)
+          EndIf
+        Else
+!         one contracted and one free block index: collected for one GEMM per kind
+          If(Src(1,G).ge.3) then
+            RC = 1
+            OC = 2
+          Else
+            RC = 2
+            OC = 1
+          EndIf
+          If(Src(3,G).ge.3) then
+            RO = 3
+            OF = 4
+          Else
+            RO = 4
+            OF = 3
+          EndIf
+          W = Val(Src(OC,G))
+          F = Val(Src(OF,G))
+          If(RC.eq.1) then
+            XB(1:M) = MB(1:M,W)
+          Else
+            XB(1:M) = MBT(1:M,W)
+          EndIf
+          If(Src(RC,G).eq.3) then
+!           k contracted: sum_k V(k,l) x(k)
+            YB(1:M) = 0
+            Call MQC_R4Contract_GEMV_I('T',M,V,N,XB,YB)
+          Else
+!           l contracted: sum_l V(k,l) x(l)
+            YB(1:M) = 0
+            Call MQC_R4Contract_GEMV_I('N',M,V,N,XB,YB)
+          EndIf
+          If(RO.eq.3) then
+            Acc(1:M,F) = Acc(1:M,F)+YB(1:M)
+          Else
+            AccT(1:M,F) = AccT(1:M,F)+YB(1:M)
+          EndIf
+        EndIf
+      EndDo
+
+      End Subroutine MQC_R4Contract_Block_I
+!
+!
+!     PROCEDURE MQC_R4Contract_Orbit_I
+!
+!>    \brief <b> MQC_R4Contract_Orbit_I adds the contributions of one element of
+!>    a packed integer rank-4 tensor and its distinct symmetry images to a
+!>    contraction</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    X is the element (stored frame) and Val its value; image g is
+!>    y = X(GP(:,g)), conjugated when GC(g). Each distinct image is used once:
+!>    Acc(y_Roles(3),y_Roles(4)) += T(y) MB(y_Roles(1),y_Roles(2)).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Orbit_I(N,X,Val,NG,GP,GC,Roles,MB,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N,NG
+      Integer(kind=int64),Dimension(4),Intent(In)::X,Roles
+      Integer(kind=int64),Intent(In)::Val
+      Integer(kind=int64),Dimension(4,NG),Intent(In)::GP
+      Logical,Dimension(NG),Intent(In)::GC
+      Integer(kind=int64),Dimension(N,N),Intent(In)::MB
+      Integer(kind=int64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64),Dimension(4,8)::Img
+      Integer(kind=int64),Dimension(4)::Y
+      Integer(kind=int64)::G,H,NImg
+      Logical::Dup
+      Integer(kind=int64)::V
+
+      NImg = 0
+      Do G = 1, NG
+        Y = X(GP(:,G))
+        Dup = .False.
+        Do H = 1, NImg
+          If(All(Img(:,H).eq.Y)) Dup = .True.
+        EndDo
+        If(.not.Dup) then
+          NImg = NImg+1
+          Img(:,NImg) = Y
+          V = Val
+          If(GC(G)) V = (V)
+          Acc(Y(Roles(3)),Y(Roles(4))) = Acc(Y(Roles(3)),Y(Roles(4)))+V*MB(Y(Roles(1)),Y(Roles(2)))
+        EndIf
+      EndDo
+
+      End Subroutine MQC_R4Contract_Orbit_I
+!
+!
+!     PROCEDURE MQC_R4Contract_S4_I
+!
+!>    \brief <b> MQC_R4Contract_S4_I contracts a packed S_4_1234 integer tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 2 (S_4_1234), in
+!>    the stored (chemist) frame. Contracted indices in one stored pair:
+!>    MQC_R4Contract_S4J. Otherwise, for any contracted pair: Roles = chemist
+!>    positions of (ia,ib,ic,id); Acc(x_Roles(3),x_Roles(4)) +=
+!>    sum T(x) MB(x_Roles(1),x_Roles(2)). Group: (3412), (2143)*, (4321)*
+!>    (no conjugation when Plain).
+!>    Off-diagonal stored row A=(i,j), i>j (slots 2(S2-1)+G+1 after A(A-1)):
+!>      block B=(k,l), k,l < i, k /= l: V(k,l) = T(i,j,k,l) (G=0 for k>l,
+!>      G=1 for k<l), V(k,k) = 0, with its four images (MQC_R4Contract_Block_I);
+!>      remainder B=(i,l), l<j: runs (MQC_R4Contract_Run); self B=A:
+!>      element by element.
+!>    Diagonal row (c,c): W(k,l) = T(c,c,k,l) (stored for k>l, the (2143)
+!>      image for k<l), W(d,d) = T(c,c,d,d) for d < c (d > c comes from row
+!>      d), with the images e and (3412); T(c,c,c,c) element by element.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] N
+!>    \verbatim
+!>        N is Integer(kind=int64), the dimension of every index.
+!>    \endverbatim
+!>
+!>    \param[in] AP
+!>    \verbatim
+!>        AP is Integer(kind=int64),Dimension(*), the stored slots.
+!>    \endverbatim
+!>
+!>    \param[in] Plain
+!>    \verbatim
+!>        Plain is Logical, TRUE for the plain (Klein) equalities.
+!>    \endverbatim
+!>
+!>    \param[in] Roles
+!>    \verbatim
+!>        Roles is Integer(kind=int64),Dimension(4), chemist positions of the
+!>        contracted (1,2) and free (3,4) indices.
+!>    \endverbatim
+!>
+!>    \param[in] MB
+!>    \verbatim
+!>        MB is Integer(kind=int64),Dimension(N,N).
+!>    \endverbatim
+!>
+!>    \param[in,out] Acc
+!>    \verbatim
+!>        Acc is Integer(kind=int64),Dimension(N,N), the result is added.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S4_I(N,AP,Plain,Roles,MB,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N
+      Integer(kind=int64),Dimension(*),Intent(In)::AP
+      Logical,Intent(In)::Plain
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Integer(kind=int64),Dimension(N,N),Intent(In)::MB
+      Integer(kind=int64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64),Dimension(4,4)::GP,Src
+      Logical,Dimension(4)::GC
+      Integer(kind=int64)::I,J,K,L,M,A,Base,O,Off,C,G
+      Integer(kind=int64)::V
+      Integer(kind=int64),Dimension(:,:),Allocatable::MBT,KL,KTL,VB
+      Integer(kind=int64),Dimension(:),Allocatable::XB,YB,RB
+      Integer(kind=int64),Dimension(:,:),Allocatable::MX,JT
+      Logical::Same
+
+      Same = (Roles(1)+1)/2.eq.(Roles(2)+1)/2
+      If(Same) then
+!       contracted indices in one stored pair: MX(r,s) = MB(x_Roles(1),x_Roles(2)) with r,s the
+!       first and second index of that pair; the result transposed when Roles(3) is a second index
+        If(Mod(Roles(1),2).eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        If(Mod(Roles(3),2).eq.1) then
+          Call MQC_R4Contract_S4J_I(N,AP,MX,Acc)
+        Else
+          Allocate(JT(N,N))
+          JT = 0
+          Call MQC_R4Contract_S4J_I(N,AP,MX,JT)
+          Acc = Acc+Transpose(JT)
+        EndIf
+      Else
+        GP = Reshape([1,2,3,4, 3,4,1,2, 2,1,4,3, 4,3,2,1],[4,4])
+        GC = [.False.,.False.,.not.Plain,.not.Plain]
+        Do G = 1, 4
+          Src(:,G) = GP(Roles,G)
+        EndDo
+        Off = N*(N-1)/2
+        Allocate(MBT(N,N))
+        MBT = Transpose(MB)
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N,AP,MB,MBT,Acc,GP,GC,Src,Roles,Off), &
+!$OMP PRIVATE(I,J,K,L,M,A,Base,O,C,V,KL,KTL,VB,XB,YB,RB)
+        Allocate(KL(N,N),KTL(N,N),VB(N,N),XB(N),YB(N),RB(N))
+        KL = 0
+        KTL = 0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = N, 2, -1
+          Do J = 1, I-1
+            A = (I-1)*(I-2)/2+J
+            Base = A*(A-1)
+            M = I-1
+            If(M.ge.2) then
+              Do K = 1, M
+                VB(K,K) = 0
+                O = Base+(K-1)*(K-2)
+                Do L = 1, K-1
+                  VB(K,L) = AP(O+2*L-1)
+                  VB(L,K) = AP(O+2*L)
+                EndDo
+              EndDo
+              Call MQC_R4Contract_Block_I(N,M,VB,I,J,4,Src,MB,MBT,KL,KTL,XB,YB)
+            EndIf
+!           remainder (ij|il), (ij|li), l < j: runs; self (ij|ij), (ij|ji): element by element
+            O = Base+(I-1)*(I-2)
+            Do L = 1, J-1
+              RB(L) = AP(O+2*L-1)
+            EndDo
+            Call MQC_R4Contract_Run_I(N,J-1,RB,[I,J,I,0],4,4,Src,MB,MBT,KL,KTL)
+            Do L = 1, J-1
+              RB(L) = AP(O+2*L)
+            EndDo
+            Call MQC_R4Contract_Run_I(N,J-1,RB,[I,J,0,I],3,4,Src,MB,MBT,KL,KTL)
+            Call MQC_R4Contract_Orbit_I(N,[I,J,I,J],AP(O+2*J-1),4,GP,GC,Roles,MB,KL)
+            Call MQC_R4Contract_Orbit_I(N,[I,J,J,I],AP(O+2*J),4,GP,GC,Roles,MB,KL)
+          EndDo
+        EndDo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do C = 1, N
+          Base = Off*(Off+1)/2+(Off+C)*(Off+C-1)/2
+          Do K = 1, N
+            O = Base+(K-1)*(K-2)/2
+            Do L = 1, K-1
+              V = AP(O+L)
+              VB(K,L) = V
+              VB(L,K) = V
+            EndDo
+            VB(K,K) = 0
+            If(K.lt.C) VB(K,K) = AP(Base+Off+K)
+          EndDo
+          Call MQC_R4Contract_Block_I(N,N,VB,C,C,2,Src(:,1:2),MB,MBT,KL,KTL,XB,YB)
+          Call MQC_R4Contract_Orbit_I(N,[C,C,C,C],AP(Base+Off+C),4,GP,GC,Roles,MB,KL)
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S4_I_Acc)
+        Acc = Acc+KL+Transpose(KTL)
+!$OMP END CRITICAL (MQC_R4Contract_S4_I_Acc)
+        Deallocate(KL,KTL,VB,XB,YB,RB)
+!$OMP END PARALLEL
+      EndIf
+
+      End Subroutine MQC_R4Contract_S4_I
+!
+!
+!     PROCEDURE MQC_R4Contract_S4J_C
+!
+!>    \brief <b> MQC_R4Contract_S4J_C contracts a packed S_4_1234 complex tensor
+!>    with a matrix on one stored pair (J type)</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    J(p,q) = sum_rs T(p,q,r,s) Mx(r,s), Acc += J, each stored slot read once.
+!>    Off-diagonal pairs B=(k,l), k>l, index S, B~ = (l,k); u = m+mb, v = m-mb
+!>    with m(S) = Mx(k,l), mb(S) = Mx(l,k); the code builds J+ = J(B)+J(B~)
+!>    and J- = J(B)-J(B~). Off-diagonal row A holds t0 = T(A,B), t1 = T(A,B~),
+!>    S = 1..A, with T(B,A) = T(A,B) and T(A~,B~) = c(T(A,B)):
+!>    Plain (c = identity): J+(A) += (t0+t1) u(B), J-(A) += (t0-t1) v(B), and
+!>      for S < A J+(B) += (t0+t1) u(A), J-(B) += (t0-t1) v(A).
+!>    c = conjugation: with al = Re(t0+t1), de = Re(t0-t1), be = Im(t0-t1),
+!>      ga = Im(t0+t1): J+(A) += al u(B) + i be v(B), J-(A) += i ga u(B) +
+!>      de v(B), and for S < A J+(B) += al u(A) + i ga v(A), J-(B) += i be u(A)
+!>      + de v(A).
+!>    Diagonal row (c,c): w(S) = T(cc,B), T(cc,dd) for d <= c.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S4J_C(N,AP,Plain,Mx,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N
+      Complex(kind=real64),Dimension(*),Intent(In)::AP
+      Logical,Intent(In)::Plain
+      Complex(kind=real64),Dimension(N,N),Intent(In)::Mx
+      Complex(kind=real64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64)::K,L,S,A,Off,C,D,Base,NO
+      Real(kind=real64),Dimension(:,:),Allocatable::UV,JS,JSL
+      Complex(kind=real64),Dimension(:),Allocatable::JD,JDL
+      Complex(kind=real64)::U,V,Dot,Mcc,W,Z,Y
+
+!     real and imaginary parts in separate columns (the row loops vectorize):
+!     UV(:,1:4) = Re u, Im u, Re v, Im v; JS(:,1:4) = Re J+, Im J+, Re J-, Im J-
+      Off = N*(N-1)/2
+      NO = Max(Off,1)
+      Allocate(UV(NO,4),JS(NO,4),JD(N))
+      Do K = 2, N
+        Do L = 1, K-1
+          S = (K-1)*(K-2)/2+L
+          U = Mx(K,L)+Mx(L,K)
+          V = Mx(K,L)-Mx(L,K)
+          UV(S,:) = [Real(U,kind=real64),Aimag(U),Real(V,kind=real64),Aimag(V)]
+        EndDo
+      EndDo
+      JS = 0.0
+      JD = (0.0,0.0)
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N,AP,Plain,Mx,UV,JS,JD,Off,NO), &
+!$OMP PRIVATE(K,L,S,A,C,D,Base,U,V,Dot,Mcc,W,Z,Y,JSL,JDL)
+      Allocate(JSL(NO,4),JDL(N))
+      JSL = 0.0
+      JDL = (0.0,0.0)
+!$OMP DO SCHEDULE(DYNAMIC,8)
+      Do A = Off, 1, -1
+        Base = A*(A-1)
+        If(Plain) then
+          Call MQC_R4Contract_S4J_RowP_C(A,NO,AP(Base+1),UV,JSL)
+        Else
+          Call MQC_R4Contract_S4J_RowC(A,NO,AP(Base+1),UV,JSL)
+        EndIf
+      EndDo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(DYNAMIC,1)
+      Do C = 1, N
+        Base = Off*(Off+1)/2+(Off+C)*(Off+C-1)/2
+        Mcc = Mx(C,C)
+        Dot = (0.0,0.0)
+        Do S = 1, Off
+          W = AP(Base+S)
+          U = Cmplx(UV(S,1),UV(S,2),kind=real64)
+          V = Cmplx(UV(S,3),UV(S,4),kind=real64)
+          If(Plain) then
+!           J(B) += w Mcc, J(B~) += w Mcc, J(D) += w u
+            Dot = Dot+W*U
+            Z = 2*W*Mcc
+            Y = (0.0,0.0)
+          Else
+!           J(B) += w Mcc, J(B~) += conjg(w) Mcc, J(D) += Re(w) u + i Im(w) v
+            Dot = Dot+Real(W,kind=real64)*U+Aimag(W)*Cmplx(-Aimag(V),Real(V,kind=real64),kind=real64)
+            Z = 2*Real(W,kind=real64)*Mcc
+            Y = 2*Aimag(W)*Cmplx(-Aimag(Mcc),Real(Mcc,kind=real64),kind=real64)
+          EndIf
+          JSL(S,1) = JSL(S,1)+Real(Z,kind=real64)
+          JSL(S,2) = JSL(S,2)+Aimag(Z)
+          JSL(S,3) = JSL(S,3)+Real(Y,kind=real64)
+          JSL(S,4) = JSL(S,4)+Aimag(Y)
+        EndDo
+        JDL(C) = JDL(C)+Dot
+!       diagonal pairs: (cc|dd), d < c, both ways; (cc|cc) once
+        Do D = 1, C-1
+          Dot = AP(Base+Off+D)
+          JDL(C) = JDL(C)+Dot*Mx(D,D)
+          JDL(D) = JDL(D)+Dot*Mcc
+        EndDo
+        JDL(C) = JDL(C)+AP(Base+Off+C)*Mcc
+      EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S4J_C_Acc)
+      JS = JS+JSL
+      JD = JD+JDL
+!$OMP END CRITICAL (MQC_R4Contract_S4J_C_Acc)
+      Deallocate(JSL,JDL)
+!$OMP END PARALLEL
+!     J(B) = (J+ + J-)/2, J(B~) = (J+ - J-)/2
+      Do K = 2, N
+        Do L = 1, K-1
+          S = (K-1)*(K-2)/2+L
+          Acc(K,L) = Acc(K,L)+Cmplx(JS(S,1)+JS(S,3),JS(S,2)+JS(S,4),kind=real64)/2
+          Acc(L,K) = Acc(L,K)+Cmplx(JS(S,1)-JS(S,3),JS(S,2)-JS(S,4),kind=real64)/2
+        EndDo
+      EndDo
+      Do D = 1, N
+        Acc(D,D) = Acc(D,D)+JD(D)
+      EndDo
+
+      End Subroutine MQC_R4Contract_S4J_C
+!
+!
+!     PROCEDURE MQC_R4Contract_S4J_R
+!
+!>    \brief <b> MQC_R4Contract_S4J_R contracts a packed S_4_1234 real tensor
+!>    with a matrix on one stored pair (J type)</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    J(p,q) = sum_rs T(p,q,r,s) Mx(r,s), Acc += J, each stored slot read once.
+!>    Off-diagonal pairs B=(k,l), k>l, index S, B~ = (l,k); u = m+mb, v = m-mb
+!>    with m(S) = Mx(k,l), mb(S) = Mx(l,k); the code builds J+ = J(B)+J(B~)
+!>    and J- = J(B)-J(B~). Off-diagonal row A holds t0 = T(A,B), t1 = T(A,B~),
+!>    S = 1..A, with T(B,A) = T(A,B) and T(A~,B~) = c(T(A,B)):
+!>    Plain equalities: J+(A) += (t0+t1) u(B), J-(A) += (t0-t1) v(B), and
+!>      for S < A J+(B) += (t0+t1) u(A), J-(B) += (t0-t1) v(A).
+!>    Diagonal row (c,c): w(S) = T(cc,B), T(cc,dd) for d <= c.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S4J_R(N,AP,Mx,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N
+      Real(kind=real64),Dimension(*),Intent(In)::AP
+      Real(kind=real64),Dimension(N,N),Intent(In)::Mx
+      Real(kind=real64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64)::K,L,S,A,Off,C,D,Base
+      Real(kind=real64),Dimension(:),Allocatable::U,V,JP,JM,JD,JPL,JML,JDL
+      Real(kind=real64)::Dot,Mcc,W
+
+      Off = N*(N-1)/2
+      Allocate(U(Max(Off,1)),V(Max(Off,1)),JP(Max(Off,1)),JM(Max(Off,1)),JD(N))
+      Do K = 2, N
+        Do L = 1, K-1
+          S = (K-1)*(K-2)/2+L
+          U(S) = Mx(K,L)+Mx(L,K)
+          V(S) = Mx(K,L)-Mx(L,K)
+        EndDo
+      EndDo
+      JP = 0.0
+      JM = 0.0
+      JD = 0.0
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N,AP,Mx,U,V,JP,JM,JD,Off), &
+!$OMP PRIVATE(K,L,S,A,C,D,Base,Dot,Mcc,W,JPL,JML,JDL)
+      Allocate(JPL(Max(Off,1)),JML(Max(Off,1)),JDL(N))
+      JPL = 0.0
+      JML = 0.0
+      JDL = 0.0
+!$OMP DO SCHEDULE(DYNAMIC,8)
+      Do A = Off, 1, -1
+        Base = A*(A-1)
+        Call MQC_R4Contract_S4J_RowP_R(A,AP(Base+1),U,V,JPL,JML)
+      EndDo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(DYNAMIC,1)
+      Do C = 1, N
+        Base = Off*(Off+1)/2+(Off+C)*(Off+C-1)/2
+        Mcc = Mx(C,C)
+        Dot = 0.0
+        Do S = 1, Off
+          W = AP(Base+S)
+          Dot = Dot+W*U(S)
+          JPL(S) = JPL(S)+2*W*Mcc
+        EndDo
+        JDL(C) = JDL(C)+Dot
+!       diagonal pairs: (cc|dd), d < c, both ways; (cc|cc) once
+        Do D = 1, C-1
+          Dot = AP(Base+Off+D)
+          JDL(C) = JDL(C)+Dot*Mx(D,D)
+          JDL(D) = JDL(D)+Dot*Mcc
+        EndDo
+        JDL(C) = JDL(C)+AP(Base+Off+C)*Mcc
+      EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S4J_R_Acc)
+      JP = JP+JPL
+      JM = JM+JML
+      JD = JD+JDL
+!$OMP END CRITICAL (MQC_R4Contract_S4J_R_Acc)
+      Deallocate(JPL,JML,JDL)
+!$OMP END PARALLEL
+!     J(B) = (J+ + J-)/2, J(B~) = (J+ - J-)/2 (both sums even for integer data)
+      Do K = 2, N
+        Do L = 1, K-1
+          S = (K-1)*(K-2)/2+L
+          Acc(K,L) = Acc(K,L)+(JP(S)+JM(S))/2
+          Acc(L,K) = Acc(L,K)+(JP(S)-JM(S))/2
+        EndDo
+      EndDo
+      Do D = 1, N
+        Acc(D,D) = Acc(D,D)+JD(D)
+      EndDo
+
+      End Subroutine MQC_R4Contract_S4J_R
+!
+!
+!     PROCEDURE MQC_R4Contract_S4J_I
+!
+!>    \brief <b> MQC_R4Contract_S4J_I contracts a packed S_4_1234 integer tensor
+!>    with a matrix on one stored pair (J type)</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    J(p,q) = sum_rs T(p,q,r,s) Mx(r,s), Acc += J, each stored slot read once.
+!>    Off-diagonal pairs B=(k,l), k>l, index S, B~ = (l,k); u = m+mb, v = m-mb
+!>    with m(S) = Mx(k,l), mb(S) = Mx(l,k); the code builds J+ = J(B)+J(B~)
+!>    and J- = J(B)-J(B~). Off-diagonal row A holds t0 = T(A,B), t1 = T(A,B~),
+!>    S = 1..A, with T(B,A) = T(A,B) and T(A~,B~) = c(T(A,B)):
+!>    Plain equalities: J+(A) += (t0+t1) u(B), J-(A) += (t0-t1) v(B), and
+!>      for S < A J+(B) += (t0+t1) u(A), J-(B) += (t0-t1) v(A).
+!>    Diagonal row (c,c): w(S) = T(cc,B), T(cc,dd) for d <= c.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S4J_I(N,AP,Mx,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N
+      Integer(kind=int64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(N,N),Intent(In)::Mx
+      Integer(kind=int64),Dimension(N,N),Intent(InOut)::Acc
+      Integer(kind=int64)::K,L,S,A,Off,C,D,Base
+      Integer(kind=int64),Dimension(:),Allocatable::U,V,JP,JM,JD,JPL,JML,JDL
+      Integer(kind=int64)::Dot,Mcc,W
+
+      Off = N*(N-1)/2
+      Allocate(U(Max(Off,1)),V(Max(Off,1)),JP(Max(Off,1)),JM(Max(Off,1)),JD(N))
+      Do K = 2, N
+        Do L = 1, K-1
+          S = (K-1)*(K-2)/2+L
+          U(S) = Mx(K,L)+Mx(L,K)
+          V(S) = Mx(K,L)-Mx(L,K)
+        EndDo
+      EndDo
+      JP = 0
+      JM = 0
+      JD = 0
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N,AP,Mx,U,V,JP,JM,JD,Off), &
+!$OMP PRIVATE(K,L,S,A,C,D,Base,Dot,Mcc,W,JPL,JML,JDL)
+      Allocate(JPL(Max(Off,1)),JML(Max(Off,1)),JDL(N))
+      JPL = 0
+      JML = 0
+      JDL = 0
+!$OMP DO SCHEDULE(DYNAMIC,8)
+      Do A = Off, 1, -1
+        Base = A*(A-1)
+        Call MQC_R4Contract_S4J_RowP_I(A,AP(Base+1),U,V,JPL,JML)
+      EndDo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(DYNAMIC,1)
+      Do C = 1, N
+        Base = Off*(Off+1)/2+(Off+C)*(Off+C-1)/2
+        Mcc = Mx(C,C)
+        Dot = 0
+        Do S = 1, Off
+          W = AP(Base+S)
+          Dot = Dot+W*U(S)
+          JPL(S) = JPL(S)+2*W*Mcc
+        EndDo
+        JDL(C) = JDL(C)+Dot
+!       diagonal pairs: (cc|dd), d < c, both ways; (cc|cc) once
+        Do D = 1, C-1
+          Dot = AP(Base+Off+D)
+          JDL(C) = JDL(C)+Dot*Mx(D,D)
+          JDL(D) = JDL(D)+Dot*Mcc
+        EndDo
+        JDL(C) = JDL(C)+AP(Base+Off+C)*Mcc
+      EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S4J_I_Acc)
+      JP = JP+JPL
+      JM = JM+JML
+      JD = JD+JDL
+!$OMP END CRITICAL (MQC_R4Contract_S4J_I_Acc)
+      Deallocate(JPL,JML,JDL)
+!$OMP END PARALLEL
+!     J(B) = (J+ + J-)/2, J(B~) = (J+ - J-)/2 (both sums even for integer data)
+      Do K = 2, N
+        Do L = 1, K-1
+          S = (K-1)*(K-2)/2+L
+          Acc(K,L) = Acc(K,L)+(JP(S)+JM(S))/2
+          Acc(L,K) = Acc(L,K)+(JP(S)-JM(S))/2
+        EndDo
+      EndDo
+      Do D = 1, N
+        Acc(D,D) = Acc(D,D)+JD(D)
+      EndDo
+
+      End Subroutine MQC_R4Contract_S4J_I
+!
+!
+!     PROCEDURE MQC_R4Contract_S4J_RowP_C
+!
+!>    \brief <b> MQC_R4Contract_S4J_RowP_C does one off-diagonal row of
+!>    MQC_R4Contract_S4J_C with plain equalities</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    R(2S-1) = t0 = T(A,B), R(2S) = t1 = T(A,B~), S = 1..A:
+!>    J+(A) += (t0+t1) u(B), J-(A) += (t0-t1) v(B) (S <= A), and
+!>    J+(B) += (t0+t1) u(A), J-(B) += (t0-t1) v(A) (S < A), in real
+!>    arithmetic on UV = (Re u, Im u, Re v, Im v) and JS = (Re J+, Im J+,
+!>    Re J-, Im J-) so that the loop vectorizes (SIMD reduction).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S4J_RowP_C(A,NO,R,UV,JS)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::A,NO
+      Complex(kind=real64),Dimension(2*A),Intent(In)::R
+      Real(kind=real64),Dimension(NO,4),Intent(In)::UV
+      Real(kind=real64),Dimension(NO,4),Intent(InOut)::JS
+      Integer(kind=int64)::S
+      Real(kind=real64)::SR,SI,DR,DI,SUR,SUI,SVR,SVI,UAR,UAI,VAR,VAI
+
+      UAR = UV(A,1)
+      UAI = UV(A,2)
+      VAR = UV(A,3)
+      VAI = UV(A,4)
+      SUR = 0.0
+      SUI = 0.0
+      SVR = 0.0
+      SVI = 0.0
+!$OMP SIMD REDUCTION(+:SUR,SUI,SVR,SVI)
+      Do S = 1, A-1
+        SR = Real(R(2*S-1)+R(2*S),kind=real64)
+        SI = Aimag(R(2*S-1)+R(2*S))
+        DR = Real(R(2*S-1)-R(2*S),kind=real64)
+        DI = Aimag(R(2*S-1)-R(2*S))
+        SUR = SUR+SR*UV(S,1)-SI*UV(S,2)
+        SUI = SUI+SR*UV(S,2)+SI*UV(S,1)
+        SVR = SVR+DR*UV(S,3)-DI*UV(S,4)
+        SVI = SVI+DR*UV(S,4)+DI*UV(S,3)
+        JS(S,1) = JS(S,1)+SR*UAR-SI*UAI
+        JS(S,2) = JS(S,2)+SR*UAI+SI*UAR
+        JS(S,3) = JS(S,3)+DR*VAR-DI*VAI
+        JS(S,4) = JS(S,4)+DR*VAI+DI*VAR
+      EndDo
+      SR = Real(R(2*A-1)+R(2*A),kind=real64)
+      SI = Aimag(R(2*A-1)+R(2*A))
+      DR = Real(R(2*A-1)-R(2*A),kind=real64)
+      DI = Aimag(R(2*A-1)-R(2*A))
+      JS(A,1) = JS(A,1)+SUR+SR*UAR-SI*UAI
+      JS(A,2) = JS(A,2)+SUI+SR*UAI+SI*UAR
+      JS(A,3) = JS(A,3)+SVR+DR*VAR-DI*VAI
+      JS(A,4) = JS(A,4)+SVI+DR*VAI+DI*VAR
+
+      End Subroutine MQC_R4Contract_S4J_RowP_C
+!
+!
+!     PROCEDURE MQC_R4Contract_S4J_RowC
+!
+!>    \brief <b> MQC_R4Contract_S4J_RowC does one off-diagonal row of
+!>    MQC_R4Contract_S4J_C with conjugate equalities</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    R(2S-1) = t0 = T(A,B), R(2S) = t1 = T(A,B~), S = 1..A; al = Re(t0+t1),
+!>    de = Re(t0-t1), be = Im(t0-t1), ga = Im(t0+t1):
+!>    J+(A) += al u(B) + i be v(B), J-(A) += i ga u(B) + de v(B) (S <= A),
+!>    J+(B) += al u(A) + i ga v(A), J-(B) += i be u(A) + de v(A) (S < A),
+!>    in real arithmetic on UV and JS as in MQC_R4Contract_S4J_RowP_C.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S4J_RowC(A,NO,R,UV,JS)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::A,NO
+      Complex(kind=real64),Dimension(2*A),Intent(In)::R
+      Real(kind=real64),Dimension(NO,4),Intent(In)::UV
+      Real(kind=real64),Dimension(NO,4),Intent(InOut)::JS
+      Integer(kind=int64)::S
+      Real(kind=real64)::Al,De,Be,Ga,SUR,SUI,SVR,SVI,UAR,UAI,VAR,VAI
+
+      UAR = UV(A,1)
+      UAI = UV(A,2)
+      VAR = UV(A,3)
+      VAI = UV(A,4)
+      SUR = 0.0
+      SUI = 0.0
+      SVR = 0.0
+      SVI = 0.0
+!$OMP SIMD REDUCTION(+:SUR,SUI,SVR,SVI)
+      Do S = 1, A-1
+        Al = Real(R(2*S-1)+R(2*S),kind=real64)
+        De = Real(R(2*S-1)-R(2*S),kind=real64)
+        Be = Aimag(R(2*S-1)-R(2*S))
+        Ga = Aimag(R(2*S-1)+R(2*S))
+        SUR = SUR+Al*UV(S,1)-Be*UV(S,4)
+        SUI = SUI+Al*UV(S,2)+Be*UV(S,3)
+        SVR = SVR+De*UV(S,3)-Ga*UV(S,2)
+        SVI = SVI+De*UV(S,4)+Ga*UV(S,1)
+        JS(S,1) = JS(S,1)+Al*UAR-Ga*VAI
+        JS(S,2) = JS(S,2)+Al*UAI+Ga*VAR
+        JS(S,3) = JS(S,3)+De*VAR-Be*UAI
+        JS(S,4) = JS(S,4)+De*VAI+Be*UAR
+      EndDo
+      Al = Real(R(2*A-1)+R(2*A),kind=real64)
+      De = Real(R(2*A-1)-R(2*A),kind=real64)
+      Be = Aimag(R(2*A-1)-R(2*A))
+      Ga = Aimag(R(2*A-1)+R(2*A))
+      JS(A,1) = JS(A,1)+SUR+Al*UAR-Be*VAI
+      JS(A,2) = JS(A,2)+SUI+Al*UAI+Be*VAR
+      JS(A,3) = JS(A,3)+SVR+De*VAR-Ga*UAI
+      JS(A,4) = JS(A,4)+SVI+De*VAI+Ga*UAR
+
+      End Subroutine MQC_R4Contract_S4J_RowC
+!
+!
+!     PROCEDURE MQC_R4Contract_S4J_RowP_R
+!
+!>    \brief <b> MQC_R4Contract_S4J_RowP_R does one off-diagonal row of
+!>    MQC_R4Contract_S4J_R with plain equalities</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    R(2S-1) = t0 = T(A,B), R(2S) = t1 = T(A,B~), S = 1..A:
+!>    J+(A) += (t0+t1) u(B), J-(A) += (t0-t1) v(B) (S <= A), and
+!>    J+(B) += (t0+t1) u(A), J-(B) += (t0-t1) v(A) (S < A). Explicit-shape
+!>    arguments (no aliasing) and a SIMD reduction let the loop vectorize.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S4J_RowP_R(A,R,U,V,JP,JM)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::A
+      Real(kind=real64),Dimension(2*A),Intent(In)::R
+      Real(kind=real64),Dimension(A),Intent(In)::U,V
+      Real(kind=real64),Dimension(A),Intent(InOut)::JP,JM
+      Integer(kind=int64)::S
+      Real(kind=real64)::T0,T1,SU,SV,UA,VA
+
+      UA = U(A)
+      VA = V(A)
+      SU = 0.0
+      SV = 0.0
+!$OMP SIMD REDUCTION(+:SU,SV)
+      Do S = 1, A-1
+        T0 = R(2*S-1)
+        T1 = R(2*S)
+        SU = SU+(T0+T1)*U(S)
+        SV = SV+(T0-T1)*V(S)
+        JP(S) = JP(S)+(T0+T1)*UA
+        JM(S) = JM(S)+(T0-T1)*VA
+      EndDo
+      T0 = R(2*A-1)
+      T1 = R(2*A)
+      JP(A) = JP(A)+SU+(T0+T1)*UA
+      JM(A) = JM(A)+SV+(T0-T1)*VA
+
+      End Subroutine MQC_R4Contract_S4J_RowP_R
+!
+!
+!     PROCEDURE MQC_R4Contract_S4J_RowP_I
+!
+!>    \brief <b> MQC_R4Contract_S4J_RowP_I does one off-diagonal row of
+!>    MQC_R4Contract_S4J_I with plain equalities</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    R(2S-1) = t0 = T(A,B), R(2S) = t1 = T(A,B~), S = 1..A:
+!>    J+(A) += (t0+t1) u(B), J-(A) += (t0-t1) v(B) (S <= A), and
+!>    J+(B) += (t0+t1) u(A), J-(B) += (t0-t1) v(A) (S < A). Explicit-shape
+!>    arguments (no aliasing) and a SIMD reduction let the loop vectorize.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S4J_RowP_I(A,R,U,V,JP,JM)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::A
+      Integer(kind=int64),Dimension(2*A),Intent(In)::R
+      Integer(kind=int64),Dimension(A),Intent(In)::U,V
+      Integer(kind=int64),Dimension(A),Intent(InOut)::JP,JM
+      Integer(kind=int64)::S
+      Integer(kind=int64)::T0,T1,SU,SV,UA,VA
+
+      UA = U(A)
+      VA = V(A)
+      SU = 0
+      SV = 0
+!$OMP SIMD REDUCTION(+:SU,SV)
+      Do S = 1, A-1
+        T0 = R(2*S-1)
+        T1 = R(2*S)
+        SU = SU+(T0+T1)*U(S)
+        SV = SV+(T0-T1)*V(S)
+        JP(S) = JP(S)+(T0+T1)*UA
+        JM(S) = JM(S)+(T0-T1)*VA
+      EndDo
+      T0 = R(2*A-1)
+      T1 = R(2*A)
+      JP(A) = JP(A)+SU+(T0+T1)*UA
+      JM(A) = JM(A)+SV+(T0-T1)*VA
+
+      End Subroutine MQC_R4Contract_S4J_RowP_I
+!
+!
+!     PROCEDURE MQC_R4Contract_Run_C
+!
+!>    \brief <b> MQC_R4Contract_Run_C adds the contributions of a run of
+!>    elements of a packed complex rank-4 tensor and their symmetry images to a
+!>    contraction</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The run is T(x) = VR(r), x = X with X(RP) = r, r = 1..L, in the stored
+!>    (chemist) frame; every element of the run must have NImg distinct
+!>    images. Src and Cj as in MQC_R4Contract_Block_C. Per image the run
+!>    index is contracted (one dot product into one element of Acc) or free
+!>    (an axpy into a column of Acc or of AccT).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Run_C(N,L,VR,X,RP,NImg,Src,Cj,MB,MBT,Acc,AccT)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N,L,RP,NImg
+      Complex(kind=real64),Dimension(*),Intent(In)::VR
+      Integer(kind=int64),Dimension(4),Intent(In)::X
+      Integer(kind=int64),Dimension(4,NImg),Intent(In)::Src
+      Logical,Dimension(NImg),Intent(In)::Cj
+      Complex(kind=real64),Dimension(N,N),Intent(In)::MB,MBT
+      Complex(kind=real64),Dimension(N,N),Intent(InOut)::Acc,AccT
+      Integer(kind=int64)::G,W,F
+      Complex(kind=real64)::S,Coef
+
+      If(L.gt.0) then
+        Do G = 1, NImg
+          If(Src(1,G).eq.RP.or.Src(2,G).eq.RP) then
+!           run index contracted: one dot product
+            If(Src(1,G).eq.RP) then
+              W = X(Src(2,G))
+              If(Cj(G)) then
+                S = Conjg(Sum(VR(1:L)*Conjg(MB(1:L,W))))
+              Else
+                S = Sum(VR(1:L)*MB(1:L,W))
+              EndIf
+            Else
+              W = X(Src(1,G))
+              If(Cj(G)) then
+                S = Conjg(Sum(VR(1:L)*Conjg(MBT(1:L,W))))
+              Else
+                S = Sum(VR(1:L)*MBT(1:L,W))
+              EndIf
+            EndIf
+            Acc(X(Src(3,G)),X(Src(4,G))) = Acc(X(Src(3,G)),X(Src(4,G)))+S
+          Else
+!           run index free: one axpy
+            Coef = MB(X(Src(1,G)),X(Src(2,G)))
+            If(Src(3,G).eq.RP) then
+              F = X(Src(4,G))
+              If(Cj(G)) then
+                Acc(1:L,F) = Acc(1:L,F)+Coef*Conjg(VR(1:L))
+              Else
+                Acc(1:L,F) = Acc(1:L,F)+Coef*VR(1:L)
+              EndIf
+            Else
+              F = X(Src(3,G))
+              If(Cj(G)) then
+                AccT(1:L,F) = AccT(1:L,F)+Coef*Conjg(VR(1:L))
+              Else
+                AccT(1:L,F) = AccT(1:L,F)+Coef*VR(1:L)
+              EndIf
+            EndIf
+          EndIf
+        EndDo
+      EndIf
+
+      End Subroutine MQC_R4Contract_Run_C
+!
+!
+!     PROCEDURE MQC_R4Contract_Run_R
+!
+!>    \brief <b> MQC_R4Contract_Run_R adds the contributions of a run of
+!>    elements of a packed real rank-4 tensor and their symmetry images to a
+!>    contraction</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The run is T(x) = VR(r), x = X with X(RP) = r, r = 1..L, in the stored
+!>    (chemist) frame; every element of the run must have NImg distinct
+!>    images. Src as in MQC_R4Contract_Block_C. Per image the run
+!>    index is contracted (one dot product into one element of Acc) or free
+!>    (an axpy into a column of Acc or of AccT).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Run_R(N,L,VR,X,RP,NImg,Src,MB,MBT,Acc,AccT)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N,L,RP,NImg
+      Real(kind=real64),Dimension(*),Intent(In)::VR
+      Integer(kind=int64),Dimension(4),Intent(In)::X
+      Integer(kind=int64),Dimension(4,NImg),Intent(In)::Src
+      Real(kind=real64),Dimension(N,N),Intent(In)::MB,MBT
+      Real(kind=real64),Dimension(N,N),Intent(InOut)::Acc,AccT
+      Integer(kind=int64)::G,W,F
+      Real(kind=real64)::S,Coef
+
+      If(L.gt.0) then
+        Do G = 1, NImg
+          If(Src(1,G).eq.RP.or.Src(2,G).eq.RP) then
+!           run index contracted: one dot product
+            If(Src(1,G).eq.RP) then
+              W = X(Src(2,G))
+              S = Sum(VR(1:L)*MB(1:L,W))
+            Else
+              W = X(Src(1,G))
+              S = Sum(VR(1:L)*MBT(1:L,W))
+            EndIf
+            Acc(X(Src(3,G)),X(Src(4,G))) = Acc(X(Src(3,G)),X(Src(4,G)))+S
+          Else
+!           run index free: one axpy
+            Coef = MB(X(Src(1,G)),X(Src(2,G)))
+            If(Src(3,G).eq.RP) then
+              F = X(Src(4,G))
+              Acc(1:L,F) = Acc(1:L,F)+Coef*VR(1:L)
+            Else
+              F = X(Src(3,G))
+              AccT(1:L,F) = AccT(1:L,F)+Coef*VR(1:L)
+            EndIf
+          EndIf
+        EndDo
+      EndIf
+
+      End Subroutine MQC_R4Contract_Run_R
+!
+!
+!     PROCEDURE MQC_R4Contract_Run_I
+!
+!>    \brief <b> MQC_R4Contract_Run_I adds the contributions of a run of
+!>    elements of a packed integer rank-4 tensor and their symmetry images to a
+!>    contraction</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The run is T(x) = VR(r), x = X with X(RP) = r, r = 1..L, in the stored
+!>    (chemist) frame; every element of the run must have NImg distinct
+!>    images. Src as in MQC_R4Contract_Block_C. Per image the run
+!>    index is contracted (one dot product into one element of Acc) or free
+!>    (an axpy into a column of Acc or of AccT).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Run_I(N,L,VR,X,RP,NImg,Src,MB,MBT,Acc,AccT)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N,L,RP,NImg
+      Integer(kind=int64),Dimension(*),Intent(In)::VR
+      Integer(kind=int64),Dimension(4),Intent(In)::X
+      Integer(kind=int64),Dimension(4,NImg),Intent(In)::Src
+      Integer(kind=int64),Dimension(N,N),Intent(In)::MB,MBT
+      Integer(kind=int64),Dimension(N,N),Intent(InOut)::Acc,AccT
+      Integer(kind=int64)::G,W,F
+      Integer(kind=int64)::S,Coef
+
+      If(L.gt.0) then
+        Do G = 1, NImg
+          If(Src(1,G).eq.RP.or.Src(2,G).eq.RP) then
+!           run index contracted: one dot product
+            If(Src(1,G).eq.RP) then
+              W = X(Src(2,G))
+              S = Sum(VR(1:L)*MB(1:L,W))
+            Else
+              W = X(Src(1,G))
+              S = Sum(VR(1:L)*MBT(1:L,W))
+            EndIf
+            Acc(X(Src(3,G)),X(Src(4,G))) = Acc(X(Src(3,G)),X(Src(4,G)))+S
+          Else
+!           run index free: one axpy
+            Coef = MB(X(Src(1,G)),X(Src(2,G)))
+            If(Src(3,G).eq.RP) then
+              F = X(Src(4,G))
+              Acc(1:L,F) = Acc(1:L,F)+Coef*VR(1:L)
+            Else
+              F = X(Src(3,G))
+              AccT(1:L,F) = AccT(1:L,F)+Coef*VR(1:L)
+            EndIf
+          EndIf
+        EndDo
+      EndIf
+
+      End Subroutine MQC_R4Contract_Run_I
+!
+!
+!     PROCEDURE MQC_R4Contract_SPMV2_C
+!
+!>    \brief <b> MQC_R4Contract_SPMV2_C adds the products of a packed complex
+!>    symmetric matrix and two vectors to two vectors, in real arithmetic</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    AP holds the upper triangle by columns (A(r,c), r <= c, at r+c(c-1)/2),
+!>    A = A^T (not conjugated). Y1 += A X1, Y2 += A X2 with real and
+!>    imaginary parts in separate arrays, so the loop vectorizes (SIMD
+!>    reduction); ZSPMV is not tuned.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_SPMV2_C(M,AP,X1R,X1I,X2R,X2I,Y1R,Y1I,Y2R,Y2I)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::M
+      Complex(kind=real64),Dimension(*),Intent(In)::AP
+      Real(kind=real64),Dimension(M),Intent(In)::X1R,X1I,X2R,X2I
+      Real(kind=real64),Dimension(M),Intent(InOut)::Y1R,Y1I,Y2R,Y2I
+      Integer(kind=int64)::C,R,O
+      Real(kind=real64)::VR,VI,A1R,A1I,A2R,A2I,S1R,S1I,S2R,S2I
+
+      O = 0
+      Do C = 1, M
+        A1R = X1R(C)
+        A1I = X1I(C)
+        A2R = X2R(C)
+        A2I = X2I(C)
+        S1R = 0.0
+        S1I = 0.0
+        S2R = 0.0
+        S2I = 0.0
+!$OMP SIMD REDUCTION(+:S1R,S1I,S2R,S2I)
+        Do R = 1, C-1
+          VR = Real(AP(O+R),kind=real64)
+          VI = Aimag(AP(O+R))
+          Y1R(R) = Y1R(R)+VR*A1R-VI*A1I
+          Y1I(R) = Y1I(R)+VR*A1I+VI*A1R
+          Y2R(R) = Y2R(R)+VR*A2R-VI*A2I
+          Y2I(R) = Y2I(R)+VR*A2I+VI*A2R
+          S1R = S1R+VR*X1R(R)-VI*X1I(R)
+          S1I = S1I+VR*X1I(R)+VI*X1R(R)
+          S2R = S2R+VR*X2R(R)-VI*X2I(R)
+          S2I = S2I+VR*X2I(R)+VI*X2R(R)
+        EndDo
+        VR = Real(AP(O+C),kind=real64)
+        VI = Aimag(AP(O+C))
+        Y1R(C) = Y1R(C)+S1R+VR*A1R-VI*A1I
+        Y1I(C) = Y1I(C)+S1I+VR*A1I+VI*A1R
+        Y2R(C) = Y2R(C)+S2R+VR*A2R-VI*A2I
+        Y2I(C) = Y2I(C)+S2I+VR*A2I+VI*A2R
+        O = O+C
+      EndDo
+
+      End Subroutine MQC_R4Contract_SPMV2_C
+!
+!
+!     PROCEDURE MQC_R4Contract_R4_I
+!
+!>    \brief <b> MQC_R4Contract_R4_I contracts a packed R_4_12_34 integer tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 3 (R_4_12_34), in
+!>    the stored (chemist) frame: AP holds the NP1 x NP3 matrix
+!>    M(Tri(p,q),Tri(r,s)) by columns (pair 12 of dimension N1, pair 34 of
+!>    dimension N3). Every operation of the class keeps each pair in place:
+!>    contracted indices in one pair: fold MB (d(Tri(r,s)) = MB(r,s)+MB(s,r),
+!>      MB(r,r)), one matrix-vector product with M (pair 34) or M^T (pair 12),
+!>      Acc(a,b) += J(Tri(a,b));
+!>    one contracted index in each pair: K(q,s) = sum_pr T(p,q,r,s) Mx(p,r),
+!>      Mx = MB or MB^T so that p is in pair 12; column Tri(r,s) of M is a
+!>      packed symmetric N1 x N1 matrix S: K(:,s) += S Mx(:,r), and
+!>      K(:,r) += S Mx(:,s) for r /= s; Acc += K, or K^T when the first free
+!>      index is in pair 34.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_R4_I(N1,N3,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N3,NA,NB,NC,ND
+      Integer(kind=int64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Integer(kind=int64),Dimension(NA,NB),Intent(In)::MB
+      Integer(kind=int64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,NP1,NP3,NPC,NPO,NO,R,S,Q,Base
+      Integer(kind=int64),Dimension(:),Allocatable::DP,JP
+      Integer(kind=int64),Dimension(:,:),Allocatable::MX,KL,K
+
+      NP1 = N1*(N1+1)/2
+      NP3 = N3*(N3+1)/2
+      If((Roles(1)+1)/2.eq.(Roles(2)+1)/2) then
+!       contracted indices in one stored pair: fold MB, J = M d (pair 34) or M^T d (pair 12)
+        If(Roles(1).ge.3) then
+          NPC = NP3
+          NPO = NP1
+          NO = N1
+        Else
+          NPC = NP1
+          NPO = NP3
+          NO = N3
+        EndIf
+        Allocate(DP(NPC),JP(NPO))
+        Do J = 1, NA
+          Do I = J, NA
+            DP(I*(I-1)/2+J) = MB(I,J)
+            If(I.ne.J) DP(I*(I-1)/2+J) = MB(I,J)+MB(J,I)
+          EndDo
+        EndDo
+        JP = 0
+        If(Roles(1).ge.3) then
+          Do Q = 1, NP3
+            JP(1:NP1) = JP(1:NP1)+AP((Q-1)*NP1+1:Q*NP1)*DP(Q)
+          EndDo
+        Else
+          Do Q = 1, NP3
+            JP(Q) = Sum(AP((Q-1)*NP1+1:Q*NP1)*DP(1:NP1))
+          EndDo
+        EndIf
+        Do J = 1, NO
+          Do I = 1, NO
+            Acc(I,J) = Acc(I,J)+JP(Max(I,J)*(Max(I,J)-1)/2+Min(I,J))
+          EndDo
+        EndDo
+      Else
+!       one contracted index in each pair: Mx(p,r), p in pair 12, r in pair 34
+        Allocate(MX(N1,N3),K(N1,N3))
+        If((Roles(1)+1)/2.eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        K = 0
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N1,N3,NP1,AP,MX,K), PRIVATE(R,S,Q,Base,KL)
+        Allocate(KL(N1,N3))
+        KL = 0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do R = N3, 1, -1
+          Do S = 1, R
+            Q = R*(R-1)/2+S
+            Base = (Q-1)*NP1
+            Call MQC_R4Contract_SPMV_I(N1,AP(Base+1),MX(1,R),KL(1,S))
+            If(R.ne.S) Call MQC_R4Contract_SPMV_I(N1,AP(Base+1),MX(1,S),KL(1,R))
+          EndDo
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_R4_I_Acc)
+        K = K+KL
+!$OMP END CRITICAL (MQC_R4Contract_R4_I_Acc)
+        Deallocate(KL)
+!$OMP END PARALLEL
+        If((Roles(3)+1)/2.eq.1) then
+          Acc = Acc+K
+        Else
+          Acc = Acc+Transpose(K)
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_R4_I
+!
+!
+!     PROCEDURE MQC_R4Contract_R4_R
+!
+!>    \brief <b> MQC_R4Contract_R4_R contracts a packed R_4_12_34 real tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 3 (R_4_12_34), in
+!>    the stored (chemist) frame: AP holds the NP1 x NP3 matrix
+!>    M(Tri(p,q),Tri(r,s)) by columns (pair 12 of dimension N1, pair 34 of
+!>    dimension N3). Every operation of the class keeps each pair in place:
+!>    contracted indices in one pair: fold MB (d(Tri(r,s)) = MB(r,s)+MB(s,r),
+!>      MB(r,r)), one matrix-vector product with M (pair 34) or M^T (pair 12),
+!>      Acc(a,b) += J(Tri(a,b));
+!>    one contracted index in each pair: K(q,s) = sum_pr T(p,q,r,s) Mx(p,r),
+!>      Mx = MB or MB^T so that p is in pair 12; column Tri(r,s) of M is a
+!>      packed symmetric N1 x N1 matrix S: K(:,s) += S Mx(:,r), and
+!>      K(:,r) += S Mx(:,s) for r /= s; Acc += K, or K^T when the first free
+!>      index is in pair 34.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_R4_R(N1,N3,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N3,NA,NB,NC,ND
+      Real(kind=real64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Real(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Real(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,NP1,NP3,NPC,NPO,NO,R,S,Q,Base
+      Real(kind=real64),Dimension(:),Allocatable::DP,JP
+      Real(kind=real64),Dimension(:,:),Allocatable::MX,KL,K
+
+      NP1 = N1*(N1+1)/2
+      NP3 = N3*(N3+1)/2
+      If((Roles(1)+1)/2.eq.(Roles(2)+1)/2) then
+!       contracted indices in one stored pair: fold MB, J = M d (pair 34) or M^T d (pair 12)
+        If(Roles(1).ge.3) then
+          NPC = NP3
+          NPO = NP1
+          NO = N1
+        Else
+          NPC = NP1
+          NPO = NP3
+          NO = N3
+        EndIf
+        Allocate(DP(NPC),JP(NPO))
+        Do J = 1, NA
+          Do I = J, NA
+            DP(I*(I-1)/2+J) = MB(I,J)
+            If(I.ne.J) DP(I*(I-1)/2+J) = MB(I,J)+MB(J,I)
+          EndDo
+        EndDo
+        If(Roles(1).ge.3) then
+          Call DGEMV('N',int(NP1,kind=MQC_BlasInt),int(NP3,kind=MQC_BlasInt),1.0,AP,int(NP1,kind=MQC_BlasInt), &
+            DP,int(1,kind=MQC_BlasInt),0.0,JP,int(1,kind=MQC_BlasInt))
+        Else
+          Call DGEMV('T',int(NP1,kind=MQC_BlasInt),int(NP3,kind=MQC_BlasInt),1.0,AP,int(NP1,kind=MQC_BlasInt), &
+            DP,int(1,kind=MQC_BlasInt),0.0,JP,int(1,kind=MQC_BlasInt))
+        EndIf
+        Do J = 1, NO
+          Do I = 1, NO
+            Acc(I,J) = Acc(I,J)+JP(Max(I,J)*(Max(I,J)-1)/2+Min(I,J))
+          EndDo
+        EndDo
+      Else
+!       one contracted index in each pair: Mx(p,r), p in pair 12, r in pair 34
+        Allocate(MX(N1,N3),K(N1,N3))
+        If((Roles(1)+1)/2.eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        K = 0.0
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N1,N3,NP1,AP,MX,K), PRIVATE(R,S,Q,Base,KL)
+        Allocate(KL(N1,N3))
+        KL = 0.0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do R = N3, 1, -1
+          Do S = 1, R
+            Q = R*(R-1)/2+S
+            Base = (Q-1)*NP1
+            Call DSPMV('U',int(N1,kind=MQC_BlasInt),1.0,AP(Base+1),MX(1,R),int(1,kind=MQC_BlasInt),1.0, &
+              KL(1,S),int(1,kind=MQC_BlasInt))
+            If(R.ne.S) Call DSPMV('U',int(N1,kind=MQC_BlasInt),1.0,AP(Base+1),MX(1,S),int(1,kind=MQC_BlasInt), &
+              1.0,KL(1,R),int(1,kind=MQC_BlasInt))
+          EndDo
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_R4_R_Acc)
+        K = K+KL
+!$OMP END CRITICAL (MQC_R4Contract_R4_R_Acc)
+        Deallocate(KL)
+!$OMP END PARALLEL
+        If((Roles(3)+1)/2.eq.1) then
+          Acc = Acc+K
+        Else
+          Acc = Acc+Transpose(K)
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_R4_R
+!
+!
+!     PROCEDURE MQC_R4Contract_R4_C
+!
+!>    \brief <b> MQC_R4Contract_R4_C contracts a packed R_4_12_34 complex tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 3 (R_4_12_34), in
+!>    the stored (chemist) frame: AP holds the NP1 x NP3 matrix
+!>    M(Tri(p,q),Tri(r,s)) by columns (pair 12 of dimension N1, pair 34 of
+!>    dimension N3). Every operation of the class keeps each pair in place:
+!>    contracted indices in one pair: fold MB (d(Tri(r,s)) = MB(r,s)+MB(s,r),
+!>      MB(r,r)), one matrix-vector product with M (pair 34) or M^T (pair 12),
+!>      Acc(a,b) += J(Tri(a,b));
+!>    one contracted index in each pair: K(q,s) = sum_pr T(p,q,r,s) Mx(p,r),
+!>      Mx = MB or MB^T so that p is in pair 12; column Tri(r,s) of M is a
+!>      packed symmetric N1 x N1 matrix S: K(:,s) += S Mx(:,r), and
+!>      K(:,r) += S Mx(:,s) for r /= s; Acc += K, or K^T when the first free
+!>      index is in pair 34.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_R4_C(N1,N3,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N3,NA,NB,NC,ND
+      Complex(kind=real64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Complex(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Complex(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,NP1,NP3,NPC,NPO,NO,R,S,Q,Base
+      Complex(kind=real64),Dimension(:),Allocatable::DP,JP
+      Complex(kind=real64),Dimension(:,:),Allocatable::MX,K
+      Real(kind=real64),Dimension(:,:),Allocatable::XR,XI,KR,KI
+      Real(kind=real64),Dimension(:),Allocatable::ZR,ZI,WR,WI
+
+      NP1 = N1*(N1+1)/2
+      NP3 = N3*(N3+1)/2
+      If((Roles(1)+1)/2.eq.(Roles(2)+1)/2) then
+!       contracted indices in one stored pair: fold MB, J = M d (pair 34) or M^T d (pair 12)
+        If(Roles(1).ge.3) then
+          NPC = NP3
+          NPO = NP1
+          NO = N1
+        Else
+          NPC = NP1
+          NPO = NP3
+          NO = N3
+        EndIf
+        Allocate(DP(NPC),JP(NPO))
+        Do J = 1, NA
+          Do I = J, NA
+            DP(I*(I-1)/2+J) = MB(I,J)
+            If(I.ne.J) DP(I*(I-1)/2+J) = MB(I,J)+MB(J,I)
+          EndDo
+        EndDo
+        If(Roles(1).ge.3) then
+          Call ZGEMV('N',int(NP1,kind=MQC_BlasInt),int(NP3,kind=MQC_BlasInt),(1.0,0.0),AP,int(NP1,kind=MQC_BlasInt), &
+            DP,int(1,kind=MQC_BlasInt),(0.0,0.0),JP,int(1,kind=MQC_BlasInt))
+        Else
+          Call ZGEMV('T',int(NP1,kind=MQC_BlasInt),int(NP3,kind=MQC_BlasInt),(1.0,0.0),AP,int(NP1,kind=MQC_BlasInt), &
+            DP,int(1,kind=MQC_BlasInt),(0.0,0.0),JP,int(1,kind=MQC_BlasInt))
+        EndIf
+        Do J = 1, NO
+          Do I = 1, NO
+            Acc(I,J) = Acc(I,J)+JP(Max(I,J)*(Max(I,J)-1)/2+Min(I,J))
+          EndDo
+        EndDo
+      Else
+!       one contracted index in each pair: Mx(p,r), p in pair 12, r in pair 34
+        Allocate(MX(N1,N3),K(N1,N3))
+        If((Roles(1)+1)/2.eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Allocate(XR(N1,N3),XI(N1,N3))
+        XR = Real(MX,kind=real64)
+        XI = Aimag(MX)
+        K = (0.0,0.0)
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N1,N3,NP1,AP,XR,XI,K), PRIVATE(R,S,Q,Base,KR,KI,ZR,ZI,WR,WI)
+        Allocate(KR(N1,N3),KI(N1,N3),ZR(N1),ZI(N1),WR(N1),WI(N1))
+        KR = 0.0
+        KI = 0.0
+!       ZR, ZI: zero second vector for the diagonal columns; WR, WI: its discarded product
+        ZR = 0.0
+        ZI = 0.0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do R = N3, 1, -1
+          Do S = 1, R
+            Q = R*(R-1)/2+S
+            Base = (Q-1)*NP1
+            If(R.ne.S) then
+              Call MQC_R4Contract_SPMV2_C(N1,AP(Base+1),XR(1,R),XI(1,R),XR(1,S),XI(1,S), &
+                KR(1,S),KI(1,S),KR(1,R),KI(1,R))
+            Else
+              Call MQC_R4Contract_SPMV2_C(N1,AP(Base+1),XR(1,R),XI(1,R),ZR,ZI, &
+                KR(1,S),KI(1,S),WR,WI)
+            EndIf
+          EndDo
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_R4_C_Acc)
+        K = K+Cmplx(KR,KI,kind=real64)
+!$OMP END CRITICAL (MQC_R4Contract_R4_C_Acc)
+        Deallocate(KR,KI,ZR,ZI,WR,WI)
+!$OMP END PARALLEL
+        If((Roles(3)+1)/2.eq.1) then
+          Acc = Acc+K
+        Else
+          Acc = Acc+Transpose(K)
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_R4_C
+!
+!
+!     PROCEDURE MQC_R4Contract_SPMV1_C
+!
+!>    \brief <b> MQC_R4Contract_SPMV1_C adds the product of a packed complex
+!>    symmetric matrix and a vector to a vector, in real arithmetic</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    One-vector form of MQC_R4Contract_SPMV2_C: AP holds the upper triangle
+!>    by columns, A = A^T (not conjugated), Y += A X with real and imaginary
+!>    parts in separate arrays.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_SPMV1_C(M,AP,XR,XI,YR,YI)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::M
+      Complex(kind=real64),Dimension(*),Intent(In)::AP
+      Real(kind=real64),Dimension(M),Intent(In)::XR,XI
+      Real(kind=real64),Dimension(M),Intent(InOut)::YR,YI
+      Integer(kind=int64)::C,R,O
+      Real(kind=real64)::VR,VI,AR,AI,SR,SI
+
+      O = 0
+      Do C = 1, M
+        AR = XR(C)
+        AI = XI(C)
+        SR = 0.0
+        SI = 0.0
+!$OMP SIMD REDUCTION(+:SR,SI)
+        Do R = 1, C-1
+          VR = Real(AP(O+R),kind=real64)
+          VI = Aimag(AP(O+R))
+          YR(R) = YR(R)+VR*AR-VI*AI
+          YI(R) = YI(R)+VR*AI+VI*AR
+          SR = SR+VR*XR(R)-VI*XI(R)
+          SI = SI+VR*XI(R)+VI*XR(R)
+        EndDo
+        VR = Real(AP(O+C),kind=real64)
+        VI = Aimag(AP(O+C))
+        YR(C) = YR(C)+SR+VR*AR-VI*AI
+        YI(C) = YI(C)+SI+VR*AI+VI*AR
+        O = O+C
+      EndDo
+
+      End Subroutine MQC_R4Contract_SPMV1_C
+!
+!
+!     PROCEDURE MQC_R4Contract_GEMVR_I
+!
+!>    \brief <b> MQC_R4Contract_GEMVR_I adds the product of a rectangular integer
+!>    block (or its transpose) and a vector to a vector</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Integer counterpart of DGEMV(Trans,M,N,1,V,LDV,X,1,1,Y,1):
+!>    Trans = 'N': Y = Y + V X; Trans = 'T': Y = Y + V^T X (V is M x N).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_GEMVR_I(Trans,M,N,V,LDV,X,Y)
+
+      Implicit None
+      Character(Len=1),Intent(In)::Trans
+      Integer(kind=int64),Intent(In)::M,N,LDV
+      Integer(kind=int64),Dimension(LDV,*),Intent(In)::V
+      Integer(kind=int64),Dimension(*),Intent(In)::X
+      Integer(kind=int64),Dimension(*),Intent(InOut)::Y
+      Integer(kind=int64)::K,L,S
+
+      If(Trans.eq.'T') then
+        Do L = 1, N
+          S = 0
+          Do K = 1, M
+            S = S+V(K,L)*X(K)
+          EndDo
+          Y(L) = Y(L)+S
+        EndDo
+      Else
+        Do L = 1, N
+          Do K = 1, M
+            Y(K) = Y(K)+V(K,L)*X(L)
+          EndDo
+        EndDo
+      EndIf
+
+      End Subroutine MQC_R4Contract_GEMVR_I
+!
+!
+!     PROCEDURE MQC_R4Contract_R2_I
+!
+!>    \brief <b> MQC_R4Contract_R2_I contracts a packed R_2_12_3_4 integer tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 6 (R_2_12_3_4), in
+!>    the stored (chemist) frame: AP holds the NP1 x N3 x N4 array
+!>    M(Tri(p,q),r,s) (pair 12 of dimension N1).
+!>    contracted pair 12: fold MB (d(Tri(p,q)) = MB(p,q)+MB(q,p), MB(p,p)),
+!>      J(r,s) = M^T d, Acc = J or J^T;
+!>    contracted 3 and 4: J(Tri(p,q)) = M vec(Mx), Mx = MB or MB^T with the
+!>      position-3 index first, Acc(p,q) = J(Tri(p,q));
+!>    one contracted index in pair 12 and one in 3 or 4: column (r,s) of M is
+!>      a packed symmetric N1 x N1 matrix S_rs; contracted 3: K(:,s) +=
+!>      S_rs Mx(:,r), contracted 4: K(:,r) += S_rs Mx(:,s), Mx = MB or MB^T
+!>      with the pair-12 index first; threads own the columns of K; Acc = K,
+!>      or K^T when the first free index is not in pair 12.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_R2_I(N1,N3,N4,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N3,N4,NA,NB,NC,ND
+      Integer(kind=int64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Integer(kind=int64),Dimension(NA,NB),Intent(In)::MB
+      Integer(kind=int64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,NP1,R,S,Base,C34
+      Integer(kind=int64),Dimension(:),Allocatable::DP,JP
+      Integer(kind=int64),Dimension(:,:),Allocatable::MX,K
+
+      NP1 = N1*(N1+1)/2
+      If(Roles(1).le.2.and.Roles(2).le.2) then
+!       contracted pair 12: fold MB, J(r,s) = sum_P M(P,(r,s)) d(P)
+        Allocate(DP(NP1),JP(N3*N4))
+        Do J = 1, NA
+          Do I = J, NA
+            DP(I*(I-1)/2+J) = MB(I,J)
+            If(I.ne.J) DP(I*(I-1)/2+J) = MB(I,J)+MB(J,I)
+          EndDo
+        EndDo
+        JP = 0
+        Do S = 1, N3*N4
+          JP(S) = Sum(AP((S-1)*NP1+1:S*NP1)*DP(1:NP1))
+        EndDo
+        If(Roles(3).eq.3) then
+          Acc = Acc+Reshape(JP,[N3,N4])
+        Else
+          Acc = Acc+Transpose(Reshape(JP,[N3,N4]))
+        EndIf
+      ElseIf(Roles(1).ge.3.and.Roles(2).ge.3) then
+!       contracted 3 and 4: J(P) = sum_(r,s) M(P,(r,s)) Mx(r,s)
+        Allocate(MX(N3,N4),JP(NP1))
+        If(Roles(1).eq.3) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        JP = 0
+        Do S = 1, N4
+          Do R = 1, N3
+            JP(1:NP1) = JP(1:NP1)+AP(((S-1)*N3+R-1)*NP1+1:((S-1)*N3+R)*NP1)*MX(R,S)
+          EndDo
+        EndDo
+        Do J = 1, N1
+          Do I = 1, N1
+            Acc(I,J) = Acc(I,J)+JP(Max(I,J)*(Max(I,J)-1)/2+Min(I,J))
+          EndDo
+        EndDo
+      Else
+!       one contracted index in pair 12 and one (C34) in 3 or 4
+        If(Roles(1).le.2) then
+          MX = MB
+          C34 = Roles(2)
+        Else
+          MX = Transpose(MB)
+          C34 = Roles(1)
+        EndIf
+        If(C34.eq.3) then
+!         K(:,s) += S_rs Mx(:,r), K is N1 x N4
+          Allocate(K(N1,N4))
+          K = 0
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(N1,N3,N4,NP1,AP,MX,K), PRIVATE(R,S,Base), SCHEDULE(STATIC)
+          Do S = 1, N4
+            Do R = 1, N3
+              Base = ((S-1)*N3+R-1)*NP1
+              Call MQC_R4Contract_SPMV_I(N1,AP(Base+1),MX(1,R),K(1,S))
+            EndDo
+          EndDo
+!$OMP END PARALLEL DO
+        Else
+!         K(:,r) += S_rs Mx(:,s), K is N1 x N3
+          Allocate(K(N1,N3))
+          K = 0
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(N1,N3,N4,NP1,AP,MX,K), PRIVATE(R,S,Base), SCHEDULE(STATIC)
+          Do R = 1, N3
+            Do S = 1, N4
+              Base = ((S-1)*N3+R-1)*NP1
+              Call MQC_R4Contract_SPMV_I(N1,AP(Base+1),MX(1,S),K(1,R))
+            EndDo
+          EndDo
+!$OMP END PARALLEL DO
+        EndIf
+        If(Roles(3).le.2) then
+          Acc = Acc+K
+        Else
+          Acc = Acc+Transpose(K)
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_R2_I
+!
+!
+!     PROCEDURE MQC_R4Contract_R2_R
+!
+!>    \brief <b> MQC_R4Contract_R2_R contracts a packed R_2_12_3_4 real tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 6 (R_2_12_3_4), in
+!>    the stored (chemist) frame: AP holds the NP1 x N3 x N4 array
+!>    M(Tri(p,q),r,s) (pair 12 of dimension N1).
+!>    contracted pair 12: fold MB (d(Tri(p,q)) = MB(p,q)+MB(q,p), MB(p,p)),
+!>      J(r,s) = M^T d, Acc = J or J^T;
+!>    contracted 3 and 4: J(Tri(p,q)) = M vec(Mx), Mx = MB or MB^T with the
+!>      position-3 index first, Acc(p,q) = J(Tri(p,q));
+!>    one contracted index in pair 12 and one in 3 or 4: column (r,s) of M is
+!>      a packed symmetric N1 x N1 matrix S_rs; contracted 3: K(:,s) +=
+!>      S_rs Mx(:,r), contracted 4: K(:,r) += S_rs Mx(:,s), Mx = MB or MB^T
+!>      with the pair-12 index first; threads own the columns of K; Acc = K,
+!>      or K^T when the first free index is not in pair 12.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_R2_R(N1,N3,N4,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N3,N4,NA,NB,NC,ND
+      Real(kind=real64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Real(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Real(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,NP1,R,S,Base,C34
+      Real(kind=real64),Dimension(:),Allocatable::DP,JP
+      Real(kind=real64),Dimension(:,:),Allocatable::MX,K
+
+      NP1 = N1*(N1+1)/2
+      If(Roles(1).le.2.and.Roles(2).le.2) then
+!       contracted pair 12: fold MB, J(r,s) = sum_P M(P,(r,s)) d(P)
+        Allocate(DP(NP1),JP(N3*N4))
+        Do J = 1, NA
+          Do I = J, NA
+            DP(I*(I-1)/2+J) = MB(I,J)
+            If(I.ne.J) DP(I*(I-1)/2+J) = MB(I,J)+MB(J,I)
+          EndDo
+        EndDo
+        Call DGEMV('T',int(NP1,kind=MQC_BlasInt),int(N3*N4,kind=MQC_BlasInt),1.0,AP,int(NP1,kind=MQC_BlasInt), &
+          DP,int(1,kind=MQC_BlasInt),0.0,JP,int(1,kind=MQC_BlasInt))
+        If(Roles(3).eq.3) then
+          Acc = Acc+Reshape(JP,[N3,N4])
+        Else
+          Acc = Acc+Transpose(Reshape(JP,[N3,N4]))
+        EndIf
+      ElseIf(Roles(1).ge.3.and.Roles(2).ge.3) then
+!       contracted 3 and 4: J(P) = sum_(r,s) M(P,(r,s)) Mx(r,s)
+        Allocate(MX(N3,N4),JP(NP1))
+        If(Roles(1).eq.3) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Call DGEMV('N',int(NP1,kind=MQC_BlasInt),int(N3*N4,kind=MQC_BlasInt),1.0,AP,int(NP1,kind=MQC_BlasInt), &
+          MX,int(1,kind=MQC_BlasInt),0.0,JP,int(1,kind=MQC_BlasInt))
+        Do J = 1, N1
+          Do I = 1, N1
+            Acc(I,J) = Acc(I,J)+JP(Max(I,J)*(Max(I,J)-1)/2+Min(I,J))
+          EndDo
+        EndDo
+      Else
+!       one contracted index in pair 12 and one (C34) in 3 or 4
+        If(Roles(1).le.2) then
+          MX = MB
+          C34 = Roles(2)
+        Else
+          MX = Transpose(MB)
+          C34 = Roles(1)
+        EndIf
+        If(C34.eq.3) then
+!         K(:,s) += S_rs Mx(:,r), K is N1 x N4
+          Allocate(K(N1,N4))
+          K = 0.0
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(N1,N3,N4,NP1,AP,MX,K), PRIVATE(R,S,Base), SCHEDULE(STATIC)
+          Do S = 1, N4
+            Do R = 1, N3
+              Base = ((S-1)*N3+R-1)*NP1
+              Call DSPMV('U',int(N1,kind=MQC_BlasInt),1.0,AP(Base+1),MX(1,R),int(1,kind=MQC_BlasInt),1.0,K(1,S), &
+                int(1,kind=MQC_BlasInt))
+            EndDo
+          EndDo
+!$OMP END PARALLEL DO
+        Else
+!         K(:,r) += S_rs Mx(:,s), K is N1 x N3
+          Allocate(K(N1,N3))
+          K = 0.0
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(N1,N3,N4,NP1,AP,MX,K), PRIVATE(R,S,Base), SCHEDULE(STATIC)
+          Do R = 1, N3
+            Do S = 1, N4
+              Base = ((S-1)*N3+R-1)*NP1
+              Call DSPMV('U',int(N1,kind=MQC_BlasInt),1.0,AP(Base+1),MX(1,S),int(1,kind=MQC_BlasInt),1.0,K(1,R), &
+                int(1,kind=MQC_BlasInt))
+            EndDo
+          EndDo
+!$OMP END PARALLEL DO
+        EndIf
+        If(Roles(3).le.2) then
+          Acc = Acc+K
+        Else
+          Acc = Acc+Transpose(K)
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_R2_R
+!
+!
+!     PROCEDURE MQC_R4Contract_R2_C
+!
+!>    \brief <b> MQC_R4Contract_R2_C contracts a packed R_2_12_3_4 complex tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 6 (R_2_12_3_4), in
+!>    the stored (chemist) frame: AP holds the NP1 x N3 x N4 array
+!>    M(Tri(p,q),r,s) (pair 12 of dimension N1).
+!>    contracted pair 12: fold MB (d(Tri(p,q)) = MB(p,q)+MB(q,p), MB(p,p)),
+!>      J(r,s) = M^T d, Acc = J or J^T;
+!>    contracted 3 and 4: J(Tri(p,q)) = M vec(Mx), Mx = MB or MB^T with the
+!>      position-3 index first, Acc(p,q) = J(Tri(p,q));
+!>    one contracted index in pair 12 and one in 3 or 4: column (r,s) of M is
+!>      a packed symmetric N1 x N1 matrix S_rs; contracted 3: K(:,s) +=
+!>      S_rs Mx(:,r), contracted 4: K(:,r) += S_rs Mx(:,s), Mx = MB or MB^T
+!>      with the pair-12 index first; threads own the columns of K; Acc = K,
+!>      or K^T when the first free index is not in pair 12.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_R2_C(N1,N3,N4,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N3,N4,NA,NB,NC,ND
+      Complex(kind=real64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Complex(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Complex(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,NP1,R,S,Base,C34
+      Complex(kind=real64),Dimension(:),Allocatable::DP,JP
+      Complex(kind=real64),Dimension(:,:),Allocatable::MX,K
+      Real(kind=real64),Dimension(:,:),Allocatable::XR,XI,KR,KI
+
+      NP1 = N1*(N1+1)/2
+      If(Roles(1).le.2.and.Roles(2).le.2) then
+!       contracted pair 12: fold MB, J(r,s) = sum_P M(P,(r,s)) d(P)
+        Allocate(DP(NP1),JP(N3*N4))
+        Do J = 1, NA
+          Do I = J, NA
+            DP(I*(I-1)/2+J) = MB(I,J)
+            If(I.ne.J) DP(I*(I-1)/2+J) = MB(I,J)+MB(J,I)
+          EndDo
+        EndDo
+        Call ZGEMV('T',int(NP1,kind=MQC_BlasInt),int(N3*N4,kind=MQC_BlasInt),(1.0,0.0),AP, &
+          int(NP1,kind=MQC_BlasInt),DP,int(1,kind=MQC_BlasInt),(0.0,0.0),JP,int(1,kind=MQC_BlasInt))
+        If(Roles(3).eq.3) then
+          Acc = Acc+Reshape(JP,[N3,N4])
+        Else
+          Acc = Acc+Transpose(Reshape(JP,[N3,N4]))
+        EndIf
+      ElseIf(Roles(1).ge.3.and.Roles(2).ge.3) then
+!       contracted 3 and 4: J(P) = sum_(r,s) M(P,(r,s)) Mx(r,s)
+        Allocate(MX(N3,N4),JP(NP1))
+        If(Roles(1).eq.3) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Call ZGEMV('N',int(NP1,kind=MQC_BlasInt),int(N3*N4,kind=MQC_BlasInt),(1.0,0.0),AP, &
+          int(NP1,kind=MQC_BlasInt),MX,int(1,kind=MQC_BlasInt),(0.0,0.0),JP,int(1,kind=MQC_BlasInt))
+        Do J = 1, N1
+          Do I = 1, N1
+            Acc(I,J) = Acc(I,J)+JP(Max(I,J)*(Max(I,J)-1)/2+Min(I,J))
+          EndDo
+        EndDo
+      Else
+!       one contracted index in pair 12 and one (C34) in 3 or 4
+        If(Roles(1).le.2) then
+          MX = MB
+          C34 = Roles(2)
+        Else
+          MX = Transpose(MB)
+          C34 = Roles(1)
+        EndIf
+        If(C34.eq.3) then
+!         K(:,s) += S_rs Mx(:,r), K is N1 x N4
+          Allocate(K(N1,N4))
+          Allocate(XR(N1,Size(MX,2)),XI(N1,Size(MX,2)),KR(N1,N4),KI(N1,N4))
+          XR = Real(MX,kind=real64)
+          XI = Aimag(MX)
+          KR = 0.0
+          KI = 0.0
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(N1,N3,N4,NP1,AP,XR,XI,KR,KI), PRIVATE(R,S,Base), SCHEDULE(STATIC)
+          Do S = 1, N4
+            Do R = 1, N3
+              Base = ((S-1)*N3+R-1)*NP1
+              Call MQC_R4Contract_SPMV1_C(N1,AP(Base+1),XR(1,R),XI(1,R),KR(1,S),KI(1,S))
+            EndDo
+          EndDo
+!$OMP END PARALLEL DO
+        Else
+!         K(:,r) += S_rs Mx(:,s), K is N1 x N3
+          Allocate(K(N1,N3))
+          Allocate(XR(N1,Size(MX,2)),XI(N1,Size(MX,2)),KR(N1,N3),KI(N1,N3))
+          XR = Real(MX,kind=real64)
+          XI = Aimag(MX)
+          KR = 0.0
+          KI = 0.0
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(N1,N3,N4,NP1,AP,XR,XI,KR,KI), PRIVATE(R,S,Base), SCHEDULE(STATIC)
+          Do R = 1, N3
+            Do S = 1, N4
+              Base = ((S-1)*N3+R-1)*NP1
+              Call MQC_R4Contract_SPMV1_C(N1,AP(Base+1),XR(1,S),XI(1,S),KR(1,R),KI(1,R))
+            EndDo
+          EndDo
+!$OMP END PARALLEL DO
+        EndIf
+        K = Cmplx(KR,KI,kind=real64)
+        If(Roles(3).le.2) then
+          Acc = Acc+K
+        Else
+          Acc = Acc+Transpose(K)
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_R2_C
+!
+!
+!     PROCEDURE MQC_R4Contract_S213_I
+!
+!>    \brief <b> MQC_R4Contract_S213_I contracts a packed S_2_13_24 integer
+!>    tensor with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 5 (S_2_13_24), in
+!>    the stored (chemist) frame: AP holds the upper triangle by columns of the
+!>    symmetric NT x NT matrix S(A,B) = T(p,q,r,s), A = p+N1(q-1),
+!>    B = r+N1(s-1), NT = N1 N2 (positions 1, 3 of dimension N1; 2, 4 of N2).
+!>    contracted indices in one pair: y = S vec(Mx), Mx = MB or MB^T with the
+!>      first index of the pair first; Acc = y or y^T as an N1 x N2 matrix;
+!>    one contracted index in each pair (C1 in 12, C2 in 34): stored column
+!>      B = (r,s) splits into the dense N1 x (s-1) block V(p,q) = S(A,B),
+!>      q < s, and the diagonal-block part q = s, p <= r. V serves T(p,q,r,s)
+!>      (into K, free positions F1 in 12, F2 in 34) and T(r,s,p,q) (into
+!>      KT = K^T); each is one matrix-vector product with V or V^T (the
+!>      contracted index is p or q). The diagonal-block slots are added with
+!>      their one or two images explicitly. Threads run over the columns with
+!>      private K, KT.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S213_I(N1,N2,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N2,NA,NB,NC,ND
+      Integer(kind=int64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Integer(kind=int64),Dimension(NA,NB),Intent(In)::MB
+      Integer(kind=int64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::NT,B,R,S,P,Off,LV,C1,C2,F1,F2,Mode
+      Integer(kind=int64),Dimension(4)::X,DD
+      Integer(kind=int64)::V
+      Integer(kind=int64),Dimension(:),Allocatable::Y
+      Integer(kind=int64),Dimension(:,:),Allocatable::MX,MT,K,KT,KL,KTL
+
+      NT = N1*N2
+      DD = [N1,N2,N1,N2]
+      If((Roles(1)+1)/2.eq.(Roles(2)+1)/2) then
+!       contracted indices in one pair: y = S vec(Mx)
+        If(Mod(Roles(1),2).eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Allocate(Y(NT))
+        Y = 0
+        Call MQC_R4Contract_SPMV_I(NT,AP,MX,Y)
+        If(Mod(Roles(3),2).eq.1) then
+          Acc = Acc+Reshape(Y,[N1,N2])
+        Else
+          Acc = Acc+Transpose(Reshape(Y,[N1,N2]))
+        EndIf
+      Else
+!       one contracted index in each pair: Mx(x_C1,x_C2), K(x_F1,x_F2), KT = K^T part
+        If(Roles(1).le.2) then
+          C1 = Roles(1)
+          C2 = Roles(2)
+          MX = MB
+        Else
+          C1 = Roles(2)
+          C2 = Roles(1)
+          MX = Transpose(MB)
+        EndIf
+        If(Roles(3).le.2) then
+          F1 = Roles(3)
+          F2 = Roles(4)
+        Else
+          F1 = Roles(4)
+          F2 = Roles(3)
+        EndIf
+        MT = Transpose(MX)
+!       Mode 1: (C1,C2) = (1,3), 2: (1,4), 3: (2,3), 4: (2,4)
+        Mode = 2*(C1-1)+C2-2
+        Allocate(K(DD(F1),DD(F2)),KT(DD(F2),DD(F1)))
+        K = 0
+        KT = 0
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N1,NT,DD,AP,MX,MT,K,KT,Mode,C1,C2,F1,F2), &
+!$OMP   PRIVATE(B,R,S,P,Off,LV,V,X,KL,KTL)
+        Allocate(KL(DD(F1),DD(F2)),KTL(DD(F2),DD(F1)))
+        KL = 0
+        KTL = 0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do B = NT, 1, -1
+          S = (B-1)/N1+1
+          R = B-N1*(S-1)
+          Off = B*(B-1)/2
+          LV = N1*(S-1)
+          If(S.gt.1) then
+            Select Case(Mode)
+            Case(1)
+!             T(p,q,r,s) M(p,r) -> K(q,s); T(r,s,p,q) M(r,p) -> K(s,q)
+              Call MQC_R4Contract_GEMVR_I('T',N1,S-1,AP(Off+1),N1,MX(1,R),KL(1,S))
+              Call MQC_R4Contract_GEMVR_I('T',N1,S-1,AP(Off+1),N1,MT(1,R),KTL(1,S))
+            Case(2)
+!             T(p,q,r,s) M(p,s) -> K(q,r); T(r,s,p,q) M(r,q) -> K(s,p)
+              Call MQC_R4Contract_GEMVR_I('T',N1,S-1,AP(Off+1),N1,MX(1,S),KL(1,R))
+              Call MQC_R4Contract_GEMVR_I('N',N1,S-1,AP(Off+1),N1,MT(1,R),KTL(1,S))
+            Case(3)
+!             T(p,q,r,s) M(q,r) -> K(p,s); T(r,s,p,q) M(s,p) -> K(r,q)
+              Call MQC_R4Contract_GEMVR_I('N',N1,S-1,AP(Off+1),N1,MX(1,R),KL(1,S))
+              Call MQC_R4Contract_GEMVR_I('T',N1,S-1,AP(Off+1),N1,MT(1,S),KTL(1,R))
+            Case(4)
+!             T(p,q,r,s) M(q,s) -> K(p,r); T(r,s,p,q) M(s,q) -> K(r,p)
+              Call MQC_R4Contract_GEMVR_I('N',N1,S-1,AP(Off+1),N1,MX(1,S),KL(1,R))
+              Call MQC_R4Contract_GEMVR_I('N',N1,S-1,AP(Off+1),N1,MT(1,S),KTL(1,R))
+            End Select
+          EndIf
+!         diagonal block: T(p,s,r,s) and T(r,s,p,s), p <= r
+          Do P = 1, R
+            V = AP(Off+LV+P)
+            X = [P,S,R,S]
+            KL(X(F1),X(F2)) = KL(X(F1),X(F2))+V*MX(X(C1),X(C2))
+            If(P.ne.R) then
+              X = [R,S,P,S]
+              KL(X(F1),X(F2)) = KL(X(F1),X(F2))+V*MX(X(C1),X(C2))
+            EndIf
+          EndDo
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S213_I_Acc)
+        K = K+KL
+        KT = KT+KTL
+!$OMP END CRITICAL (MQC_R4Contract_S213_I_Acc)
+        Deallocate(KL,KTL)
+!$OMP END PARALLEL
+        If(Roles(3).le.2) then
+          Acc = Acc+K+Transpose(KT)
+        Else
+          Acc = Acc+Transpose(K)+KT
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_S213_I
+!
+!
+!     PROCEDURE MQC_R4Contract_S213_R
+!
+!>    \brief <b> MQC_R4Contract_S213_R contracts a packed S_2_13_24 real
+!>    tensor with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 5 (S_2_13_24), in
+!>    the stored (chemist) frame: AP holds the upper triangle by columns of the
+!>    symmetric NT x NT matrix S(A,B) = T(p,q,r,s), A = p+N1(q-1),
+!>    B = r+N1(s-1), NT = N1 N2 (positions 1, 3 of dimension N1; 2, 4 of N2).
+!>    contracted indices in one pair: y = S vec(Mx), Mx = MB or MB^T with the
+!>      first index of the pair first; Acc = y or y^T as an N1 x N2 matrix;
+!>    one contracted index in each pair (C1 in 12, C2 in 34): stored column
+!>      B = (r,s) splits into the dense N1 x (s-1) block V(p,q) = S(A,B),
+!>      q < s, and the diagonal-block part q = s, p <= r. V serves T(p,q,r,s)
+!>      (into K, free positions F1 in 12, F2 in 34) and T(r,s,p,q) (into
+!>      KT = K^T); each is one matrix-vector product with V or V^T (the
+!>      contracted index is p or q). The diagonal-block slots are added with
+!>      their one or two images explicitly. Threads run over the columns with
+!>      private K, KT.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S213_R(N1,N2,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N2,NA,NB,NC,ND
+      Real(kind=real64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Real(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Real(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::NT,B,R,S,P,Off,LV,C1,C2,F1,F2,Mode
+      Integer(kind=int64),Dimension(4)::X,DD
+      Real(kind=real64)::V
+      Real(kind=real64),Dimension(:),Allocatable::Y
+      Real(kind=real64),Dimension(:,:),Allocatable::MX,MT,K,KT,KL,KTL
+
+      NT = N1*N2
+      DD = [N1,N2,N1,N2]
+      If((Roles(1)+1)/2.eq.(Roles(2)+1)/2) then
+!       contracted indices in one pair: y = S vec(Mx)
+        If(Mod(Roles(1),2).eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Allocate(Y(NT))
+        Call DSPMV('U',int(NT,kind=MQC_BlasInt),1.0,AP,MX,int(1,kind=MQC_BlasInt),0.0,Y,int(1,kind=MQC_BlasInt))
+        If(Mod(Roles(3),2).eq.1) then
+          Acc = Acc+Reshape(Y,[N1,N2])
+        Else
+          Acc = Acc+Transpose(Reshape(Y,[N1,N2]))
+        EndIf
+      Else
+!       one contracted index in each pair: Mx(x_C1,x_C2), K(x_F1,x_F2), KT = K^T part
+        If(Roles(1).le.2) then
+          C1 = Roles(1)
+          C2 = Roles(2)
+          MX = MB
+        Else
+          C1 = Roles(2)
+          C2 = Roles(1)
+          MX = Transpose(MB)
+        EndIf
+        If(Roles(3).le.2) then
+          F1 = Roles(3)
+          F2 = Roles(4)
+        Else
+          F1 = Roles(4)
+          F2 = Roles(3)
+        EndIf
+        MT = Transpose(MX)
+!       Mode 1: (C1,C2) = (1,3), 2: (1,4), 3: (2,3), 4: (2,4)
+        Mode = 2*(C1-1)+C2-2
+        Allocate(K(DD(F1),DD(F2)),KT(DD(F2),DD(F1)))
+        K = 0.0
+        KT = 0.0
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N1,NT,DD,AP,MX,MT,K,KT,Mode,C1,C2,F1,F2), &
+!$OMP   PRIVATE(B,R,S,P,Off,LV,V,X,KL,KTL)
+        Allocate(KL(DD(F1),DD(F2)),KTL(DD(F2),DD(F1)))
+        KL = 0.0
+        KTL = 0.0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do B = NT, 1, -1
+          S = (B-1)/N1+1
+          R = B-N1*(S-1)
+          Off = B*(B-1)/2
+          LV = N1*(S-1)
+          If(S.gt.1) then
+            Select Case(Mode)
+            Case(1)
+!             T(p,q,r,s) M(p,r) -> K(q,s); T(r,s,p,q) M(r,p) -> K(s,q)
+              Call DGEMV('T',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),1.0,AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MX(1,R),int(1,kind=MQC_BlasInt),1.0,KL(1,S),int(1,kind=MQC_BlasInt))
+              Call DGEMV('T',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),1.0,AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MT(1,R),int(1,kind=MQC_BlasInt),1.0,KTL(1,S),int(1,kind=MQC_BlasInt))
+            Case(2)
+!             T(p,q,r,s) M(p,s) -> K(q,r); T(r,s,p,q) M(r,q) -> K(s,p)
+              Call DGEMV('T',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),1.0,AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MX(1,S),int(1,kind=MQC_BlasInt),1.0,KL(1,R),int(1,kind=MQC_BlasInt))
+              Call DGEMV('N',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),1.0,AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MT(1,R),int(1,kind=MQC_BlasInt),1.0,KTL(1,S),int(1,kind=MQC_BlasInt))
+            Case(3)
+!             T(p,q,r,s) M(q,r) -> K(p,s); T(r,s,p,q) M(s,p) -> K(r,q)
+              Call DGEMV('N',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),1.0,AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MX(1,R),int(1,kind=MQC_BlasInt),1.0,KL(1,S),int(1,kind=MQC_BlasInt))
+              Call DGEMV('T',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),1.0,AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MT(1,S),int(1,kind=MQC_BlasInt),1.0,KTL(1,R),int(1,kind=MQC_BlasInt))
+            Case(4)
+!             T(p,q,r,s) M(q,s) -> K(p,r); T(r,s,p,q) M(s,q) -> K(r,p)
+              Call DGEMV('N',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),1.0,AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MX(1,S),int(1,kind=MQC_BlasInt),1.0,KL(1,R),int(1,kind=MQC_BlasInt))
+              Call DGEMV('N',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),1.0,AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MT(1,S),int(1,kind=MQC_BlasInt),1.0,KTL(1,R),int(1,kind=MQC_BlasInt))
+            End Select
+          EndIf
+!         diagonal block: T(p,s,r,s) and T(r,s,p,s), p <= r
+          Do P = 1, R
+            V = AP(Off+LV+P)
+            X = [P,S,R,S]
+            KL(X(F1),X(F2)) = KL(X(F1),X(F2))+V*MX(X(C1),X(C2))
+            If(P.ne.R) then
+              X = [R,S,P,S]
+              KL(X(F1),X(F2)) = KL(X(F1),X(F2))+V*MX(X(C1),X(C2))
+            EndIf
+          EndDo
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S213_R_Acc)
+        K = K+KL
+        KT = KT+KTL
+!$OMP END CRITICAL (MQC_R4Contract_S213_R_Acc)
+        Deallocate(KL,KTL)
+!$OMP END PARALLEL
+        If(Roles(3).le.2) then
+          Acc = Acc+K+Transpose(KT)
+        Else
+          Acc = Acc+Transpose(K)+KT
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_S213_R
+!
+!
+!     PROCEDURE MQC_R4Contract_S213_C
+!
+!>    \brief <b> MQC_R4Contract_S213_C contracts a packed S_2_13_24 complex
+!>    tensor with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 5 (S_2_13_24), in
+!>    the stored (chemist) frame: AP holds the upper triangle by columns of the
+!>    symmetric NT x NT matrix S(A,B) = T(p,q,r,s), A = p+N1(q-1),
+!>    B = r+N1(s-1), NT = N1 N2 (positions 1, 3 of dimension N1; 2, 4 of N2).
+!>    contracted indices in one pair: y = S vec(Mx), Mx = MB or MB^T with the
+!>      first index of the pair first; Acc = y or y^T as an N1 x N2 matrix;
+!>    one contracted index in each pair (C1 in 12, C2 in 34): stored column
+!>      B = (r,s) splits into the dense N1 x (s-1) block V(p,q) = S(A,B),
+!>      q < s, and the diagonal-block part q = s, p <= r. V serves T(p,q,r,s)
+!>      (into K, free positions F1 in 12, F2 in 34) and T(r,s,p,q) (into
+!>      KT = K^T); each is one matrix-vector product with V or V^T (the
+!>      contracted index is p or q). The diagonal-block slots are added with
+!>      their one or two images explicitly. Threads run over the columns with
+!>      private K, KT.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S213_C(N1,N2,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N2,NA,NB,NC,ND
+      Complex(kind=real64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Complex(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Complex(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::NT,B,R,S,P,Off,LV,C1,C2,F1,F2,Mode
+      Integer(kind=int64),Dimension(4)::X,DD
+      Complex(kind=real64)::V
+      Complex(kind=real64),Dimension(:),Allocatable::Y
+      Complex(kind=real64),Dimension(:,:),Allocatable::MX,MT,K,KT,KL,KTL
+      Complex(kind=real64),Dimension(:),Allocatable::XV,YL
+
+      NT = N1*N2
+      DD = [N1,N2,N1,N2]
+      If((Roles(1)+1)/2.eq.(Roles(2)+1)/2) then
+!       contracted indices in one pair: y = S vec(Mx)
+        If(Mod(Roles(1),2).eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Allocate(Y(NT),XV(NT))
+        XV = Reshape(MX,[NT])
+        Y = (0.0,0.0)
+!       column B holds S(1:B,B): y(B) += S(1:B,B).x(1:B), y(1:B-1) += S(1:B-1,B) x(B)
+!$OMP PARALLEL DEFAULT(NONE), SHARED(NT,AP,XV,Y), PRIVATE(B,Off,YL)
+        Allocate(YL(NT))
+        YL = (0.0,0.0)
+!$OMP DO SCHEDULE(DYNAMIC,16)
+        Do B = NT, 1, -1
+          Off = B*(B-1)/2
+          Call ZGEMV('T',int(B,kind=MQC_BlasInt),int(1,kind=MQC_BlasInt),(1.0,0.0),AP(Off+1), &
+            int(B,kind=MQC_BlasInt),XV,int(1,kind=MQC_BlasInt),(1.0,0.0),YL(B),int(1,kind=MQC_BlasInt))
+          If(B.gt.1) Call ZAXPY(int(B-1,kind=MQC_BlasInt),XV(B),AP(Off+1),int(1,kind=MQC_BlasInt),YL, &
+            int(1,kind=MQC_BlasInt))
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S213_C_J)
+        Y = Y+YL
+!$OMP END CRITICAL (MQC_R4Contract_S213_C_J)
+        Deallocate(YL)
+!$OMP END PARALLEL
+        If(Mod(Roles(3),2).eq.1) then
+          Acc = Acc+Reshape(Y,[N1,N2])
+        Else
+          Acc = Acc+Transpose(Reshape(Y,[N1,N2]))
+        EndIf
+      Else
+!       one contracted index in each pair: Mx(x_C1,x_C2), K(x_F1,x_F2), KT = K^T part
+        If(Roles(1).le.2) then
+          C1 = Roles(1)
+          C2 = Roles(2)
+          MX = MB
+        Else
+          C1 = Roles(2)
+          C2 = Roles(1)
+          MX = Transpose(MB)
+        EndIf
+        If(Roles(3).le.2) then
+          F1 = Roles(3)
+          F2 = Roles(4)
+        Else
+          F1 = Roles(4)
+          F2 = Roles(3)
+        EndIf
+        MT = Transpose(MX)
+!       Mode 1: (C1,C2) = (1,3), 2: (1,4), 3: (2,3), 4: (2,4)
+        Mode = 2*(C1-1)+C2-2
+        Allocate(K(DD(F1),DD(F2)),KT(DD(F2),DD(F1)))
+        K = (0.0,0.0)
+        KT = (0.0,0.0)
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N1,NT,DD,AP,MX,MT,K,KT,Mode,C1,C2,F1,F2), &
+!$OMP   PRIVATE(B,R,S,P,Off,LV,V,X,KL,KTL)
+        Allocate(KL(DD(F1),DD(F2)),KTL(DD(F2),DD(F1)))
+        KL = (0.0,0.0)
+        KTL = (0.0,0.0)
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do B = NT, 1, -1
+          S = (B-1)/N1+1
+          R = B-N1*(S-1)
+          Off = B*(B-1)/2
+          LV = N1*(S-1)
+          If(S.gt.1) then
+            Select Case(Mode)
+            Case(1)
+!             T(p,q,r,s) M(p,r) -> K(q,s); T(r,s,p,q) M(r,p) -> K(s,q)
+              Call ZGEMV('T',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),(1.0,0.0),AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MX(1,R),int(1,kind=MQC_BlasInt),(1.0,0.0),KL(1,S), &
+                int(1,kind=MQC_BlasInt))
+              Call ZGEMV('T',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),(1.0,0.0),AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MT(1,R),int(1,kind=MQC_BlasInt),(1.0,0.0),KTL(1,S), &
+                int(1,kind=MQC_BlasInt))
+            Case(2)
+!             T(p,q,r,s) M(p,s) -> K(q,r); T(r,s,p,q) M(r,q) -> K(s,p)
+              Call ZGEMV('T',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),(1.0,0.0),AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MX(1,S),int(1,kind=MQC_BlasInt),(1.0,0.0),KL(1,R), &
+                int(1,kind=MQC_BlasInt))
+              Call ZGEMV('N',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),(1.0,0.0),AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MT(1,R),int(1,kind=MQC_BlasInt),(1.0,0.0),KTL(1,S), &
+                int(1,kind=MQC_BlasInt))
+            Case(3)
+!             T(p,q,r,s) M(q,r) -> K(p,s); T(r,s,p,q) M(s,p) -> K(r,q)
+              Call ZGEMV('N',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),(1.0,0.0),AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MX(1,R),int(1,kind=MQC_BlasInt),(1.0,0.0),KL(1,S), &
+                int(1,kind=MQC_BlasInt))
+              Call ZGEMV('T',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),(1.0,0.0),AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MT(1,S),int(1,kind=MQC_BlasInt),(1.0,0.0),KTL(1,R), &
+                int(1,kind=MQC_BlasInt))
+            Case(4)
+!             T(p,q,r,s) M(q,s) -> K(p,r); T(r,s,p,q) M(s,q) -> K(r,p)
+              Call ZGEMV('N',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),(1.0,0.0),AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MX(1,S),int(1,kind=MQC_BlasInt),(1.0,0.0),KL(1,R), &
+                int(1,kind=MQC_BlasInt))
+              Call ZGEMV('N',int(N1,kind=MQC_BlasInt),int(S-1,kind=MQC_BlasInt),(1.0,0.0),AP(Off+1), &
+                int(N1,kind=MQC_BlasInt),MT(1,S),int(1,kind=MQC_BlasInt),(1.0,0.0),KTL(1,R), &
+                int(1,kind=MQC_BlasInt))
+            End Select
+          EndIf
+!         diagonal block: T(p,s,r,s) and T(r,s,p,s), p <= r
+          Do P = 1, R
+            V = AP(Off+LV+P)
+            X = [P,S,R,S]
+            KL(X(F1),X(F2)) = KL(X(F1),X(F2))+V*MX(X(C1),X(C2))
+            If(P.ne.R) then
+              X = [R,S,P,S]
+              KL(X(F1),X(F2)) = KL(X(F1),X(F2))+V*MX(X(C1),X(C2))
+            EndIf
+          EndDo
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S213_C_Acc)
+        K = K+KL
+        KT = KT+KTL
+!$OMP END CRITICAL (MQC_R4Contract_S213_C_Acc)
+        Deallocate(KL,KTL)
+!$OMP END PARALLEL
+        If(Roles(3).le.2) then
+          Acc = Acc+K+Transpose(KT)
+        Else
+          Acc = Acc+Transpose(K)+KT
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_S213_C
+!
+!
+!     PROCEDURE MQC_R4Contract_S2P_Row_I
+!
+!>    \brief <b> MQC_R4Contract_S2P_Row_I applies one stored off-diagonal row of a
+!>    packed S_2_12_34 integer tensor to two vectors</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The row of pair (i,j), i > j, holds R(K,L) = T(i,j,K,L): G(1,S2) = R(a,b),
+!>    G(2,S2) = R(b,a) for a > b, S2 = (a-1)(a-2)/2+b, and D(k) = R(k,k).
+!>    P1 = 1: Y1 += R^T X1 and Y2 += R X2;
+!>    P1 = 2: Y1 += R X1 and Y2 += R^T X2;
+!>    one pass over the row.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S2P_Row_I(N,G,D,P1,X1,Y1,X2,Y2)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N,P1
+      Integer(kind=int64),Dimension(2,*),Intent(In)::G
+      Integer(kind=int64),Dimension(N),Intent(In)::D,X1,X2
+      Integer(kind=int64),Dimension(N),Intent(InOut)::Y1,Y2
+      Integer(kind=int64)::A,B,O,P2
+      Integer(kind=int64)::XA1,XA2,S1,S2,U,V
+
+      P2 = 3-P1
+      O = 0
+      Do A = 2, N
+        XA1 = X1(A)
+        XA2 = X2(A)
+        S1 = 0
+        S2 = 0
+!$OMP SIMD REDUCTION(+:S1,S2)
+        Do B = 1, A-1
+          U = G(P1,O+B)
+          V = G(P2,O+B)
+          Y1(B) = Y1(B)+U*XA1
+          S1 = S1+V*X1(B)
+          Y2(B) = Y2(B)+V*XA2
+          S2 = S2+U*X2(B)
+        EndDo
+        Y1(A) = Y1(A)+S1
+        Y2(A) = Y2(A)+S2
+        O = O+A-1
+      EndDo
+      Do A = 1, N
+        Y1(A) = Y1(A)+D(A)*X1(A)
+        Y2(A) = Y2(A)+D(A)*X2(A)
+      EndDo
+
+      End Subroutine MQC_R4Contract_S2P_Row_I
+!
+!
+!     PROCEDURE MQC_R4Contract_S2P_Row_R
+!
+!>    \brief <b> MQC_R4Contract_S2P_Row_R applies one stored off-diagonal row of a
+!>    packed S_2_12_34 real tensor to two vectors</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The row of pair (i,j), i > j, holds R(K,L) = T(i,j,K,L): G(1,S2) = R(a,b),
+!>    G(2,S2) = R(b,a) for a > b, S2 = (a-1)(a-2)/2+b, and D(k) = R(k,k).
+!>    P1 = 1: Y1 += R^T X1 and Y2 += R X2;
+!>    P1 = 2: Y1 += R X1 and Y2 += R^T X2;
+!>    one pass over the row.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S2P_Row_R(N,G,D,P1,X1,Y1,X2,Y2)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N,P1
+      Real(kind=real64),Dimension(2,*),Intent(In)::G
+      Real(kind=real64),Dimension(N),Intent(In)::D,X1,X2
+      Real(kind=real64),Dimension(N),Intent(InOut)::Y1,Y2
+      Integer(kind=int64)::A,B,O,P2
+      Real(kind=real64)::XA1,XA2,S1,S2,U,V
+
+      P2 = 3-P1
+      O = 0
+      Do A = 2, N
+        XA1 = X1(A)
+        XA2 = X2(A)
+        S1 = 0.0
+        S2 = 0.0
+!$OMP SIMD REDUCTION(+:S1,S2)
+        Do B = 1, A-1
+          U = G(P1,O+B)
+          V = G(P2,O+B)
+          Y1(B) = Y1(B)+U*XA1
+          S1 = S1+V*X1(B)
+          Y2(B) = Y2(B)+V*XA2
+          S2 = S2+U*X2(B)
+        EndDo
+        Y1(A) = Y1(A)+S1
+        Y2(A) = Y2(A)+S2
+        O = O+A-1
+      EndDo
+      Do A = 1, N
+        Y1(A) = Y1(A)+D(A)*X1(A)
+        Y2(A) = Y2(A)+D(A)*X2(A)
+      EndDo
+
+      End Subroutine MQC_R4Contract_S2P_Row_R
+!
+!
+!     PROCEDURE MQC_R4Contract_S2P_Row_C
+!
+!>    \brief <b> MQC_R4Contract_S2P_Row_C applies one stored off-diagonal row of a
+!>    packed S_2_12_34 complex tensor to two interleaved vectors</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The row of pair (i,j), i > j, holds R(K,L) = T(i,j,K,L): G(1,S2) = R(a,b),
+!>    G(2,S2) = R(b,a) for a > b, S2 = (a-1)(a-2)/2+b, and D(k) = R(k,k).
+!>    Y(1,:) += R1^T X(1,:) and Y(2,:) += R2 X(2,:) in one pass, R1 = R
+!>    (C1 = 1) or conjg(R) (C1 = -1), R2 likewise with C2; split real
+!>    arithmetic, the two vectors interleaved so that each slot pair is one
+!>    2-wide vector operation.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S2P_Row_C(N,G,D,C1,C2,XR,XI,YR,YI)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N
+      Complex(kind=real64),Dimension(2,*),Intent(In)::G
+      Complex(kind=real64),Dimension(N),Intent(In)::D
+      Real(kind=real64),Intent(In)::C1,C2
+      Real(kind=real64),Dimension(2,N),Intent(In)::XR,XI
+      Real(kind=real64),Dimension(2,N),Intent(InOut)::YR,YI
+      Integer(kind=int64)::A,B,O
+      Real(kind=real64)::A1R,A1I,A2R,A2I,S1R,S1I,S2R,S2I,UR,UI,VR,VI
+
+      O = 0
+      Do A = 2, N
+        A1R = XR(1,A)
+        A1I = XI(1,A)
+        A2R = XR(2,A)
+        A2I = XI(2,A)
+        S1R = 0.0
+        S1I = 0.0
+        S2R = 0.0
+        S2I = 0.0
+        Do B = 1, A-1
+          UR = Real(G(1,O+B),kind=real64)
+          UI = Aimag(G(1,O+B))
+          VR = Real(G(2,O+B),kind=real64)
+          VI = Aimag(G(2,O+B))
+          YR(1,B) = YR(1,B)+UR*A1R-C1*UI*A1I
+          YR(2,B) = YR(2,B)+VR*A2R-C2*VI*A2I
+          YI(1,B) = YI(1,B)+UR*A1I+C1*UI*A1R
+          YI(2,B) = YI(2,B)+VR*A2I+C2*VI*A2R
+          S1R = S1R+VR*XR(1,B)-C1*VI*XI(1,B)
+          S2R = S2R+UR*XR(2,B)-C2*UI*XI(2,B)
+          S1I = S1I+VR*XI(1,B)+C1*VI*XR(1,B)
+          S2I = S2I+UR*XI(2,B)+C2*UI*XR(2,B)
+        EndDo
+        YR(1,A) = YR(1,A)+S1R
+        YR(2,A) = YR(2,A)+S2R
+        YI(1,A) = YI(1,A)+S1I
+        YI(2,A) = YI(2,A)+S2I
+        O = O+A-1
+      EndDo
+      Do A = 1, N
+        UR = Real(D(A),kind=real64)
+        UI = Aimag(D(A))
+        YR(1,A) = YR(1,A)+UR*XR(1,A)-C1*UI*XI(1,A)
+        YR(2,A) = YR(2,A)+UR*XR(2,A)-C2*UI*XI(2,A)
+        YI(1,A) = YI(1,A)+UR*XI(1,A)+C1*UI*XR(1,A)
+        YI(2,A) = YI(2,A)+UR*XI(2,A)+C2*UI*XR(2,A)
+      EndDo
+
+      End Subroutine MQC_R4Contract_S2P_Row_C
+!
+!
+!     PROCEDURE MQC_R4Contract_S2P_I
+!
+!>    \brief <b> MQC_R4Contract_S2P_I contracts a packed S_2_12_34 integer tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 4 (S_2_12_34), in
+!>    the stored (chemist) frame, T(i,j,k,l) = T(j,i,l,k); pair 12 of
+!>    dimension N1, pair 34 of dimension N3. Storage: one row of W = 2 OffB+N3
+!>    slots per pair i > j (S1 = (i-1)(i-2)/2+j), holding T(i,j,a,b),
+!>    T(i,j,b,a) for each a > b and T(i,j,k,k); then one row of W2 = OffB+N3
+!>    slots per i, holding T(i,i,a,b), a > b, and T(i,i,k,k).
+!>    contracted pair 34: one product of the row matrix with two slot vectors
+!>      (the T(i,j,..) and the T(j,i,..) parts), and one for the i = j rows;
+!>    contracted pair 12: one product of the row matrix with two row vectors,
+!>      scattered to the slots' (k,l);
+!>    one contracted index in each pair: each off-diagonal row feeds both
+!>      images in one pass (MQC_R4Contract_S2P_Row_I); the i = j rows are
+!>      unpacked to an N3 x N3 matrix; threads run over the rows with private
+!>      accumulators.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S2P_I(N1,N3,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N3,NA,NB,NC,ND
+      Integer(kind=int64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Integer(kind=int64),Dimension(NA,NB),Intent(In)::MB
+      Integer(kind=int64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,A,B,K,S1,S2,OffA,OffB,W,W2,Base,C1,C2,P1,CA,FA
+      Integer(kind=int64),Dimension(:,:),Allocatable::MX,MT,MM,MD,YV,YD,AC,H
+      Integer(kind=int64),Dimension(:,:),Allocatable::KT,KTL
+
+      OffA = N1*(N1-1)/2
+      OffB = N3*(N3-1)/2
+      W = 2*OffB+N3
+      W2 = OffB+N3
+      If(Roles(1).ge.3.and.Roles(2).ge.3) then
+!       contracted pair 34: MM(:,1) for T(i,j,..), MM(:,2) for T(j,i,..) = T(i,j,l,k);
+!       MD(:,1), MD(:,2) for the i = j rows
+        If(Roles(1).eq.3) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Allocate(MM(W,2),MD(W2,2),YV(OffA,2),YD(N1,2),AC(N1,N1))
+        Do A = 2, N3
+          Do B = 1, A-1
+            S2 = (A-1)*(A-2)/2+B
+            MM(2*S2-1,1) = MX(A,B)
+            MM(2*S2,1) = MX(B,A)
+            MM(2*S2-1,2) = MX(B,A)
+            MM(2*S2,2) = MX(A,B)
+            MD(S2,1) = MX(A,B)
+            MD(S2,2) = MX(B,A)
+          EndDo
+        EndDo
+        Do K = 1, N3
+          MM(2*OffB+K,1) = MX(K,K)
+          MM(2*OffB+K,2) = MX(K,K)
+          MD(OffB+K,1) = MX(K,K)
+          MD(OffB+K,2) = 0
+        EndDo
+        Do I = 1, OffA
+          YV(I,1) = Sum(AP((I-1)*W+1:I*W)*MM(:,1))
+          YV(I,2) = Sum(AP((I-1)*W+1:I*W)*MM(:,2))
+        EndDo
+        Do I = 1, N1
+          YD(I,1) = Sum(AP(OffA*W+(I-1)*W2+1:OffA*W+I*W2)*MD(:,1))
+          YD(I,2) = Sum(AP(OffA*W+(I-1)*W2+1:OffA*W+I*W2)*MD(:,2))
+        EndDo
+        Do I = 2, N1
+          Do J = 1, I-1
+            S1 = (I-1)*(I-2)/2+J
+            AC(I,J) = YV(S1,1)
+            AC(J,I) = YV(S1,2)
+          EndDo
+        EndDo
+        Do I = 1, N1
+          AC(I,I) = YD(I,1)+YD(I,2)
+        EndDo
+        If(Roles(3).eq.1) then
+          Acc = Acc+AC
+        Else
+          Acc = Acc+Transpose(AC)
+        EndIf
+      ElseIf(Roles(1).le.2.and.Roles(2).le.2) then
+!       contracted pair 12: MM(:,1) = MX(i,j), MM(:,2) = MX(j,i) over the rows i > j;
+!       MD for the i = j rows
+        If(Roles(1).eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Allocate(MM(OffA,2),MD(N1,2),YV(W,2),YD(W2,2),AC(N3,N3))
+        Do I = 2, N1
+          Do J = 1, I-1
+            S1 = (I-1)*(I-2)/2+J
+            MM(S1,1) = MX(I,J)
+            MM(S1,2) = MX(J,I)
+          EndDo
+        EndDo
+        Do I = 1, N1
+          MD(I,1) = MX(I,I)
+          MD(I,2) = MX(I,I)
+        EndDo
+        YV = 0
+        YD = 0
+        Do I = 1, OffA
+          YV(:,1) = YV(:,1)+AP((I-1)*W+1:I*W)*MM(I,1)
+          YV(:,2) = YV(:,2)+AP((I-1)*W+1:I*W)*MM(I,2)
+        EndDo
+        Do I = 1, N1
+          YD(:,1) = YD(:,1)+AP(OffA*W+(I-1)*W2+1:OffA*W+I*W2)*MD(I,1)
+          YD(:,2) = YD(:,2)+AP(OffA*W+(I-1)*W2+1:OffA*W+I*W2)*MD(I,2)
+        EndDo
+        Do A = 2, N3
+          Do B = 1, A-1
+            S2 = (A-1)*(A-2)/2+B
+            AC(A,B) = YV(2*S2-1,1)+YV(2*S2,2)+YD(S2,1)
+            AC(B,A) = YV(2*S2,1)+YV(2*S2-1,2)+YD(S2,2)
+          EndDo
+        EndDo
+        Do K = 1, N3
+          AC(K,K) = YV(2*OffB+K,1)+YV(2*OffB+K,2)+YD(OffB+K,1)
+        EndDo
+        If(Roles(3).eq.3) then
+          Acc = Acc+AC
+        Else
+          Acc = Acc+Transpose(AC)
+        EndIf
+      Else
+!       one contracted index in each pair: MX(x_C1,x_C2), accumulated as K^T (N3 x N1)
+        If(Roles(1).le.2) then
+          C1 = Roles(1)
+          C2 = Roles(2)
+          MX = MB
+        Else
+          C1 = Roles(2)
+          C2 = Roles(1)
+          MX = Transpose(MB)
+        EndIf
+        MT = Transpose(MX)
+        If(C2.eq.3) then
+          P1 = 1
+        Else
+          P1 = 2
+        EndIf
+        Allocate(KT(N3,N1))
+        KT = 0
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N1,N3,OffA,OffB,W,W2,AP,MT,KT,C1,C2,P1), &
+!$OMP   PRIVATE(I,J,A,B,K,S1,S2,Base,CA,FA,KTL,H)
+        Allocate(KTL(N3,N1),H(N3,N3))
+        KTL = 0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = N1, 2, -1
+          Do J = 1, I-1
+            S1 = (I-1)*(I-2)/2+J
+            Base = (S1-1)*W
+            If(C1.eq.1) then
+              CA = I
+              FA = J
+            Else
+              CA = J
+              FA = I
+            EndIf
+            Call MQC_R4Contract_S2P_Row_I(N3,AP(Base+1),AP(Base+2*OffB+1),P1,MT(1,CA),KTL(1,FA),MT(1,FA), &
+              KTL(1,CA))
+          EndDo
+        EndDo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = 1, N1
+          Base = OffA*W+(I-1)*W2
+          Do A = 2, N3
+            Do B = 1, A-1
+              S2 = (A-1)*(A-2)/2+B
+              H(A,B) = AP(Base+S2)
+              H(B,A) = AP(Base+S2)
+            EndDo
+          EndDo
+          Do K = 1, N3
+            H(K,K) = AP(Base+OffB+K)
+          EndDo
+          If(C2.eq.3) then
+            Call MQC_R4Contract_GEMVR_I('T',N3,N3,H,N3,MT(1,I),KTL(1,I))
+          Else
+            Call MQC_R4Contract_GEMVR_I('N',N3,N3,H,N3,MT(1,I),KTL(1,I))
+          EndIf
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S2P_I_Acc)
+        KT = KT+KTL
+!$OMP END CRITICAL (MQC_R4Contract_S2P_I_Acc)
+        Deallocate(KTL,H)
+!$OMP END PARALLEL
+        If(Roles(3).le.2) then
+          Acc = Acc+Transpose(KT)
+        Else
+          Acc = Acc+KT
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_S2P_I
+!
+!
+!     PROCEDURE MQC_R4Contract_S2P_R
+!
+!>    \brief <b> MQC_R4Contract_S2P_R contracts a packed S_2_12_34 real tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 4 (S_2_12_34), in
+!>    the stored (chemist) frame, T(i,j,k,l) = T(j,i,l,k); pair 12 of
+!>    dimension N1, pair 34 of dimension N3. Storage: one row of W = 2 OffB+N3
+!>    slots per pair i > j (S1 = (i-1)(i-2)/2+j), holding T(i,j,a,b),
+!>    T(i,j,b,a) for each a > b and T(i,j,k,k); then one row of W2 = OffB+N3
+!>    slots per i, holding T(i,i,a,b), a > b, and T(i,i,k,k).
+!>    contracted pair 34: one product of the row matrix with two slot vectors
+!>      (the T(i,j,..) and the T(j,i,..) parts), and one for the i = j rows;
+!>    contracted pair 12: one product of the row matrix with two row vectors,
+!>      scattered to the slots' (k,l);
+!>    one contracted index in each pair: each off-diagonal row feeds both
+!>      images in one pass (MQC_R4Contract_S2P_Row_R); the i = j rows are
+!>      unpacked to an N3 x N3 matrix; threads run over the rows with private
+!>      accumulators.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S2P_R(N1,N3,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N3,NA,NB,NC,ND
+      Real(kind=real64),Dimension(*),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Real(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Real(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,A,B,K,S1,S2,OffA,OffB,W,W2,Base,C1,C2,P1,CA,FA
+      Real(kind=real64),Dimension(:,:),Allocatable::MX,MT,MM,MD,YV,YD,AC,H,YL
+      Real(kind=real64),Dimension(:,:),Allocatable::KT,KTL
+
+      OffA = N1*(N1-1)/2
+      OffB = N3*(N3-1)/2
+      W = 2*OffB+N3
+      W2 = OffB+N3
+      If(Roles(1).ge.3.and.Roles(2).ge.3) then
+!       contracted pair 34: MM(:,1) for T(i,j,..), MM(:,2) for T(j,i,..) = T(i,j,l,k);
+!       MD(:,1), MD(:,2) for the i = j rows
+        If(Roles(1).eq.3) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Allocate(MM(W,2),MD(W2,2),YV(OffA,2),YD(N1,2),AC(N1,N1))
+        Do A = 2, N3
+          Do B = 1, A-1
+            S2 = (A-1)*(A-2)/2+B
+            MM(2*S2-1,1) = MX(A,B)
+            MM(2*S2,1) = MX(B,A)
+            MM(2*S2-1,2) = MX(B,A)
+            MM(2*S2,2) = MX(A,B)
+            MD(S2,1) = MX(A,B)
+            MD(S2,2) = MX(B,A)
+          EndDo
+        EndDo
+        Do K = 1, N3
+          MM(2*OffB+K,1) = MX(K,K)
+          MM(2*OffB+K,2) = MX(K,K)
+          MD(OffB+K,1) = MX(K,K)
+          MD(OffB+K,2) = 0.0
+        EndDo
+        Call DGEMM('T','N',int(OffA,kind=MQC_BlasInt),int(2,kind=MQC_BlasInt),int(W,kind=MQC_BlasInt),1.0,AP, &
+          int(W,kind=MQC_BlasInt),MM,int(W,kind=MQC_BlasInt),0.0,YV,int(Max(OffA,1_int64),kind=MQC_BlasInt))
+        Call DGEMM('T','N',int(N1,kind=MQC_BlasInt),int(2,kind=MQC_BlasInt),int(W2,kind=MQC_BlasInt),1.0, &
+          AP(OffA*W+1),int(W2,kind=MQC_BlasInt),MD,int(W2,kind=MQC_BlasInt),0.0,YD,int(N1,kind=MQC_BlasInt))
+        Do I = 2, N1
+          Do J = 1, I-1
+            S1 = (I-1)*(I-2)/2+J
+            AC(I,J) = YV(S1,1)
+            AC(J,I) = YV(S1,2)
+          EndDo
+        EndDo
+        Do I = 1, N1
+          AC(I,I) = YD(I,1)+YD(I,2)
+        EndDo
+        If(Roles(3).eq.1) then
+          Acc = Acc+AC
+        Else
+          Acc = Acc+Transpose(AC)
+        EndIf
+      ElseIf(Roles(1).le.2.and.Roles(2).le.2) then
+!       contracted pair 12: MM(:,1) = MX(i,j), MM(:,2) = MX(j,i) over the rows i > j;
+!       MD for the i = j rows
+        If(Roles(1).eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Allocate(MM(OffA,2),MD(N1,2),YV(W,2),YD(W2,2),AC(N3,N3))
+        Do I = 2, N1
+          Do J = 1, I-1
+            S1 = (I-1)*(I-2)/2+J
+            MM(S1,1) = MX(I,J)
+            MM(S1,2) = MX(J,I)
+          EndDo
+        EndDo
+        Do I = 1, N1
+          MD(I,1) = MX(I,I)
+          MD(I,2) = MX(I,I)
+        EndDo
+        YV = 0.0
+!$OMP PARALLEL DEFAULT(NONE), SHARED(OffA,W,AP,MM,YV), PRIVATE(S1,YL)
+        Allocate(YL(W,2))
+        YL = 0.0
+!$OMP DO SCHEDULE(STATIC)
+        Do S1 = 1, OffA
+          Call DAXPY(int(W,kind=MQC_BlasInt),MM(S1,1),AP((S1-1)*W+1),int(1,kind=MQC_BlasInt),YL(1,1), &
+            int(1,kind=MQC_BlasInt))
+          Call DAXPY(int(W,kind=MQC_BlasInt),MM(S1,2),AP((S1-1)*W+1),int(1,kind=MQC_BlasInt),YL(1,2), &
+            int(1,kind=MQC_BlasInt))
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S2P_R_J)
+        YV = YV+YL
+!$OMP END CRITICAL (MQC_R4Contract_S2P_R_J)
+        Deallocate(YL)
+!$OMP END PARALLEL
+        Call DGEMM('N','N',int(W2,kind=MQC_BlasInt),int(2,kind=MQC_BlasInt),int(N1,kind=MQC_BlasInt),1.0, &
+          AP(OffA*W+1),int(W2,kind=MQC_BlasInt),MD,int(N1,kind=MQC_BlasInt),0.0,YD,int(W2,kind=MQC_BlasInt))
+        Do A = 2, N3
+          Do B = 1, A-1
+            S2 = (A-1)*(A-2)/2+B
+            AC(A,B) = YV(2*S2-1,1)+YV(2*S2,2)+YD(S2,1)
+            AC(B,A) = YV(2*S2,1)+YV(2*S2-1,2)+YD(S2,2)
+          EndDo
+        EndDo
+        Do K = 1, N3
+          AC(K,K) = YV(2*OffB+K,1)+YV(2*OffB+K,2)+YD(OffB+K,1)
+        EndDo
+        If(Roles(3).eq.3) then
+          Acc = Acc+AC
+        Else
+          Acc = Acc+Transpose(AC)
+        EndIf
+      Else
+!       one contracted index in each pair: MX(x_C1,x_C2), accumulated as K^T (N3 x N1)
+        If(Roles(1).le.2) then
+          C1 = Roles(1)
+          C2 = Roles(2)
+          MX = MB
+        Else
+          C1 = Roles(2)
+          C2 = Roles(1)
+          MX = Transpose(MB)
+        EndIf
+        MT = Transpose(MX)
+        If(C2.eq.3) then
+          P1 = 1
+        Else
+          P1 = 2
+        EndIf
+        Allocate(KT(N3,N1))
+        KT = 0.0
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N1,N3,OffA,OffB,W,W2,AP,MT,KT,C1,C2,P1), &
+!$OMP   PRIVATE(I,J,A,B,K,S1,S2,Base,CA,FA,KTL,H)
+        Allocate(KTL(N3,N1),H(N3,N3))
+        KTL = 0.0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = N1, 2, -1
+          Do J = 1, I-1
+            S1 = (I-1)*(I-2)/2+J
+            Base = (S1-1)*W
+            If(C1.eq.1) then
+              CA = I
+              FA = J
+            Else
+              CA = J
+              FA = I
+            EndIf
+            Call MQC_R4Contract_S2P_Row_R(N3,AP(Base+1),AP(Base+2*OffB+1),P1,MT(1,CA),KTL(1,FA),MT(1,FA), &
+              KTL(1,CA))
+          EndDo
+        EndDo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = 1, N1
+          Base = OffA*W+(I-1)*W2
+          Do A = 2, N3
+            Do B = 1, A-1
+              S2 = (A-1)*(A-2)/2+B
+              H(A,B) = AP(Base+S2)
+              H(B,A) = AP(Base+S2)
+            EndDo
+          EndDo
+          Do K = 1, N3
+            H(K,K) = AP(Base+OffB+K)
+          EndDo
+          If(C2.eq.3) then
+            Call DGEMV('T',int(N3,kind=MQC_BlasInt),int(N3,kind=MQC_BlasInt),1.0,H,int(N3,kind=MQC_BlasInt), &
+              MT(1,I),int(1,kind=MQC_BlasInt),1.0,KTL(1,I),int(1,kind=MQC_BlasInt))
+          Else
+            Call DGEMV('N',int(N3,kind=MQC_BlasInt),int(N3,kind=MQC_BlasInt),1.0,H,int(N3,kind=MQC_BlasInt), &
+              MT(1,I),int(1,kind=MQC_BlasInt),1.0,KTL(1,I),int(1,kind=MQC_BlasInt))
+          EndIf
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S2P_R_Acc)
+        KT = KT+KTL
+!$OMP END CRITICAL (MQC_R4Contract_S2P_R_Acc)
+        Deallocate(KTL,H)
+!$OMP END PARALLEL
+        If(Roles(3).le.2) then
+          Acc = Acc+Transpose(KT)
+        Else
+          Acc = Acc+KT
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_S2P_R
+!
+!
+!     PROCEDURE MQC_R4Contract_S2P_C
+!
+!>    \brief <b> MQC_R4Contract_S2P_C contracts a packed S_2_12_34 complex tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 4 (S_2_12_34), in
+!>    the stored (chemist) frame, T(i,j,k,l) = conjg(T(j,i,l,k)); pair 12 of
+!>    dimension N1, pair 34 of dimension N3. Storage: one row of W = 2 OffB+N3
+!>    slots per pair i > j (S1 = (i-1)(i-2)/2+j), holding T(i,j,a,b),
+!>    T(i,j,b,a) for each a > b and T(i,j,k,k); then one row of W2 = OffB+N3
+!>    slots per i, holding T(i,i,a,b), a > b, and T(i,i,k,k).
+!>    contracted pair 34: one product of the row matrix with two slot vectors
+!>      (the T(i,j,..) and the T(j,i,..) parts), and one for the i = j rows;
+!>    contracted pair 12: one product of the row matrix with two row vectors,
+!>      scattered to the slots' (k,l);
+!>    one contracted index in each pair: each off-diagonal row feeds both
+!>      images in one pass (MQC_R4Contract_S2P_Row_C); the i = j rows are
+!>      unpacked to an N3 x N3 matrix; threads run over the rows with private
+!>      accumulators.
+!>    Roles are the chemist positions of (ia,ib,ic,id); MB is NA x NB and Acc
+!>    NC x ND (view roles).
+!>    Plain = TRUE: T(i,j,k,l) = T(j,i,l,k) without conjugation.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_S2P_C(N1,N3,AP,Plain,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::N1,N3,NA,NB,NC,ND
+      Complex(kind=real64),Dimension(*),Intent(In)::AP
+      Logical,Intent(In)::Plain
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Complex(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Complex(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::I,J,A,B,K,S1,S2,OffA,OffB,W,W2,Base,C1,C2,P1,CA,FA
+      Complex(kind=real64),Dimension(:,:),Allocatable::MX,MT,MM,MD,YV,YD,AC,H,YL
+      Complex(kind=real64),Dimension(:),Allocatable::TV
+      Real(kind=real64),Dimension(:,:),Allocatable::XR,XI,KR,KI,KRL,KIL
+      Real(kind=real64),Dimension(:,:),Allocatable::XR2,XI2,YR2,YI2
+      Real(kind=real64)::CS,L1,L2
+      Logical::CJ
+
+      OffA = N1*(N1-1)/2
+      OffB = N3*(N3-1)/2
+      W = 2*OffB+N3
+      W2 = OffB+N3
+      CJ = .not.Plain
+      If(CJ) then
+        CS = -1.0
+      Else
+        CS = 1.0
+      EndIf
+      If(Roles(1).ge.3.and.Roles(2).ge.3) then
+!       contracted pair 34: MM(:,1) for T(i,j,..), MM(:,2) for T(j,i,..) = conjg(T(i,j,l,k));
+!       MD(:,1), MD(:,2) for the i = j rows
+        If(Roles(1).eq.3) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Allocate(MM(W,2),MD(W2,2),YV(OffA,2),YD(N1,2),AC(N1,N1))
+        Do A = 2, N3
+          Do B = 1, A-1
+            S2 = (A-1)*(A-2)/2+B
+            MM(2*S2-1,1) = MX(A,B)
+            MM(2*S2,1) = MX(B,A)
+            MM(2*S2-1,2) = MX(B,A)
+            MM(2*S2,2) = MX(A,B)
+            MD(S2,1) = MX(A,B)
+            MD(S2,2) = MX(B,A)
+          EndDo
+        EndDo
+        Do K = 1, N3
+          MM(2*OffB+K,1) = MX(K,K)
+          MM(2*OffB+K,2) = MX(K,K)
+          MD(OffB+K,1) = MX(K,K)
+          MD(OffB+K,2) = (0.0,0.0)
+        EndDo
+        If(CJ) then
+          MM(:,2) = Conjg(MM(:,2))
+          MD(:,2) = Conjg(MD(:,2))
+        EndIf
+        Call ZGEMM('T','N',int(OffA,kind=MQC_BlasInt),int(2,kind=MQC_BlasInt),int(W,kind=MQC_BlasInt),(1.0,0.0), &
+          AP,int(W,kind=MQC_BlasInt),MM,int(W,kind=MQC_BlasInt),(0.0,0.0),YV, &
+          int(Max(OffA,1_int64),kind=MQC_BlasInt))
+        Call ZGEMM('T','N',int(N1,kind=MQC_BlasInt),int(2,kind=MQC_BlasInt),int(W2,kind=MQC_BlasInt),(1.0,0.0), &
+          AP(OffA*W+1),int(W2,kind=MQC_BlasInt),MD,int(W2,kind=MQC_BlasInt),(0.0,0.0),YD, &
+          int(N1,kind=MQC_BlasInt))
+        If(CJ) then
+          YV(:,2) = Conjg(YV(:,2))
+          YD(:,2) = Conjg(YD(:,2))
+        EndIf
+        Do I = 2, N1
+          Do J = 1, I-1
+            S1 = (I-1)*(I-2)/2+J
+            AC(I,J) = YV(S1,1)
+            AC(J,I) = YV(S1,2)
+          EndDo
+        EndDo
+        Do I = 1, N1
+          AC(I,I) = YD(I,1)+YD(I,2)
+        EndDo
+        If(Roles(3).eq.1) then
+          Acc = Acc+AC
+        Else
+          Acc = Acc+Transpose(AC)
+        EndIf
+      ElseIf(Roles(1).le.2.and.Roles(2).le.2) then
+!       contracted pair 12: MM(:,1) = MX(i,j), MM(:,2) = conjg(MX(j,i)) over the rows i > j;
+!       MD for the i = j rows
+        If(Roles(1).eq.1) then
+          MX = MB
+        Else
+          MX = Transpose(MB)
+        EndIf
+        Allocate(MM(OffA,2),MD(N1,2),YV(W,2),YD(W2,2),AC(N3,N3))
+        Do I = 2, N1
+          Do J = 1, I-1
+            S1 = (I-1)*(I-2)/2+J
+            MM(S1,1) = MX(I,J)
+            MM(S1,2) = MX(J,I)
+          EndDo
+        EndDo
+        Do I = 1, N1
+          MD(I,1) = MX(I,I)
+          MD(I,2) = MX(I,I)
+        EndDo
+        If(CJ) then
+          MM(:,2) = Conjg(MM(:,2))
+          MD(:,2) = Conjg(MD(:,2))
+        EndIf
+        YV = (0.0,0.0)
+!$OMP PARALLEL DEFAULT(NONE), SHARED(OffA,W,AP,MM,YV), PRIVATE(S1,YL)
+        Allocate(YL(W,2))
+        YL = (0.0,0.0)
+!$OMP DO SCHEDULE(STATIC)
+        Do S1 = 1, OffA
+          Call ZAXPY(int(W,kind=MQC_BlasInt),MM(S1,1),AP((S1-1)*W+1),int(1,kind=MQC_BlasInt),YL(1,1), &
+            int(1,kind=MQC_BlasInt))
+          Call ZAXPY(int(W,kind=MQC_BlasInt),MM(S1,2),AP((S1-1)*W+1),int(1,kind=MQC_BlasInt),YL(1,2), &
+            int(1,kind=MQC_BlasInt))
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S2P_C_J)
+        YV = YV+YL
+!$OMP END CRITICAL (MQC_R4Contract_S2P_C_J)
+        Deallocate(YL)
+!$OMP END PARALLEL
+        Call ZGEMM('N','N',int(W2,kind=MQC_BlasInt),int(2,kind=MQC_BlasInt),int(N1,kind=MQC_BlasInt),(1.0,0.0), &
+          AP(OffA*W+1),int(W2,kind=MQC_BlasInt),MD,int(N1,kind=MQC_BlasInt),(0.0,0.0),YD, &
+          int(W2,kind=MQC_BlasInt))
+        If(CJ) then
+          YV(:,2) = Conjg(YV(:,2))
+          YD(:,2) = Conjg(YD(:,2))
+        EndIf
+        Do A = 2, N3
+          Do B = 1, A-1
+            S2 = (A-1)*(A-2)/2+B
+            AC(A,B) = YV(2*S2-1,1)+YV(2*S2,2)+YD(S2,1)
+            AC(B,A) = YV(2*S2,1)+YV(2*S2-1,2)+YD(S2,2)
+          EndDo
+        EndDo
+        Do K = 1, N3
+          AC(K,K) = YV(2*OffB+K,1)+YV(2*OffB+K,2)+YD(OffB+K,1)
+        EndDo
+        If(Roles(3).eq.3) then
+          Acc = Acc+AC
+        Else
+          Acc = Acc+Transpose(AC)
+        EndIf
+      Else
+!       one contracted index in each pair: MX(x_C1,x_C2), accumulated as K^T (N3 x N1)
+        If(Roles(1).le.2) then
+          C1 = Roles(1)
+          C2 = Roles(2)
+          MX = MB
+        Else
+          C1 = Roles(2)
+          C2 = Roles(1)
+          MX = Transpose(MB)
+        EndIf
+        MT = Transpose(MX)
+        If(C2.eq.3) then
+          P1 = 1
+        Else
+          P1 = 2
+        EndIf
+        If(P1.eq.1) then
+          L1 = 1.0
+          L2 = CS
+        Else
+          L1 = CS
+          L2 = 1.0
+        EndIf
+        Allocate(XR(N3,N1),XI(N3,N1),KR(N3,N1),KI(N3,N1))
+        XR = Real(MT,kind=real64)
+        XI = Aimag(MT)
+        KR = 0.0
+        KI = 0.0
+!$OMP PARALLEL DEFAULT(NONE), SHARED(N1,N3,OffA,OffB,W,W2,AP,XR,XI,MT,KR,KI,C1,C2,P1,L1,L2,CJ), &
+!$OMP   PRIVATE(I,J,A,B,K,S1,S2,Base,CA,FA,KRL,KIL,H,TV,XR2,XI2,YR2,YI2)
+        Allocate(KRL(N3,N1),KIL(N3,N1),H(N3,N3),TV(N3),XR2(2,N3),XI2(2,N3),YR2(2,N3),YI2(2,N3))
+        KRL = 0.0
+        KIL = 0.0
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = N1, 2, -1
+          Do J = 1, I-1
+            S1 = (I-1)*(I-2)/2+J
+            Base = (S1-1)*W
+            If(C1.eq.1) then
+              CA = I
+              FA = J
+            Else
+              CA = J
+              FA = I
+            EndIf
+!           P1 = 1: K^T(:,FA) += R^T MT(:,CA), K^T(:,CA) += conjg(R) MT(:,FA);
+!           P1 = 2: K^T(:,FA) += R MT(:,CA), K^T(:,CA) += conjg(R)^T MT(:,FA) (no conjg if plain)
+            If(P1.eq.1) then
+              XR2(1,:) = XR(:,CA)
+              XI2(1,:) = XI(:,CA)
+              XR2(2,:) = XR(:,FA)
+              XI2(2,:) = XI(:,FA)
+            Else
+              XR2(1,:) = XR(:,FA)
+              XI2(1,:) = XI(:,FA)
+              XR2(2,:) = XR(:,CA)
+              XI2(2,:) = XI(:,CA)
+            EndIf
+            YR2 = 0.0
+            YI2 = 0.0
+            Call MQC_R4Contract_S2P_Row_C(N3,AP(Base+1),AP(Base+2*OffB+1),L1,L2,XR2,XI2,YR2,YI2)
+            If(P1.eq.1) then
+              KRL(:,FA) = KRL(:,FA)+YR2(1,:)
+              KIL(:,FA) = KIL(:,FA)+YI2(1,:)
+              KRL(:,CA) = KRL(:,CA)+YR2(2,:)
+              KIL(:,CA) = KIL(:,CA)+YI2(2,:)
+            Else
+              KRL(:,CA) = KRL(:,CA)+YR2(1,:)
+              KIL(:,CA) = KIL(:,CA)+YI2(1,:)
+              KRL(:,FA) = KRL(:,FA)+YR2(2,:)
+              KIL(:,FA) = KIL(:,FA)+YI2(2,:)
+            EndIf
+          EndDo
+        EndDo
+!$OMP END DO NOWAIT
+!$OMP DO SCHEDULE(DYNAMIC,1)
+        Do I = 1, N1
+          Base = OffA*W+(I-1)*W2
+          Do A = 2, N3
+            Do B = 1, A-1
+              S2 = (A-1)*(A-2)/2+B
+              H(A,B) = AP(Base+S2)
+              If(CJ) then
+                H(B,A) = Conjg(AP(Base+S2))
+              Else
+                H(B,A) = AP(Base+S2)
+              EndIf
+            EndDo
+          EndDo
+          Do K = 1, N3
+            H(K,K) = AP(Base+OffB+K)
+          EndDo
+          If(C2.eq.3) then
+            Call ZGEMV('T',int(N3,kind=MQC_BlasInt),int(N3,kind=MQC_BlasInt),(1.0,0.0),H, &
+              int(N3,kind=MQC_BlasInt),MT(1,I),int(1,kind=MQC_BlasInt),(0.0,0.0),TV,int(1,kind=MQC_BlasInt))
+          Else
+            Call ZGEMV('N',int(N3,kind=MQC_BlasInt),int(N3,kind=MQC_BlasInt),(1.0,0.0),H, &
+              int(N3,kind=MQC_BlasInt),MT(1,I),int(1,kind=MQC_BlasInt),(0.0,0.0),TV,int(1,kind=MQC_BlasInt))
+          EndIf
+          KRL(:,I) = KRL(:,I)+Real(TV,kind=real64)
+          KIL(:,I) = KIL(:,I)+Aimag(TV)
+        EndDo
+!$OMP END DO
+!$OMP CRITICAL (MQC_R4Contract_S2P_C_Acc)
+        KR = KR+KRL
+        KI = KI+KIL
+!$OMP END CRITICAL (MQC_R4Contract_S2P_C_Acc)
+        Deallocate(KRL,KIL,H,TV,XR2,XI2,YR2,YI2)
+!$OMP END PARALLEL
+        AC = Cmplx(KR,KI,kind=real64)
+        If(Roles(3).le.2) then
+          Acc = Acc+Transpose(AC)
+        Else
+          Acc = Acc+AC
+        EndIf
+      EndIf
+
+      End Subroutine MQC_R4Contract_S2P_C
+!
+!
+!     PROCEDURE MQC_R4Contract_Full_I
+!
+!>    \brief <b> MQC_R4Contract_Full_I contracts a full-stored integer rank-4 tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 0 (StorFull and the
+!>    full-stored S_1 labels), in the stored (chemist) frame: AP is the
+!>    D(1) x D(2) x D(3) x D(4) array. M = MB, or MB^T, with the lower
+!>    contracted position first; K has the lower free position first.
+!>    contracted 1,2 or 3,4: one matrix-vector product with the D(1)D(2) x
+!>      D(3)D(4) matrix (transposed for 1,2);
+!>    one contracted index in each pair: one product per slab T(:,:,r,s)
+!>      (transposed when position 1 is contracted), into the column of K of
+!>      the free index of 3 or 4; threads own the columns of K.
+!>    Acc += K, or K^T when Roles(3) > Roles(4). Roles are the chemist
+!>    positions of (ia,ib,ic,id); MB is NA x NB and Acc NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Full_I(D,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Dimension(4),Intent(In)::D
+      Integer(kind=int64),Intent(In)::NA,NB,NC,ND
+      Integer(kind=int64),Dimension(D(1),D(2),D(3),D(4)),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Integer(kind=int64),Dimension(NA,NB),Intent(In)::MB
+      Integer(kind=int64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::CL,CH,FL,FH,R,S
+      Integer(kind=int64),Dimension(:,:),Allocatable::M,K
+
+      CL = Min(Roles(1),Roles(2))
+      CH = Max(Roles(1),Roles(2))
+      FL = Min(Roles(3),Roles(4))
+      FH = Max(Roles(3),Roles(4))
+      If(Roles(1).lt.Roles(2)) then
+        M = MB
+      Else
+        M = Transpose(MB)
+      EndIf
+      Allocate(K(D(FL),D(FH)))
+      K = 0
+      Select Case(10*CL+CH)
+      Case(12)
+        Call MQC_R4Contract_GEMVR_I('T',D(1)*D(2),D(3)*D(4),AP,D(1)*D(2),M,K)
+      Case(34)
+        Call MQC_R4Contract_GEMVR_I('N',D(1)*D(2),D(3)*D(4),AP,D(1)*D(2),M,K)
+      Case(13,23)
+!       K(:,s) += op(T(:,:,r,s)) M(:,r)
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(D,AP,M,K,CL), PRIVATE(R,S), SCHEDULE(STATIC)
+        Do S = 1, D(4)
+          Do R = 1, D(3)
+            If(CL.eq.1) then
+              Call MQC_R4Contract_GEMVR_I('T',D(1),D(2),AP(1,1,R,S),D(1),M(1,R),K(1,S))
+            Else
+              Call MQC_R4Contract_GEMVR_I('N',D(1),D(2),AP(1,1,R,S),D(1),M(1,R),K(1,S))
+            EndIf
+          EndDo
+        EndDo
+!$OMP END PARALLEL DO
+      Case(14,24)
+!       K(:,r) += op(T(:,:,r,s)) M(:,s)
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(D,AP,M,K,CL), PRIVATE(R,S), SCHEDULE(STATIC)
+        Do R = 1, D(3)
+          Do S = 1, D(4)
+            If(CL.eq.1) then
+              Call MQC_R4Contract_GEMVR_I('T',D(1),D(2),AP(1,1,R,S),D(1),M(1,S),K(1,R))
+            Else
+              Call MQC_R4Contract_GEMVR_I('N',D(1),D(2),AP(1,1,R,S),D(1),M(1,S),K(1,R))
+            EndIf
+          EndDo
+        EndDo
+!$OMP END PARALLEL DO
+      Case Default
+        Call MQC_Error_I('Contracted positions not a pair in MQC_R4Contract_Full_I', 6,'CL', CL, 'CH', CH)
+      End Select
+      If(Roles(3).lt.Roles(4)) then
+        Acc = Acc+K
+      Else
+        Acc = Acc+Transpose(K)
+      EndIf
+
+      End Subroutine MQC_R4Contract_Full_I
+!
+!
+!     PROCEDURE MQC_R4Contract_Full_R
+!
+!>    \brief <b> MQC_R4Contract_Full_R contracts a full-stored real rank-4 tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 0 (StorFull and the
+!>    full-stored S_1 labels), in the stored (chemist) frame: AP is the
+!>    D(1) x D(2) x D(3) x D(4) array. M = MB, or MB^T, with the lower
+!>    contracted position first; K has the lower free position first.
+!>    contracted 1,2 or 3,4: one matrix-vector product with the D(1)D(2) x
+!>      D(3)D(4) matrix (transposed for 1,2);
+!>    one contracted index in each pair: one product per slab T(:,:,r,s)
+!>      (transposed when position 1 is contracted), into the column of K of
+!>      the free index of 3 or 4; threads own the columns of K.
+!>    Acc += K, or K^T when Roles(3) > Roles(4). Roles are the chemist
+!>    positions of (ia,ib,ic,id); MB is NA x NB and Acc NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Full_R(D,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Dimension(4),Intent(In)::D
+      Integer(kind=int64),Intent(In)::NA,NB,NC,ND
+      Real(kind=real64),Dimension(D(1),D(2),D(3),D(4)),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Real(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Real(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::CL,CH,FL,FH,R,S
+      Real(kind=real64),Dimension(:,:),Allocatable::M,K
+
+      CL = Min(Roles(1),Roles(2))
+      CH = Max(Roles(1),Roles(2))
+      FL = Min(Roles(3),Roles(4))
+      FH = Max(Roles(3),Roles(4))
+      If(Roles(1).lt.Roles(2)) then
+        M = MB
+      Else
+        M = Transpose(MB)
+      EndIf
+      Allocate(K(D(FL),D(FH)))
+      K = 0.0
+      Select Case(10*CL+CH)
+      Case(12)
+        Call DGEMV('T',int(D(1)*D(2),kind=MQC_BlasInt),int(D(3)*D(4),kind=MQC_BlasInt),1.0,AP, &
+          int(D(1)*D(2),kind=MQC_BlasInt),M,int(1,kind=MQC_BlasInt),0.0,K,int(1,kind=MQC_BlasInt))
+      Case(34)
+        Call DGEMV('N',int(D(1)*D(2),kind=MQC_BlasInt),int(D(3)*D(4),kind=MQC_BlasInt),1.0,AP, &
+          int(D(1)*D(2),kind=MQC_BlasInt),M,int(1,kind=MQC_BlasInt),0.0,K,int(1,kind=MQC_BlasInt))
+      Case(13,23)
+!       K(:,s) += op(T(:,:,r,s)) M(:,r)
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(D,AP,M,K,CL), PRIVATE(R,S), SCHEDULE(STATIC)
+        Do S = 1, D(4)
+          Do R = 1, D(3)
+            If(CL.eq.1) then
+              Call DGEMV('T',int(D(1),kind=MQC_BlasInt),int(D(2),kind=MQC_BlasInt),1.0,AP(1,1,R,S), &
+                int(D(1),kind=MQC_BlasInt),M(1,R),int(1,kind=MQC_BlasInt),1.0,K(1,S),int(1,kind=MQC_BlasInt))
+            Else
+              Call DGEMV('N',int(D(1),kind=MQC_BlasInt),int(D(2),kind=MQC_BlasInt),1.0,AP(1,1,R,S), &
+                int(D(1),kind=MQC_BlasInt),M(1,R),int(1,kind=MQC_BlasInt),1.0,K(1,S),int(1,kind=MQC_BlasInt))
+            EndIf
+          EndDo
+        EndDo
+!$OMP END PARALLEL DO
+      Case(14,24)
+!       K(:,r) += op(T(:,:,r,s)) M(:,s)
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(D,AP,M,K,CL), PRIVATE(R,S), SCHEDULE(STATIC)
+        Do R = 1, D(3)
+          Do S = 1, D(4)
+            If(CL.eq.1) then
+              Call DGEMV('T',int(D(1),kind=MQC_BlasInt),int(D(2),kind=MQC_BlasInt),1.0,AP(1,1,R,S), &
+                int(D(1),kind=MQC_BlasInt),M(1,S),int(1,kind=MQC_BlasInt),1.0,K(1,R),int(1,kind=MQC_BlasInt))
+            Else
+              Call DGEMV('N',int(D(1),kind=MQC_BlasInt),int(D(2),kind=MQC_BlasInt),1.0,AP(1,1,R,S), &
+                int(D(1),kind=MQC_BlasInt),M(1,S),int(1,kind=MQC_BlasInt),1.0,K(1,R),int(1,kind=MQC_BlasInt))
+            EndIf
+          EndDo
+        EndDo
+!$OMP END PARALLEL DO
+      Case Default
+        Call MQC_Error_I('Contracted positions not a pair in MQC_R4Contract_Full_R', 6,'CL', CL, 'CH', CH)
+      End Select
+      If(Roles(3).lt.Roles(4)) then
+        Acc = Acc+K
+      Else
+        Acc = Acc+Transpose(K)
+      EndIf
+
+      End Subroutine MQC_R4Contract_Full_R
+!
+!
+!     PROCEDURE MQC_R4Contract_Full_C
+!
+!>    \brief <b> MQC_R4Contract_Full_C contracts a full-stored complex rank-4 tensor
+!>    with a matrix on one pair of indices</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Kernel of MQC_R4Tensor_Matrix_Contraction for SymCode 0 (StorFull and the
+!>    full-stored S_1 labels), in the stored (chemist) frame: AP is the
+!>    D(1) x D(2) x D(3) x D(4) array. M = MB, or MB^T, with the lower
+!>    contracted position first; K has the lower free position first.
+!>    contracted 1,2 or 3,4: one matrix-vector product with the D(1)D(2) x
+!>      D(3)D(4) matrix (transposed for 1,2);
+!>    one contracted index in each pair: one product per slab T(:,:,r,s)
+!>      (transposed when position 1 is contracted), into the column of K of
+!>      the free index of 3 or 4; threads own the columns of K.
+!>    Acc += K, or K^T when Roles(3) > Roles(4). Roles are the chemist
+!>    positions of (ia,ib,ic,id); MB is NA x NB and Acc NC x ND (view roles).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Full_C(D,AP,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Dimension(4),Intent(In)::D
+      Integer(kind=int64),Intent(In)::NA,NB,NC,ND
+      Complex(kind=real64),Dimension(D(1),D(2),D(3),D(4)),Intent(In)::AP
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Complex(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Complex(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Integer(kind=int64)::CL,CH,FL,FH,R,S
+      Complex(kind=real64),Dimension(:,:),Allocatable::M,K
+
+      CL = Min(Roles(1),Roles(2))
+      CH = Max(Roles(1),Roles(2))
+      FL = Min(Roles(3),Roles(4))
+      FH = Max(Roles(3),Roles(4))
+      If(Roles(1).lt.Roles(2)) then
+        M = MB
+      Else
+        M = Transpose(MB)
+      EndIf
+      Allocate(K(D(FL),D(FH)))
+      K = (0.0,0.0)
+      Select Case(10*CL+CH)
+      Case(12)
+        Call ZGEMV('T',int(D(1)*D(2),kind=MQC_BlasInt),int(D(3)*D(4),kind=MQC_BlasInt),(1.0,0.0),AP, &
+          int(D(1)*D(2),kind=MQC_BlasInt),M,int(1,kind=MQC_BlasInt),(0.0,0.0),K,int(1,kind=MQC_BlasInt))
+      Case(34)
+        Call ZGEMV('N',int(D(1)*D(2),kind=MQC_BlasInt),int(D(3)*D(4),kind=MQC_BlasInt),(1.0,0.0),AP, &
+          int(D(1)*D(2),kind=MQC_BlasInt),M,int(1,kind=MQC_BlasInt),(0.0,0.0),K,int(1,kind=MQC_BlasInt))
+      Case(13,23)
+!       K(:,s) += op(T(:,:,r,s)) M(:,r)
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(D,AP,M,K,CL), PRIVATE(R,S), SCHEDULE(STATIC)
+        Do S = 1, D(4)
+          Do R = 1, D(3)
+            If(CL.eq.1) then
+              Call ZGEMV('T',int(D(1),kind=MQC_BlasInt),int(D(2),kind=MQC_BlasInt),(1.0,0.0),AP(1,1,R,S), &
+                int(D(1),kind=MQC_BlasInt),M(1,R),int(1,kind=MQC_BlasInt),(1.0,0.0),K(1,S), &
+                int(1,kind=MQC_BlasInt))
+            Else
+              Call ZGEMV('N',int(D(1),kind=MQC_BlasInt),int(D(2),kind=MQC_BlasInt),(1.0,0.0),AP(1,1,R,S), &
+                int(D(1),kind=MQC_BlasInt),M(1,R),int(1,kind=MQC_BlasInt),(1.0,0.0),K(1,S), &
+                int(1,kind=MQC_BlasInt))
+            EndIf
+          EndDo
+        EndDo
+!$OMP END PARALLEL DO
+      Case(14,24)
+!       K(:,r) += op(T(:,:,r,s)) M(:,s)
+!$OMP PARALLEL DO DEFAULT(NONE), SHARED(D,AP,M,K,CL), PRIVATE(R,S), SCHEDULE(STATIC)
+        Do R = 1, D(3)
+          Do S = 1, D(4)
+            If(CL.eq.1) then
+              Call ZGEMV('T',int(D(1),kind=MQC_BlasInt),int(D(2),kind=MQC_BlasInt),(1.0,0.0),AP(1,1,R,S), &
+                int(D(1),kind=MQC_BlasInt),M(1,S),int(1,kind=MQC_BlasInt),(1.0,0.0),K(1,R), &
+                int(1,kind=MQC_BlasInt))
+            Else
+              Call ZGEMV('N',int(D(1),kind=MQC_BlasInt),int(D(2),kind=MQC_BlasInt),(1.0,0.0),AP(1,1,R,S), &
+                int(D(1),kind=MQC_BlasInt),M(1,S),int(1,kind=MQC_BlasInt),(1.0,0.0),K(1,R), &
+                int(1,kind=MQC_BlasInt))
+            EndIf
+          EndDo
+        EndDo
+!$OMP END PARALLEL DO
+      Case Default
+        Call MQC_Error_I('Contracted positions not a pair in MQC_R4Contract_Full_C', 6,'CL', CL, 'CH', CH)
+      End Select
+      If(Roles(3).lt.Roles(4)) then
+        Acc = Acc+K
+      Else
+        Acc = Acc+Transpose(K)
+      EndIf
+
+      End Subroutine MQC_R4Contract_Full_C
+!
+!
+!     PROCEDURE MQC_R4Contract_Has_Kernel
+!
+!>    \brief <b> MQC_R4Contract_Has_Kernel returns TRUE when a packed storage
+!>    code has a stored-frame contraction kernel</b>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Function MQC_R4Contract_Has_Kernel(Code) Result(HasKernel)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::Code
+      Logical::HasKernel
+
+      Select Case(Code)
+      Case(0,1,2,3,4,5,6)
+        HasKernel = .True.
+      Case Default
+        HasKernel = .False.
+      End Select
+
+      End Function MQC_R4Contract_Has_Kernel
+!
+!
+!     PROCEDURE MQC_R4Contract_Packed_I
+!
+!>    \brief <b> MQC_R4Contract_Packed_I calls the stored-frame contraction
+!>    kernel of a packed storage code</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Roles are the chemist positions of the contracted (1,2) and free (3,4)
+!>    indices: Acc(x_Roles(3),x_Roles(4)) += sum T(x) MB(x_Roles(1),x_Roles(2)).
+!>    D are the stored (chemist) dimensions, MB is NA x NB and Acc NC x ND.
+!>    Plain is the PlainSymm flag of the tensor.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Packed_I(Code,D,AP,Plain,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::Code,NA,NB,NC,ND
+      Integer(kind=int64),Dimension(4),Intent(In)::D
+      Integer(kind=int64),Dimension(*),Intent(In)::AP
+      Logical,Intent(In)::Plain
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Integer(kind=int64),Dimension(NA,NB),Intent(In)::MB
+      Integer(kind=int64),Dimension(NC,ND),Intent(InOut)::Acc
+      Logical::Same,Swap
+
+!     MB must be D(Roles(1)) x D(Roles(2)) and Acc D(Roles(3)) x D(Roles(4))
+      If(NA.ne.D(Roles(1)).or.NB.ne.D(Roles(2)).or.NC.ne.D(Roles(3)).or.ND.ne.D(Roles(4))) &
+        Call MQC_Error_I('Shape mismatch in MQC_R4Contract_Packed_I', 6, 'NA', NA, 'NB', NB, &
+        'NC', NC, 'ND', ND, 'Code', Code, 'D(Roles(1))', D(Roles(1)))
+      Select Case(Code)
+      Case(0)
+        Call MQC_R4Contract_Full_I(D,AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(1)
+!       R_8_1234: Same = contracted indices in one stored pair; Swap = the first free
+!       index is not in the stored pair of the first contracted one
+        Same = (Roles(1)+1)/2.eq.(Roles(2)+1)/2
+        Swap = (Roles(3)+1)/2.ne.(Roles(1)+1)/2
+        Call MQC_R4Contract_R8_I(D(1),AP,Same,Swap,MB,Acc)
+      Case(2)
+        Call MQC_R4Contract_S4_I(D(1),AP,Plain,Roles,MB,Acc)
+      Case(3)
+        Call MQC_R4Contract_R4_I(D(1),D(3),AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(4)
+        Call MQC_R4Contract_S2P_I(D(1),D(3),AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(5)
+        Call MQC_R4Contract_S213_I(D(1),D(2),AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(6)
+        Call MQC_R4Contract_R2_I(D(1),D(3),D(4),AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case Default
+        Call MQC_Error_I('No stored-frame kernel in MQC_R4Contract_Packed_I', 6, 'Code', Code)
+      End Select
+
+      End Subroutine MQC_R4Contract_Packed_I
+!
+!
+!     PROCEDURE MQC_R4Contract_Packed_R
+!
+!>    \brief <b> MQC_R4Contract_Packed_R calls the stored-frame contraction
+!>    kernel of a packed storage code</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Roles are the chemist positions of the contracted (1,2) and free (3,4)
+!>    indices: Acc(x_Roles(3),x_Roles(4)) += sum T(x) MB(x_Roles(1),x_Roles(2)).
+!>    D are the stored (chemist) dimensions, MB is NA x NB and Acc NC x ND.
+!>    Plain is the PlainSymm flag of the tensor.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Packed_R(Code,D,AP,Plain,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::Code,NA,NB,NC,ND
+      Integer(kind=int64),Dimension(4),Intent(In)::D
+      Real(kind=real64),Dimension(*),Intent(In)::AP
+      Logical,Intent(In)::Plain
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Real(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Real(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Logical::Same,Swap
+
+!     MB must be D(Roles(1)) x D(Roles(2)) and Acc D(Roles(3)) x D(Roles(4))
+      If(NA.ne.D(Roles(1)).or.NB.ne.D(Roles(2)).or.NC.ne.D(Roles(3)).or.ND.ne.D(Roles(4))) &
+        Call MQC_Error_I('Shape mismatch in MQC_R4Contract_Packed_R', 6, 'NA', NA, 'NB', NB, &
+        'NC', NC, 'ND', ND, 'Code', Code, 'D(Roles(1))', D(Roles(1)))
+      Select Case(Code)
+      Case(0)
+        Call MQC_R4Contract_Full_R(D,AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(1)
+!       R_8_1234: Same = contracted indices in one stored pair; Swap = the first free
+!       index is not in the stored pair of the first contracted one
+        Same = (Roles(1)+1)/2.eq.(Roles(2)+1)/2
+        Swap = (Roles(3)+1)/2.ne.(Roles(1)+1)/2
+        Call MQC_R4Contract_R8_R(D(1),AP,Same,Swap,MB,Acc)
+      Case(2)
+        Call MQC_R4Contract_S4_R(D(1),AP,Plain,Roles,MB,Acc)
+      Case(3)
+        Call MQC_R4Contract_R4_R(D(1),D(3),AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(4)
+        Call MQC_R4Contract_S2P_R(D(1),D(3),AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(5)
+        Call MQC_R4Contract_S213_R(D(1),D(2),AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(6)
+        Call MQC_R4Contract_R2_R(D(1),D(3),D(4),AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case Default
+        Call MQC_Error_I('No stored-frame kernel in MQC_R4Contract_Packed_R', 6, 'Code', Code)
+      End Select
+
+      End Subroutine MQC_R4Contract_Packed_R
+!
+!
+!     PROCEDURE MQC_R4Contract_Packed_C
+!
+!>    \brief <b> MQC_R4Contract_Packed_C calls the stored-frame contraction
+!>    kernel of a packed storage code</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Roles are the chemist positions of the contracted (1,2) and free (3,4)
+!>    indices: Acc(x_Roles(3),x_Roles(4)) += sum T(x) MB(x_Roles(1),x_Roles(2)).
+!>    D are the stored (chemist) dimensions, MB is NA x NB and Acc NC x ND.
+!>    Plain is the PlainSymm flag of the tensor.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_R4Contract_Packed_C(Code,D,AP,Plain,Roles,NA,NB,MB,NC,ND,Acc)
+
+      Implicit None
+      Integer(kind=int64),Intent(In)::Code,NA,NB,NC,ND
+      Integer(kind=int64),Dimension(4),Intent(In)::D
+      Complex(kind=real64),Dimension(*),Intent(In)::AP
+      Logical,Intent(In)::Plain
+      Integer(kind=int64),Dimension(4),Intent(In)::Roles
+      Complex(kind=real64),Dimension(NA,NB),Intent(In)::MB
+      Complex(kind=real64),Dimension(NC,ND),Intent(InOut)::Acc
+      Logical::Same,Swap
+
+!     MB must be D(Roles(1)) x D(Roles(2)) and Acc D(Roles(3)) x D(Roles(4))
+      If(NA.ne.D(Roles(1)).or.NB.ne.D(Roles(2)).or.NC.ne.D(Roles(3)).or.ND.ne.D(Roles(4))) &
+        Call MQC_Error_I('Shape mismatch in MQC_R4Contract_Packed_C', 6, 'NA', NA, 'NB', NB, &
+        'NC', NC, 'ND', ND, 'Code', Code, 'D(Roles(1))', D(Roles(1)))
+      Select Case(Code)
+      Case(0)
+        Call MQC_R4Contract_Full_C(D,AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(1)
+!       R_8_1234: Same = contracted indices in one stored pair; Swap = the first free
+!       index is not in the stored pair of the first contracted one
+        Same = (Roles(1)+1)/2.eq.(Roles(2)+1)/2
+        Swap = (Roles(3)+1)/2.ne.(Roles(1)+1)/2
+        Call MQC_R4Contract_R8_C(D(1),AP,Same,Swap,MB,Acc)
+      Case(2)
+        Call MQC_R4Contract_S4_C(D(1),AP,Plain,Roles,MB,Acc)
+      Case(3)
+        Call MQC_R4Contract_R4_C(D(1),D(3),AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(4)
+        Call MQC_R4Contract_S2P_C(D(1),D(3),AP,Plain,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(5)
+        Call MQC_R4Contract_S213_C(D(1),D(2),AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case(6)
+        Call MQC_R4Contract_R2_C(D(1),D(3),D(4),AP,Roles,NA,NB,MB,NC,ND,Acc)
+      Case Default
+        Call MQC_Error_I('No stored-frame kernel in MQC_R4Contract_Packed_C', 6, 'Code', Code)
+      End Select
+
+      End Subroutine MQC_R4Contract_Packed_C
+!
+!
 !     PROCEDURE MQC_R4Tensor_Matrix_Contraction
 !
 !>    \brief <b> MQC_R4Tensor_Matrix_Contraction contracts two indexes of an MQC
@@ -40312,23 +45880,23 @@
       Character(Len=64)::myForce
       Type(MQC_Matrix)::MC
       Type(MQC_R4Tensor)::TA
-      Integer(kind=int64)::ia,ib,ic,id,i,j,n,S,X0,TypeCode,NG,NImg,M,Ia2,Ib2,Ic2,Id2
+      Integer(kind=int64)::ia,ib,ic,id,i,j,n,TypeCode,NG
       Integer(kind=int64)::dima,dimb,dimc,dimd
-      Integer(kind=int64),Dimension(4)::X,Y
-      Integer(kind=int64),Dimension(4,48)::GP,Img
+      Integer(kind=int64),Dimension(4,48)::GP
       Logical,Dimension(48)::GC
-      Integer(kind=int64),Dimension(:),Allocatable::W0,W1,Rep
       Character(Len=64)::my_Type,OutType,OutStor,MSymm
       Logical::my_TestSymm,skipZero,MReal,MSym,MAsym,MHerm,MAherm
-      Logical::CSym,CAsym,CHerm,CAherm,CZero,CReal,SwapC,SwapF,Tri,Dup,Cj
+      Logical::CSym,CAsym,CHerm,CAherm,CZero,CReal,SwapC,SwapF,Tri
+      Integer(kind=int64),Dimension(4)::Roles,DC
+      Logical::PackFast
+      Real(kind=real64),Dimension(:,:),Allocatable::MBRe,AccRe,AccIm
       type(mqc_scalar)::mbNorm
-      Integer(kind=int64),Dimension(:,:),Allocatable::MBI,AccI,LocI
-      Real(kind=real64),Dimension(:,:),Allocatable::MBR,AccR,LocR
-      Complex(kind=real64),Dimension(:,:),Allocatable::MBC,AccC,LocC
+      Integer(kind=int64),Dimension(:,:),Allocatable::MBI,AccI
+      Real(kind=real64),Dimension(:,:),Allocatable::MBR,AccR
+      Complex(kind=real64),Dimension(:,:),Allocatable::MBC,AccC
       Integer(kind=int64),Dimension(:),Allocatable::PackI
       Real(kind=real64),Dimension(:),Allocatable::PackR
       Complex(kind=real64),Dimension(:),Allocatable::PackC
-      Complex(kind=real64)::VC
 
       If(.not.MQC_R4Tensor_isAllocated(RA)) Call MQC_Error_A( &
         'Unallocated rank-4 tensor in MQC_R4Tensor_Matrix_Contraction', 6, 'RA%Storage', RA%Storage)
@@ -40546,9 +46114,15 @@
             'OutType', OutType)
         End Select
       Else
-        TA = RA
-        Call MQC_R4Tensor_Resolve_Conjg(TA)
-        Call MQC_R4Tensor_Promote(TA,my_Type)
+!       stored-frame kernels read RA directly (no copy): a lazy conjugation goes to MB and the
+!       result, a real RA with a complex MB is contracted with Re(MB) and Im(MB)
+        PackFast = MQC_R4Contract_Has_Kernel(RA%SymCode).and.(RA%Data_Type.eq.my_Type.or. &
+          (RA%Data_Type.eq.'Real'.and.my_Type.eq.'Complex'))
+        If(.not.PackFast) then
+          TA = RA
+          Call MQC_R4Tensor_Resolve_Conjg(TA)
+          Call MQC_R4Tensor_Promote(TA,my_Type)
+        EndIf
         Select Case(TypeCode)
         Case(1)
           Call MQC_Matrix_To_Array(MBI,MB,Unpack=.True.)
@@ -40566,113 +46140,63 @@
           Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Setup', 6, &
             'TypeCode', TypeCode)
         End Select
-        If(MQC_R4Tensor_HaveFull(TA)) then
-!         full RA: loop over the stored array, each thread owns columns of MC
-!$OMP PARALLEL DO DEFAULT(NONE), &
-!$OMP SHARED(TA,MBI,MBR,MBC,AccI,AccR,AccC,ia,ib,ic,id,dima,dimb,dimc,dimd,Tri,TypeCode),&
-!$OMP PRIVATE(Ic2,Ia2,Ib2,X)
-          Do Id2 = 1, dimd
-            Do Ic2 = 1, dimc
-              If(Tri.and.Ic2.lt.Id2) Cycle
-              X(ic) = Ic2
-              X(id) = Id2
-              Do Ib2 = 1, dimb
-                X(ib) = Ib2
-                Do Ia2 = 1, dima
-                  X(ia) = Ia2
-                  Select Case(TypeCode)
-                  Case(1)
-                    AccI(Ic2,Id2) = AccI(Ic2,Id2)+TA%ITen(X(1),X(2),X(3),X(4))*MBI(Ia2,Ib2)
-                  Case(2)
-                    AccR(Ic2,Id2) = AccR(Ic2,Id2)+TA%RTen(X(1),X(2),X(3),X(4))*MBR(Ia2,Ib2)
-                  Case(3)
-                    AccC(Ic2,Id2) = AccC(Ic2,Id2)+TA%CTen(X(1),X(2),X(3),X(4))*MBC(Ia2,Ib2)
-                  Case Default
-                    Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Full', 6, &
-                      'TypeCode', TypeCode)
-                  End Select
-                EndDo
-              EndDo
-            EndDo
-          EndDo
-!$OMP END PARALLEL DO
+        If(PackFast) then
+!         packed class with a stored-frame kernel (view index v sits at chemist position
+!         IndexOrder(v))
+          Roles = RA%IndexOrder([ia,ib,ic,id])
+          DC = MQC_R4Symm_ToChem(RA%IndexOrder,[RA%I,RA%J,RA%K,RA%L])
+          Select Case(TypeCode)
+          Case(1)
+            Call MQC_R4Contract_Packed_I(RA%SymCode,DC,RA%ITen(1,1,1,1),RA%PlainSymm,Roles,dima,dimb,MBI, &
+              dimc,dimd,AccI)
+          Case(2)
+            Call MQC_R4Contract_Packed_R(RA%SymCode,DC,RA%RTen(1,1,1,1),RA%PlainSymm,Roles,dima,dimb,MBR, &
+              dimc,dimd,AccR)
+          Case(3)
+            If(RA%Data_Type.eq.'Real') then
+!             real RA, complex MB: two real contractions instead of promoting RA
+              Allocate(AccRe(dimc,dimd),AccIm(dimc,dimd))
+              AccRe = 0.0
+              AccIm = 0.0
+              MBRe = Real(MBC,kind=real64)
+              Call MQC_R4Contract_Packed_R(RA%SymCode,DC,RA%RTen(1,1,1,1),RA%PlainSymm,Roles,dima,dimb,MBRe, &
+                dimc,dimd,AccRe)
+              MBRe = Aimag(MBC)
+              Call MQC_R4Contract_Packed_R(RA%SymCode,DC,RA%RTen(1,1,1,1),RA%PlainSymm,Roles,dima,dimb,MBRe, &
+                dimc,dimd,AccIm)
+              AccC = AccC+Cmplx(AccRe,AccIm,kind=real64)
+            ElseIf(RA%DoConjg) then
+!             lazy conjugation: contraction of conjg(T) = conjg(contraction of T with conjg(MB))
+              MBC = Conjg(MBC)
+              Call MQC_R4Contract_Packed_C(RA%SymCode,DC,RA%CTen(1,1,1,1),RA%PlainSymm,Roles,dima,dimb,MBC, &
+                dimc,dimd,AccC)
+              AccC = Conjg(AccC)
+            Else
+              Call MQC_R4Contract_Packed_C(RA%SymCode,DC,RA%CTen(1,1,1,1),RA%PlainSymm,Roles,dima,dimb,MBC, &
+                dimc,dimd,AccC)
+            EndIf
+          Case Default
+            Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in packed kernel', 6, &
+              'TypeCode', TypeCode)
+          End Select
+        ElseIf(MQC_R4Contract_Has_Kernel(TA%SymCode)) then
+!         packed class with a kernel, promoted from integer data: the kernel on the copy TA
+          Roles = TA%IndexOrder([ia,ib,ic,id])
+          DC = MQC_R4Symm_ToChem(TA%IndexOrder,[TA%I,TA%J,TA%K,TA%L])
+          Select Case(TypeCode)
+          Case(2)
+            Call MQC_R4Contract_Packed_R(TA%SymCode,DC,TA%RTen(1,1,1,1),TA%PlainSymm,Roles,dima,dimb,MBR, &
+              dimc,dimd,AccR)
+          Case(3)
+            Call MQC_R4Contract_Packed_C(TA%SymCode,DC,TA%CTen(1,1,1,1),TA%PlainSymm,Roles,dima,dimb,MBC, &
+              dimc,dimd,AccC)
+          Case Default
+            Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in promoted kernel', 6, &
+              'TypeCode', TypeCode)
+          End Select
         Else
-!         packed RA: each slot read once and scattered over its orbit
-          Call MQC_R4Symm_Slot_Weights(TA,W0,W1,Rep)
-          Call MQC_R4Symm_View_Group(TA%Storage,TA%IndexOrder,TA%PlainSymm,.False.,GP,GC,NG)
-!$OMP PARALLEL DEFAULT(NONE), &
-!$OMP SHARED(TA,Rep,GP,GC,NG,MBI,MBR,MBC,AccI,AccR,AccC,ia,ib,ic,id,dimc,dimd,Tri,TypeCode),&
-!$OMP PRIVATE(S,X0,X,Y,Img,NImg,M,n,Dup,Cj,VC,LocI,LocR,LocC)
-          Select Case(TypeCode)
-          Case(1)
-            Allocate(LocI(dimc,dimd))
-            LocI = 0
-          Case(2)
-            Allocate(LocR(dimc,dimd))
-            LocR = 0.0
-          Case(3)
-            Allocate(LocC(dimc,dimd))
-            LocC = (0.0,0.0)
-          Case Default
-            Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Packed setup', 6, &
-              'TypeCode', TypeCode)
-          End Select
-!$OMP DO
-          Do S = 1, Size(Rep)
-!           first element of the slot (column-major linear index)
-            X0 = Rep(S)-1
-            X(1) = Mod(X0,TA%I)+1
-            X0 = X0/TA%I
-            X(2) = Mod(X0,TA%J)+1
-            X0 = X0/TA%J
-            X(3) = Mod(X0,TA%K)+1
-            X(4) = X0/TA%K+1
-            M = MQC_R4Tensor_Slot(TA,X(1),X(2),X(3),X(4),Cj)
-            NImg = 0
-            Orbit: Do n = 1, NG
-              Y = X(GP(:,n))
-              Dup = .False.
-              Do M = 1, NImg
-                If(All(Img(:,M).eq.Y)) then
-                  Dup = .True.
-                  Exit
-                EndIf
-              EndDo
-              If(Dup) Cycle Orbit
-              NImg = NImg+1
-              Img(:,NImg) = Y
-              If(Tri.and.Y(ic).lt.Y(id)) Cycle Orbit
-              Select Case(TypeCode)
-              Case(1)
-                LocI(Y(ic),Y(id)) = LocI(Y(ic),Y(id))+TA%ITen(S,1,1,1)*MBI(Y(ia),Y(ib))
-              Case(2)
-                LocR(Y(ic),Y(id)) = LocR(Y(ic),Y(id))+TA%RTen(S,1,1,1)*MBR(Y(ia),Y(ib))
-              Case(3)
-!               T(y) = conjg^(GC) T(x), T(x) = conjg^(Cj) of the stored value
-                VC = TA%CTen(S,1,1,1)
-                If(Cj.neqv.GC(n)) VC = Conjg(VC)
-                LocC(Y(ic),Y(id)) = LocC(Y(ic),Y(id))+VC*MBC(Y(ia),Y(ib))
-              Case Default
-                Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Packed', 6, &
-                  'TypeCode', TypeCode)
-              End Select
-            EndDo Orbit
-          EndDo
-!$OMP END DO
-!$OMP CRITICAL (MQC_R4Tensor_Matrix_Contraction_Acc)
-          Select Case(TypeCode)
-          Case(1)
-            AccI = AccI+LocI
-          Case(2)
-            AccR = AccR+LocR
-          Case(3)
-            AccC = AccC+LocC
-          Case Default
-            Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: unknown case in Packed sum', 6, &
-              'TypeCode', TypeCode)
-          End Select
-!$OMP END CRITICAL (MQC_R4Tensor_Matrix_Contraction_Acc)
-!$OMP END PARALLEL
+          Call MQC_Error_I('MQC_R4Tensor_Matrix_Contraction: no kernel for this storage', 6, &
+            'SymCode', TA%SymCode)
         EndIf
 !       real result of complex data: built as a real matrix
         If(TypeCode.eq.3.and.OutType.eq.'Real') then

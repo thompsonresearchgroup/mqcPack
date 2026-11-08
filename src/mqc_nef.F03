@@ -1,5 +1,4 @@
 
-
 !>    \brief <b> MQC NEF contains objects for the manipulation of intermediates used in
 !>    the Natural Excitation Framework </b>
 !
@@ -84,6 +83,21 @@
         Procedure, Public::outer2Matrix => mqc_nefvector_nefvector_outer_product
       End Type
 !
+!        !!!! TODO:
+!        !!! <New Symmetry variable: unknown, asymmetric, hermitian, symmetric (?)
+!        !!!                         antihermitian, antisymmetric (?) 
+!        !!! Usually a NEF_Matrix is not symmetrical, but their NEF_Set is. 
+!        !!! An outerCollapsed Hermitian NEF_Set should be a Hermitian NEF_Matrix
+!        !!!
+!        !!! <New Space-type variable: orbital, single, double
+!        !!!   collapse: orbital x orbital -> single
+!        !!!             single  x single  -> double
+!        !!!             single  x double  -> triple
+!        !!!             single  x triple  -> triple
+!        !!!             double  x double  -> quadruple
+!        !!!
+!        !!!             orbital x single  -> ?
+!        !!!!!!
 !>    \brief <b> </b>
       Type MQC_NEF_Matrix
         Type(MQC_SCF_Integral),Dimension(:),Allocatable,Private::Main_Matrix
@@ -92,6 +106,7 @@
         Integer,Dimension(:),Allocatable,Private::Size_vector_alpha_col,Size_vector_beta_col
         Integer,Dimension(:),Allocatable,Private::Size_vector_alpha_row,Size_vector_beta_row
         Integer,Private::NumSpace_col=0,NumSpace_row=0
+        Character(Len=16),Private::Symmetry='unknown'
       Contains
         Procedure, Public::print => mqc_print_nef_matrix
         Procedure, Public::init => mqc_nef_matrix_initialize
@@ -107,6 +122,10 @@
         Procedure, Public::collapse => mqc_nef_matrix_dimention_collapse
         Procedure, Public::expand => mqc_nef_matrix_dimention_expand
         Procedure, Public::dimen => mqc_nef_matrix_dimension
+        Procedure, Public::getSymm => mqc_NEF_Matrix_Get_Symmetry
+        Procedure, Public::symm2Full => MQC_NEF_Matrix_Symm2Full
+        Procedure, Public::symmSet => mqc_NEF_Matrix_symmetry_set
+        Procedure, Public::isMapSymm => mqc_NEF_Matrix_Test_Map_Symmetry
 !>    \brief <b> Outer Product of two variables into a two NEF R4</b>
         Procedure, Public::outer2R4 => mqc_NEFMatrix_NEFMatrix_outer_product
 !>    \brief <b> Outer Product of two variables into a NEF R4</b>
@@ -117,6 +136,7 @@
         Procedure, Public::getRotation => mqc_nef_matrix_get_generator_rotation
         Procedure, Public::getBlockRotation => mqc_nef_matrix_get_block_rotation
         Procedure, Public::exp => mqc_nef_matrix_exp
+        Procedure, Public::isBlockZero => mqc_nef_matrix_is_block_zero
       End Type
 !
 !>    \brief <b> </b>
@@ -557,7 +577,6 @@
           blank_at_top,blank_at_bottom,formatStr,blockPrint)
 !
       implicit none
-      integer(kind=int64) :: nef_bidx
       class(mqc_nef_matrix)::NEFMat
       integer(kind=int64),intent(in)::iOut
       character(len=*),intent(in)::header
@@ -584,6 +603,7 @@
       endif
       write(iout,1000) trim(header)
 !
+      write(6,*) 'Symmetry = ',NEFMat%getSymm()
       if(allocated(NEFMat%Zero_Flag)) then
         if(all(NEFMat%Zero_Flag)) then
           write(iout,1000) '(all zero) dims: row alpha='//trim(axisDimsStr(NEFMat%Size_vector_alpha_row))//&
@@ -611,14 +631,13 @@
             col_num = 1 
             Line = num2char(NEFMat%Map_Matrix_Row(j)%at(sub_j,'alpha'))
             do i = 1, NEFMat%NumSpace_col
-              nef_bidx = NEFMat%blockIndex([1,j],[2,i])
-              if (NEFMat%Zero_Flag(nef_bidx)) then
+              if (NEFMat%isBlockZero(j,i)) then
                 do sub_i = 1, NEFMat%Size_vector_alpha_col(i)
                   Line = trim(Line)//'     '//num2char(0.00000)
                   if (sub_i.ne.NEFMat%Size_vector_alpha_col(i)) Line = trim(Line)//' '
                 end do
               else
-              tmp_int = NEFMat%Main_matrix(nef_bidx)
+              tmp_int = NEFMat%iat(j,i)
               do sub_i = 1, NEFMat%Size_vector_alpha_col(i)
                 if (tmp_int%at(sub_j,sub_i,'alpha').eq.0.0) then
                   Line = trim(Line)//'     '//num2char(0.00000)
@@ -646,14 +665,13 @@
             col_num = 1
             Line = num2char(NEFMat%Map_Matrix_Row(j)%at(sub_j,'beta'))
             do i = 1, NEFMat%NumSpace_col
-              nef_bidx = NEFMat%blockIndex([1,j],[2,i])
-              if (NEFMat%Zero_Flag(nef_bidx)) then
+              if (NEFMat%isBlockZero(j,i)) then
                 do sub_i = 1, NEFMat%Size_vector_beta_col(i)
                   Line = trim(Line)//'     '//num2char(0.00000)
                   if (sub_i.ne.NEFMat%Size_vector_beta_col(i)) Line = trim(Line)//' '
                 end do
               else
-              tmp_int = NEFMat%Main_matrix(nef_bidx)
+              tmp_int = NEFMat%iat(j,i)
               do sub_i = 1, NEFMat%Size_vector_beta_col(i)
                 if (tmp_int%at(sub_j,sub_i,'beta').eq.0.0) then
                   Line = trim(Line)//'     '//num2char(0.00000)
@@ -681,14 +699,13 @@
             col_num = 1
             Line = num2char(NEFMat%Map_Matrix_Row(j)%at(sub_j,'beta'))
             do i = 1, NEFMat%NumSpace_col
-              nef_bidx = NEFMat%blockIndex([1,j],[2,i])
-              if (NEFMat%Zero_Flag(nef_bidx)) then
+              if (NEFMat%isBlockZero(j,i)) then
                 do sub_i = 1, NEFMat%Size_vector_alpha_col(i)
                   Line = trim(Line)//'     '//num2char(0.00000)
                   if (sub_i.ne.NEFMat%Size_vector_beta_col(i)) Line = trim(Line)//' '
                 end do
               else
-              tmp_int = NEFMat%Main_matrix(nef_bidx)
+              tmp_int = NEFMat%iat(j,i)
               do sub_i = 1, NEFMat%Size_vector_alpha_col(i)
                 if (tmp_int%at(sub_j,sub_i,'alphabeta').eq.0.0) then
                   Line = trim(Line)//'     '//num2char(0.00000)
@@ -716,14 +733,13 @@
             col_num = 1
             Line = num2char(NEFMat%Map_Matrix_Row(j)%at(sub_j,'alpha'))
             do i = 1, NEFMat%NumSpace_col
-              nef_bidx = NEFMat%blockIndex([1,j],[2,i])
-              if (NEFMat%Zero_Flag(nef_bidx)) then
+              if (NEFMat%isBlockZero(j,i)) then
                 do sub_i = 1, NEFMat%Size_vector_beta_col(i)
                   Line = trim(Line)//'     '//num2char(0.00000)
                   if (sub_i.ne.NEFMat%Size_vector_alpha_col(i)) Line = trim(Line)//' '
                 end do
               else
-              tmp_int = NEFMat%Main_matrix(nef_bidx)
+              tmp_int = NEFMat%iat(j,i)
               do sub_i = 1, NEFMat%Size_vector_beta_col(i)
                 if (tmp_int%at(sub_j,sub_i,'betaalpha').eq.0.0) then
                   Line = trim(Line)//'     '//num2char(0.00000)
@@ -747,15 +763,14 @@
       else
         do i = 1, NEFMat%NumSpace_col
           do j = 1, NEFMat%NumSpace_row
-            nef_bidx = NEFMat%blockIndex([1,j],[2,i])
-            if (NEFMat%Zero_Flag(nef_bidx)) then
+            if (NEFMat%isBlockZero(j,i)) then
               write(iOut,1000) 'Sub-Space '//trim(num2char(j))//','//trim(num2char(i))//&
                    ' (all zero) dims: row alpha='//trim(num2char(NEFMat%Size_vector_alpha_row(j)))//&
                    ' beta='//trim(num2char(NEFMat%Size_vector_beta_row(j)))//&
                    ' col alpha='//trim(num2char(NEFMat%Size_vector_alpha_col(i)))//&
                    ' beta='//trim(num2char(NEFMat%Size_vector_beta_col(i)))
             else
-              call mqc_print(NEFMat%Main_matrix(nef_bidx),iOut,&
+              call mqc_print(NEFMat%iat(j,i),iOut,&
                     'Sub-Space '//trim(num2char(j))//','//trim(num2char(i)))
             end if
           end do
@@ -844,8 +859,18 @@
         logical::same_vec
         integer::i,j
         type(mqc_scalar)::scalarCheck
-        logical::scalarIsZero
-
+        Character(Len=16)::mySymm
+        Real(kind=real64)::Thresh
+        logical::scalarIsZero,scalarIsReal,scalarIsImag
+!
+        If(MQC_very_small.gt.0.0) then
+          Thresh = MQC_very_small
+        Else
+          Thresh = 1e-10
+        EndIf
+!
+        scalarIsReal = .false.
+        scalarIsImag = .false.
         if(Present(Scalar)) then
           select type(scalar)
           type is (integer)
@@ -859,37 +884,63 @@
           class default
             call mqc_error('mqc_nef_matrix_initialize: scalar type not defined')
           end select
-          scalarIsZero = (abs(scalarCheck).eq.0.0)
+          scalarIsZero = (abs(scalarCheck).le.Thresh)
+          if (.not.scalarIsZero) then
+            scalarIsReal = (abs(aimag(scalarCheck)).le.Thresh)
+            scalarIsImag = (abs(real(scalarCheck)).le.Thresh)
+          end if
         else
+          scalarCheck = 0.0
           scalarIsZero = .true.
         end if
-
+!
         NEFMat%NumSpace_row = size(initial_map_matrix_row)
         NEFMat%Map_Matrix_row = initial_map_matrix_row
         if(present(initial_map_matrix_col)) then
           NEFMat%NumSpace_col = size(initial_map_matrix_col)
           active_map_matrix_col = initial_map_matrix_col
           NEFMat%Map_Matrix_col = initial_map_matrix_col
-          same_vec = .false.
+          same_vec = mqc_NEF_Matrix_Test_Map_Symmetry(NEFMat)
         else
           NEFMat%NumSpace_col = NEFMat%NumSpace_row
           active_map_matrix_col = initial_map_matrix_row
           NEFMat%Map_Matrix_col = initial_map_matrix_row
           same_vec = .true.
         end if
+!
+        if(same_vec) then 
+!         Every element equals the scalar c: c times a real symmetric matrix is
+!         hermitian for a real c, antihermitian for an imaginary c and only
+!         symmetric otherwise (same rule as mqc_integral_initialize).
+          if(scalarIsZero) then 
+            NEFMat%Symmetry = 'fullsymmetric'
+          else if(scalarIsReal) then 
+            NEFMat%Symmetry = 'hermitian'
+          else if(scalarIsImag) then 
+            NEFMat%Symmetry = 'antihermitian'
+          else
+            NEFMat%Symmetry = 'symmetric'
+          end if
+        else
+          NEFMat%Symmetry = 'asymmetric'
+        end if
+!
+!       !!!Bookkeeping!!!
         if(allocated(NEFMat%Size_vector_alpha_row)) deallocate(NEFMat%Size_vector_alpha_row)
         if(allocated(NEFMat%Size_vector_alpha_col)) deallocate(NEFMat%Size_vector_alpha_col)
         if(allocated(NEFMat%Size_vector_beta_row)) deallocate(NEFMat%Size_vector_beta_row)
         if(allocated(NEFMat%Size_vector_beta_col)) deallocate(NEFMat%Size_vector_beta_col)
-        if(allocated(NEFMat%Main_matrix)) deallocate(NEFMat%Main_matrix)
-        if(allocated(NEFMat%Zero_Flag)) deallocate(NEFMat%Zero_Flag)
         allocate(NEFMat%Size_vector_alpha_row(NEFMat%NumSpace_row))
         allocate(NEFMat%Size_vector_beta_row(NEFMat%NumSpace_row))
         allocate(NEFMat%Size_vector_alpha_col(NEFMat%NumSpace_col))
         allocate(NEFMat%Size_vector_beta_col(NEFMat%NumSpace_col))
-
+!       !!!MainData!!!
+        if(allocated(NEFMat%Main_matrix)) deallocate(NEFMat%Main_matrix)
+        if(allocated(NEFMat%Zero_Flag)) deallocate(NEFMat%Zero_Flag)
         allocate(NEFMat%Main_matrix(NEFMat%NumSpace_row*NEFMat%NumSpace_col))
         allocate(NEFMat%Zero_Flag(NEFMat%NumSpace_row*NEFMat%NumSpace_col))
+!
+        NEFMat%Zero_Flag=.true.
         do i = 1, NEFMat%NumSpace_row
           NEFMat%Size_vector_alpha_row(i) = Size(initial_map_matrix_row(i),'alpha')
           NEFMat%Size_vector_beta_row(i) = Size(initial_map_matrix_row(i),'beta')
@@ -898,30 +949,262 @@
               NEFMat%Size_vector_alpha_col(j) = Size(active_map_matrix_col(j),'alpha')
               NEFMat%Size_vector_beta_col(j) = Size(active_map_matrix_col(j),'beta')
             end if
+            if (i.lt.j.and.same_vec) cycle
             if (same_vec.and.i.eq.j) then
               nef_bidx = NEFMat%blockIndex([1,i],[2,i])
               NEFMat%Zero_Flag(nef_bidx) = scalarIsZero
-              if (.not.scalarIsZero) then
+              !if (.not.scalarIsZero) then
                 call NEFMat%Main_matrix(nef_bidx)%init(&
                        Size(initial_map_matrix_row(i),'alpha'),&
                        Size(initial_map_matrix_row(i),'beta'),&
-                       scalar=scalar)
-              end if
+                       scalar=scalarCheck)
+              !end if
             else
               nef_bidx = NEFMat%blockIndex([1,i],[2,j])
               NEFMat%Zero_Flag(nef_bidx) = scalarIsZero
-              if (.not.scalarIsZero) then
+              !if (.not.scalarIsZero) then
                 call NEFMat%Main_matrix(nef_bidx)%init(&
                        Size(initial_map_matrix_row(i),'alpha'),&
                        Size(initial_map_matrix_row(i),'beta'),&
-                       scalar=scalar,&
+                       scalar=scalarCheck,&
                        nAlpha2=Size(active_map_matrix_col(j),'alpha'),&
                        nBeta2=Size(active_map_matrix_col(j),'beta'))
-              end if
+              !end if
             end if
           end do
         end do
       end subroutine mqc_nef_matrix_initialize
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Test_Map_Symmetry
+!
+!>    \brief <b> MQC_NEF_Matrix_Test_Map_Symmetry is a function that check if 
+!>      the NEF_Matrix row and column maps are the same</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>       
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>
+!>    \param[in] NEFMat
+!>    \verbatim
+!>        NEFMat is Class(MQC_NEF_Matrix)
+!>        The MQC NEF Matrix to be queried.
+!>    \endverbatim
+!>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!
+      function mqc_NEF_Matrix_Test_Map_Symmetry(NEFMat) result(same)
+!
+        implicit none
+        class(mqc_nef_matrix),intent(in)::NEFMat
+        logical::same
+        integer::i
+!
+        same = (NEFMat%NumSpace_col.eq.NEFMat%NumSpace_row)
+        if(same) then
+          do i = 1, NEFMat%NumSpace_col 
+            if(NEFMat%Map_Matrix_Col(i).ne.NEFMat%Map_Matrix_Row(i)) then
+              same = .false.
+              exit
+            end if
+          end do
+        end if
+!
+      end function mqc_NEF_Matrix_Test_Map_Symmetry    
+!
+!     PROCEDURE MQC_NEF_Matrix_Get_Symmetry
+!
+!>    \brief <b> MQC_NEF_Matrix_Get_Symmetry is a function that retrun a 
+!>     NEF_Matrix symmetry</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>       
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>
+!>    \param[in] NEFMat
+!>    \verbatim
+!>        NEFMat is Class(MQC_NEF_Matrix)
+!>        The MQC NEF Matrix to be queried.
+!>    \endverbatim
+!>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_NEF_Matrix_Get_Symmetry(NEFMat) result(symm)
+!
+        implicit none
+        class(mqc_nef_matrix),intent(in)::NEFMat
+        Character(Len=16)::symm
+!
+        symm = NEFMat%Symmetry
+!
+      end function mqc_NEF_Matrix_Get_Symmetry
+!
+!
+!     PROCEDURE MQC_Integral_to_NEF_Matrix_Symmetry
+!
+!>    \brief <b> MQC_Integral_to_NEF_Matrix_Symmetry is a function that convert a 
+!>    from a MQC SCF Integral symmetry to NEF_Matrix</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>       
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>
+!>    \param[in] integral
+!>    \verbatim
+!>        integral is a type(mqc_scf_integral)
+!>        A MQC SCF Integral object 
+!>    \endverbatim
+!>
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_integral_to_NEF_Matrix_Symmetry(integral) result(symm)
+!
+        implicit none
+        type(mqc_scf_integral),intent(in)::integral
+        Character(Len=16)::symm
+!
+        select case(integral%getSymm())
+        case ('fullsymmetric')
+          symm = 'fullsymmetric'
+        case ('unknown')
+          symm = 'unknown'
+!       A diagonal integral is mapped onto the NEF symmetry it implies; NEF
+!       matrices have no 'diagonal' label (blockIndex, iat, Symm2Full and iput
+!       do not handle one).
+        case ('realdiag')
+          symm = 'hermitian'
+        case ('imagdiag')
+          symm = 'antihermitian'
+        case ('complexdiag')
+          symm = 'symmetric'
+        case ('hermitian')
+          symm = 'hermitian'
+        case ('antihermitian')
+          symm = 'antihermitian'
+        case ('symmetric')
+          symm = 'symmetric'
+        case ('antisymmetric')
+          symm = 'antisymmetric'
+        case ('asymmetric')
+          symm = 'asymmetric'
+        case default
+          call mqc_error_a('Invalid label sent to mqc_integral_to_NEF_Matrix_Symmetry',6, &
+            'integral%getSymm()',integral%getSymm())
+        end select
+!
+      end function mqc_integral_to_NEF_Matrix_Symmetry
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Symm2Full
+!
+!>    \brief <b> MQC_NEF_Matrix_Symm2Full is a subroutine that converts a symmetry-packed 
+!>    MQC NEF Matrix to unpacked</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>       
+!>    MQC_NEF_Matrix_Symm2Full is a subroutine that converts a symmetry-packed MQC NEF matrix 
+!>    to unpacked.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] NEFMat
+!>    \verbatim
+!>        NEFMat is Type(MQC_NEF_Matrix)
+!>        The MQC NEF Matrix to unpack.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_NEF_Matrix_Symm2Full(NEFMat)
+!
+        Implicit None
+        class(mqc_nef_matrix),intent(inOut)::NEFMat
+        integer::row,col,indx1,indx2
+        Character(Len=16)::oldSymm
+!
+        select case(NEFMat%getSymm())
+        case('unknown','asymmetric') 
+          return
+        case('symmetric','antisymmetric','hermitian','antihermitian','fullsymmetric') 
+          oldSymm=NEFMat%getSymm()
+          NEFMat%Symmetry='unknown'
+          !if(oldSymm.eq.'fullsymmetric') return
+          do row = 1, NEFMat%NumSpace_row
+            do col = 1, row-1
+              indx1 = NEFMat%blockIndex([1,row],[2,col])
+              indx2 = NEFMat%blockIndex([2,row],[1,col])
+              NEFMat%Zero_Flag(indx2) = NEFMat%Zero_Flag(indx1)
+              if(NEFMat%Zero_Flag(indx1).or.oldSymm.eq.'fullsymmetric') then
+                call NEFMat%Main_matrix(indx2)%init(&
+                       NEFMat%Size_vector_alpha_col(col),&
+                       NEFMat%Size_vector_beta_col(col),&
+                       nAlpha2=NEFMat%Size_vector_alpha_row(row),&
+                       nBeta2=NEFMat%Size_vector_beta_row(row))
+              else
+                select case(oldSymm)
+                case('symmetric')
+                  NEFMat%Main_Matrix(indx2) = transpose(NEFMat%Main_Matrix(indx1))
+                case('antisymmetric')
+                  NEFMat%Main_Matrix(indx2) = (-1)*transpose(NEFMat%Main_Matrix(indx1))
+                case('hermitian')
+                  NEFMat%Main_Matrix(indx2) = dagger(NEFMat%Main_Matrix(indx1))
+                case('antihermitian')
+                  NEFMat%Main_Matrix(indx2) = (-1)*dagger(NEFMat%Main_Matrix(indx1))
+                case default
+                  call mqc_error_a('Invalid symm in mqc_nef_matrix_Symm2Full,'//&
+                           'this error should never be reacheble!',6,&
+                            'oldSymm',oldSymm)
+                end select
+              end if
+            end do
+          end do
+        case default
+          call mqc_error_A('Symmetry unrecognized in mqc_nef_matrix_Symm2Full',6,&
+                    'NEFMat%getSymm()',NEFMat%getSymm())
+        end select
+!
+      end Subroutine MQC_NEF_Matrix_Symm2Full
+!
 !
 !
 !     PROCEDURE MQC_NEF_Matrix_Import_Integral
@@ -963,12 +1246,35 @@
       subroutine mqc_nef_matrix_import_integral(NEFMat,integral)
 !
         implicit none
-      integer(kind=int64) :: nef_bidx
+        integer(kind=int64) :: nef_bidx
         class(mqc_nef_matrix),intent(inOut)::NEFMat
         type(mqc_scf_integral)::integral
         type(mqc_scf_integral)::tmp_integral
         type(mqc_vector)::row_alpha,row_beta,col_alpha,col_beta
         integer::row,col,rowSize,colSize
+        Character(Len=16)::mySymm
+        logical::sameMap
+!
+        mySymm = mqc_integral_to_NEF_Matrix_Symmetry(integral)
+        sameMap = NEFMat%isMapSymm()
+        select case(mySymm)
+        case('symmetric','antisymmetric','hermitian','antihermitian','fullsymmetric')
+          if(.not.sameMap) mySymm = 'asymmetric'
+        case('asymmetric','unknown')
+          mySymm = 'asymmetric'
+        case default
+          call mqc_error_A('Symmetry unrecognized in mqc_nef_matrix_import_integral',6,&
+                            'mySymm',mySymm)
+        end select
+        if(mySymm.eq.'asymmetric') then
+          call NEFMat%symm2Full()
+        else
+          NEFMat%Symmetry = mySymm
+        end if
+        if (.not.sameMap) then 
+           mySymm='asymmetric'
+           call NEFMat%symm2Full()
+        endif 
 !
         do row = 1, NEFMat%NumSpace_row
           row_alpha = NEFMat%Map_Matrix_Row(row)%getBlock('alpha')
@@ -978,21 +1284,8 @@
             col_alpha = NEFMat%Map_Matrix_Col(col)%getBlock('alpha')
             col_beta = NEFMat%Map_Matrix_Col(col)%getBlock('beta')
             colSize = size(col_alpha)+size(col_beta)
+            if(row.lt.col.and.mySymm.ne.'asymmetric') cycle 
             nef_bidx = NEFMat%blockIndex([1,row],[2,col])
-!           MQC_Integral_Output_Orbitals silently drops the beta field
-!           entirely from its result whenever the requested beta
-!           selection is empty (rather than keeping a valid, genuinely
-!           zero-sized beta block) -- so slicing row-then-col loses the
-!           beta field for the SECOND slice whenever the FIRST slice's
-!           side has zero beta but the SECOND needs real beta content,
-!           and a later .vat() call on that now-absent field crashes
-!           ("Vector length badly defined", Mat%NRow=0). Slicing
-!           whichever side has the non-empty beta FIRST avoids this:
-!           the second slice's own beta request is then either also
-!           empty (a zero-trip loop in Output_Orbitals, never calling
-!           .vat() at all) or itself non-empty against a still-valid
-!           field -- so this ordering never crashes, for any
-!           combination of zero/non-zero row and col beta sizes.
             if(size(row_beta).eq.0.and.size(col_beta).gt.0) then
               tmp_integral = &
                  integral%orbitals('useStrings',&
@@ -1067,30 +1360,248 @@
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      subroutine mqc_nef_matrix_integral_put(NEFMat,integral,row,col)
+      subroutine mqc_nef_matrix_integral_put(NEFMat,integral,row,col,symm)
 !
       implicit none
       class(mqc_nef_matrix),intent(inOut)::NEFMat
       type(mqc_scf_integral),intent(in)::integral
       integer,intent(in)::row,col
+      character(len=16),intent(in),optional::symm
+      character(len=64)::myblock,mirrorBlock
+      character(len=16)::mySymm,oldSymmetry
       integer(kind=int64)::nef_bidx
+      logical::keepSymm,skipPut
 !
-      nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+      mySymm = 'asymmetric'
+      keepSymm = .false.
+      skipPut = .false.
+      if(present(symm)) then
+        call string_change_case(symm,'l',mySymm)
+        select case (mySymm)
+        case('no','nosym','asym','asymmetric')
+          mySymm = 'asymmetric'
+        case('herm','hermitian')
+          mySymm = 'hermitian'
+        case('antiherm','antihermitian')
+          mySymm = 'antihermitian'
+        case('sym','symmetric')
+          mySymm = 'symmetric'
+        case('antisym','antisymmetric')
+          mySymm = 'antisymmetric'
+        case('keep')
+          mySymm = NEFMat%getSymm()
+          keepSymm = .true.
+        case default
+          call mqc_error_a('Invalid symm option sent to mqc_nef_matrix_integral_put',6,'mySymm',mySymm)
+        end select
+      endIf
 !
-      if(integral%blockSize('alpha',1).ne.NEFMat%Size_vector_alpha_row(row).or.&
-         integral%blockSize('beta',1).ne.NEFMat%Size_vector_beta_row(row).or.&
-         integral%blockSize('alpha',2).ne.NEFMat%Size_vector_alpha_col(col).or.&
-         integral%blockSize('beta',2).ne.NEFMat%Size_vector_beta_col(col)) &
-        call mqc_error_i('mqc_nef_matrix_integral_put: integral dimensions do not '//&
-          'match the target block dimensions at (row,col)',6,&
-          'row',int(row,kind=int64),'col',int(col,kind=int64),&
-          'integral_alphaRow',integral%blockSize('alpha',1),&
-          'block_alphaRow',NEFMat%Size_vector_alpha_row(row),&
-          'integral_betaRow',integral%blockSize('beta',1),&
-          'block_betaRow',NEFMat%Size_vector_beta_row(row))
+      if(row.eq.col) then
+        nef_bidx = NEFMat%blockIndex([1,row],[2,col])
 !
-      NEFMat%Main_Matrix(nef_bidx) = integral
-      NEFMat%Zero_Flag(nef_bidx) = .false.
+        if(integral%blockSize('alpha',1).ne.NEFMat%Size_vector_alpha_row(row).or.&
+           integral%blockSize('beta',1).ne.NEFMat%Size_vector_beta_row(row).or.&
+           integral%blockSize('alpha',2).ne.NEFMat%Size_vector_alpha_col(col).or.&
+           integral%blockSize('beta',2).ne.NEFMat%Size_vector_beta_col(col)) &
+          call mqc_error_i('mqc_nef_matrix_integral_put: integral dimensions do not '//&
+            'match the target block dimensions at (row,col)',6,&
+            'row',row,'col',col,&
+            'integral_alphaRow',integral%blockSize('alpha',1),&
+            'block_alphaRow',NEFMat%Size_vector_alpha_row(row),&
+            'integral_betaRow',integral%blockSize('beta',1),&
+            'block_betaRow',NEFMat%Size_vector_beta_row(row))
+!      
+        select case (mySymm)
+        case('hermitian')
+          if(.not.keepSymm.and..not.integral%testSymm('hermitian')) &
+             call mqc_error_a('Invalid integral symm sent to mqc_nef_matrix_integral_put',&
+                 6,'integral%getSymm',integral%getSymm(),'mySymm',mySymm)
+        case('antihermitian')
+          if(.not.keepSymm.and..not.integral%testSymm('antihermitian')) &
+             call mqc_error_a('Invalid integral symm sent to mqc_nef_matrix_integral_put',&
+                 6,'integral%getSymm',integral%getSymm(),'mySymm',mySymm)
+        case('antisymmetric')
+          if(.not.keepSymm.and..not.integral%testSymm('antisymmetric')) &
+             call mqc_error_a('Invalid integral symm sent to mqc_nef_matrix_integral_put',&
+                 6,'integral%getSymm',integral%getSymm(),'mySymm',mySymm)
+        case('symmetric')
+          if(.not.keepSymm.and..not.integral%testSymm('symmetric')) &
+             call mqc_error_a('Invalid integral symm sent to mqc_nef_matrix_integral_put',&
+                 6,'integral%getSymm',integral%getSymm(),'mySymm',mySymm)
+        case('unknown','asymmetric')
+          !! Nothing to do
+        case('fullsymmetric')
+!         A zero NEF_Matrix keeping its symmetry: a zero block changes nothing,
+!         otherwise the matrix takes the symmetry implied by this block (relabelled
+!         below, with Symm2Full for 'asymmetric'/'unknown').
+          if (integral%getSymm().eq.'fullsymmetric') then
+            skipPut = .true.
+          else
+            mySymm = mqc_integral_to_NEF_Matrix_Symmetry(integral)
+            if(mySymm.eq.'unknown') mySymm = 'asymmetric'
+          end if
+        case default
+          call mqc_error_a('Invalid symm in mqc_nef_matrix_integral_put,'//&
+                           'this error should never be reacheble!',6,'mySymm',mySymm)
+        end select
+ !         
+        if(.not.skipPut) then
+          if(NEFMat%getSymm().eq.'fullsymmetric') then 
+            if(mySymm.eq.'asymmetric'.or.mySymm.eq.'unknown') then
+              call NEFMat%Symm2Full()
+            else
+              NEFMat%Symmetry = mySymm
+            end if
+          else if(NEFMat%getSymm().ne.mySymm.and.&
+                  NEFMat%getSymm().ne.'asymmetric'.and.NEFMat%getSymm().ne.'unknown') then
+!           The block does not carry the matrix symmetry: store in full layout.
+            call NEFMat%Symm2Full()
+          end if
+          NEFMat%Main_Matrix(nef_bidx) = integral
+          NEFMat%Zero_Flag(nef_bidx) = .false.
+        end if
+      else 
+        if(integral%blockSize('alpha',1).ne.NEFMat%Size_vector_alpha_row(row).or.&
+           integral%blockSize('beta',1).ne.NEFMat%Size_vector_beta_row(row).or.&
+           integral%blockSize('alpha',2).ne.NEFMat%Size_vector_alpha_col(col).or.&
+           integral%blockSize('beta',2).ne.NEFMat%Size_vector_beta_col(col)) &
+          call mqc_error_i('mqc_nef_matrix_integral_put: integral dimensions do not '//&
+            'match the target block dimensions at (row,col)',6,&
+            'row',row,'col',col,&
+            'integral_alphaRow',integral%blockSize('alpha',1),&
+            'block_alphaRow',NEFMat%Size_vector_alpha_row(row),&
+            'integral_betaRow',integral%blockSize('beta',1),&
+            'block_betaRow',NEFMat%Size_vector_beta_row(row))
+        select case (mySymm)
+        case('hermitian')
+          if (integral%getSymm().eq.'fullsymmetric'.and.&
+              NEFMat%getSymm().ne.'asymmetric'.and.NEFMat%getSymm().ne.'unknown') then
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            NEFMat%Zero_Flag(nef_bidx) = .true.
+            NEFMat%Main_Matrix(nef_bidx) = 0*NEFMat%Main_Matrix(nef_bidx) 
+          else if(NEFMat%getSymm().eq.'fullsymmetric'.or.NEFMat%getSymm().eq.'hermitian') then
+            NEFMat%Symmetry = 'hermitian' 
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            if(row.ge.col) then 
+              NEFMat%Main_Matrix(nef_bidx) = integral
+            else
+              NEFMat%Main_Matrix(nef_bidx) = dagger(integral)
+            end if
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+          else
+!           The mirror block (col,row) is the transpose of the (row,col) block, whose
+!           dimensions were checked above, so no second check is needed here.
+            call NEFMat%Symm2Full()
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            NEFMat%Main_Matrix(nef_bidx) = integral
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+            nef_bidx = NEFMat%blockIndex([2,row],[1,col])
+            NEFMat%Main_Matrix(nef_bidx) = dagger(integral)
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+          end if
+        case('antihermitian')
+          if (integral%getSymm().eq.'fullsymmetric'.and.&
+              NEFMat%getSymm().ne.'asymmetric'.and.NEFMat%getSymm().ne.'unknown') then
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            NEFMat%Zero_Flag(nef_bidx) = .true.
+            NEFMat%Main_Matrix(nef_bidx) = 0*NEFMat%Main_Matrix(nef_bidx) 
+          else if(NEFMat%getSymm().eq.'fullsymmetric'.or.NEFMat%getSymm().eq.'antihermitian') then
+            NEFMat%Symmetry = 'antihermitian' 
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            if(row.ge.col) then 
+              NEFMat%Main_Matrix(nef_bidx) = integral
+            else
+              NEFMat%Main_Matrix(nef_bidx) = (-1)*dagger(integral)
+            end if
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+          else
+!           The mirror block (col,row) is the transpose of the (row,col) block, whose
+!           dimensions were checked above, so no second check is needed here.
+            call NEFMat%Symm2Full()
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            NEFMat%Main_Matrix(nef_bidx) = integral
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+            nef_bidx = NEFMat%blockIndex([2,row],[1,col])
+            NEFMat%Main_Matrix(nef_bidx) = (-1)*dagger(integral)
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+          end if
+        case('antisymmetric')
+          if (integral%getSymm().eq.'fullsymmetric'.and.&
+              NEFMat%getSymm().ne.'asymmetric'.and.NEFMat%getSymm().ne.'unknown') then
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            NEFMat%Zero_Flag(nef_bidx) = .true.
+            NEFMat%Main_Matrix(nef_bidx) = 0*NEFMat%Main_Matrix(nef_bidx) 
+          else if(NEFMat%getSymm().eq.'fullsymmetric'.or.NEFMat%getSymm().eq.'antisymmetric') then
+            NEFMat%Symmetry = 'antisymmetric' 
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            if(row.ge.col) then 
+              NEFMat%Main_Matrix(nef_bidx) = integral
+            else
+              NEFMat%Main_Matrix(nef_bidx) = (-1)*transpose(integral)
+            end if
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+          else
+!           The mirror block (col,row) is the transpose of the (row,col) block, whose
+!           dimensions were checked above, so no second check is needed here.
+            call NEFMat%Symm2Full()
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            NEFMat%Main_Matrix(nef_bidx) = integral
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+            nef_bidx = NEFMat%blockIndex([2,row],[1,col])
+            NEFMat%Main_Matrix(nef_bidx) = (-1)*transpose(integral)
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+          end if
+        case('symmetric')
+          if (integral%getSymm().eq.'fullsymmetric'.and.&
+              NEFMat%getSymm().ne.'asymmetric'.and.NEFMat%getSymm().ne.'unknown') then
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            NEFMat%Zero_Flag(nef_bidx) = .true.
+            NEFMat%Main_Matrix(nef_bidx) = 0*NEFMat%Main_Matrix(nef_bidx) 
+          else if(NEFMat%getSymm().eq.'fullsymmetric'.or.NEFMat%getSymm().eq.'symmetric') then
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            NEFMat%Symmetry = 'symmetric' 
+            if(row.ge.col) then 
+              NEFMat%Main_Matrix(nef_bidx) = integral
+            else
+              NEFMat%Main_Matrix(nef_bidx) = transpose(integral)
+            end if
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+          else
+!           The mirror block (col,row) is the transpose of the (row,col) block, whose
+!           dimensions were checked above, so no second check is needed here.
+            call NEFMat%Symm2Full()
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            NEFMat%Main_Matrix(nef_bidx) = integral
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+            nef_bidx = NEFMat%blockIndex([2,row],[1,col])
+            NEFMat%Main_Matrix(nef_bidx) = transpose(integral)
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+          end if
+        case('unknown','asymmetric')
+          if(NEFMat%getSymm().ne.'asymmetric'.or.NEFMat%getSymm().ne.'unknown') call NEFMat%Symm2Full()
+          nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+          if (integral%getSymm().eq.'fullsymmetric') then
+            NEFMat%Zero_Flag(nef_bidx) = .true.
+            NEFMat%Main_Matrix(nef_bidx) = 0*NEFMat%Main_Matrix(nef_bidx) 
+          else
+            NEFMat%Main_Matrix(nef_bidx) = integral
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+          end if
+        case('fullsymmetric')
+!         'keep' on a zero NEF_Matrix: a zero block changes nothing; an off-diagonal
+!         block on its own implies no symmetry, so the matrix goes to full layout.
+          if (integral%getSymm().ne.'fullsymmetric') then
+            call NEFMat%Symm2Full()
+            nef_bidx = NEFMat%blockIndex([1,row],[2,col])
+            NEFMat%Main_Matrix(nef_bidx) = integral
+            NEFMat%Zero_Flag(nef_bidx) = .false.
+          end if
+        case default
+          call mqc_error_a('Invalid symm in mqc_nef_matrix_integral_put, '//&
+                    'this error should never be reacheble!',6,'mySymm',mySymm)
+        end select
+      end if
 !
       end subroutine mqc_nef_matrix_integral_put
 !
@@ -1151,16 +1662,105 @@
       if(.not.allocated(NEFMat%Zero_Flag)) call mqc_error(&
            'mqc_nef_matrix_integral_at: NEF_Matrix is open (never initialized)',6)
       if(NEFMat%Zero_Flag(nef_bidx)) then
-        call integralOut%init(&
-               Size(NEFMat%Map_Matrix_Row(row),'alpha'),&
-               Size(NEFMat%Map_Matrix_Row(row),'beta'),&
-               nAlpha2=Size(NEFMat%Map_Matrix_Col(col),'alpha'),&
-               nBeta2=Size(NEFMat%Map_Matrix_Col(col),'beta'))
+        select case(NEFMat%getSymm())
+        case('asymmetric','unknown')
+          call integralOut%init(&
+                 Size(NEFMat%Map_Matrix_Row(row),'alpha'),&
+                 Size(NEFMat%Map_Matrix_Row(row),'beta'),&
+                 nAlpha2=Size(NEFMat%Map_Matrix_Col(col),'alpha'),&
+                 nBeta2=Size(NEFMat%Map_Matrix_Col(col),'beta'))
+        case('hermitian','antihermitian','symmetric','antisymmetric','fullsymmetric')
+!         The returned block is always the (row,col) block, also above the block
+!         diagonal (row<col): rows from space row, columns from space col.
+          call integralOut%init(&
+                 Size(NEFMat%Map_Matrix_Row(row),'alpha'),&
+                 Size(NEFMat%Map_Matrix_Row(row),'beta'),&
+                 nAlpha2=Size(NEFMat%Map_Matrix_Col(col),'alpha'),&
+                 nBeta2=Size(NEFMat%Map_Matrix_Col(col),'beta'))
+        case default
+          call mqc_error_A('Symmetry unrecognized in mqc_nef_matrix_integral_at',6,&
+                    'NEFMat%getSymm()',NEFMat%getSymm())
+        end select
       else
-        integralOut = NEFMat%Main_Matrix(nef_bidx)
+        if (row.ge.col) then
+          integralOut = NEFMat%Main_Matrix(nef_bidx)
+        else
+          select case(NEFMat%getSymm())
+          case('asymmetric','unknown')
+            integralOut = NEFMat%Main_Matrix(nef_bidx)
+          case('hermitian')
+            integralOut = dagger(NEFMat%Main_Matrix(nef_bidx))
+          case('antihermitian')
+            integralOut = (-1)*dagger(NEFMat%Main_Matrix(nef_bidx))
+          case('symmetric')
+            integralOut = transpose(NEFMat%Main_Matrix(nef_bidx))
+          case('antisymmetric')
+            integralOut = (-1)*transpose(NEFMat%Main_Matrix(nef_bidx))
+          case default
+            call mqc_error_A('Symmetry unrecognized in mqc_nef_matrix_integral_at',6,&
+                      'NEFMat%getSymm()',NEFMat%getSymm())
+          end select
+        end if
       end if
 !
       end function mqc_nef_matrix_integral_at
+!
+!
+!     PROCEDURE mqc_nef_matrix_is_block_zero
+!
+!>    \brief <b> mqc_nef_matrix_is_block_zero returns the Zero_Flag
+!>    entry of an initialized NEF Matrix object</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    mqc_nef_matrix_is_block_zero returns the Zero_Flag
+!>    entry of an initialized NEF Matrix object
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] NEFMat
+!>    \verbatim
+!>        NEFMat is Class(MQC_NEF_Matrix)
+!>        The MQC NEF Matrix to read from.
+!>    \endverbatim
+!>
+!>    \param[in] row
+!>    \verbatim
+!>        row is integer
+!>        The row space index of the target block.
+!>    \endverbatim
+!>
+!>    \param[in] col
+!>    \verbatim
+!>        col is integer
+!>        The column space index of the target block.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_matrix_is_block_zero(NEFMat,row,col) result(iszero)
+
+!
+      implicit none
+      class(mqc_nef_matrix),intent(in)::NEFMat
+      integer,intent(in)::row,col
+      logical::isZero
+      integer(kind=int64)::nef_bidx
+!
+      isZero = NEFMat%Zero_Flag(NEFMat%blockIndex([1,row],[2,col]))
+!
+      end function mqc_nef_matrix_is_block_zero
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Export_Integral
 !
 !
 !     PROCEDURE MQC_NEF_Matrix_Export_Integral
@@ -1193,13 +1793,14 @@
 !>    \date 2026
 !
       function mqc_nef_matrix_export_integral(NEFMat) result(integral)
+      !!!! TODO: make the inetgral with symmetry based on the NEF Symm!!
 !
         implicit none
         class(mqc_nef_matrix),intent(in)::NEFMat
         type(mqc_scf_integral)::integral
         type(mqc_scf_integral)::tmp_integral
         type(mqc_vector)::tmp_alpha,tmp_beta
-        integer::id,ia,ja,ib,jb,row,col,maxColAlpha,maxColBeta,maxRowAlpha,maxRowBeta
+        integer::ia,ja,ib,jb,row,col,maxColAlpha,maxColBeta,maxRowAlpha,maxRowBeta
 !
         maxColAlpha = 0
         maxColBeta  = 0
@@ -1217,27 +1818,28 @@
         call integral%init(maxRowAlpha,maxRowBeta,nAlpha2=maxColAlpha,nBeta2=maxColBeta)
         do row = 1, NEFMat%NumSpace_row
           do col = 1, NEFMat%NumSpace_col
-            id = NEFMat%blockIndex([1,row],[2,col])
+            if(NEFMat%isBlockZero(row,col)) cycle
+            tmp_integral = NEFMat%iat(row,col)
             do ia = 1, NEFMat%Size_vector_alpha_row(row)
               do ja = 1, NEFMat%Size_vector_alpha_col(col)
-                call integral%put(NEFMat%Main_matrix(id)%at(ia,ja,'alpha'),&
-                           NEFMat%Map_Matrix_Row(row)%at(ia,'alpha'),&
-                           NEFMat%Map_Matrix_Col(col)%at(ja,'alpha'),'alpha')
+                   call integral%put(tmp_integral%at(ia,ja,'alpha'),&
+                              NEFMat%Map_Matrix_Row(row)%at(ia,'alpha'),&
+                              NEFMat%Map_Matrix_Col(col)%at(ja,'alpha'),'alpha')
               end do
               do ja = 1, NEFMat%Size_vector_beta_col(col)
-                call integral%put(NEFMat%Main_matrix(id)%at(ia,ja,'betaalpha'),&
+                call integral%put(tmp_integral%at(ia,ja,'betaalpha'),&
                            NEFMat%Map_Matrix_Row(row)%at(ia,'alpha'),&
                            NEFMat%Map_Matrix_Col(col)%at(ja,'beta'),'betaalpha')
               end do
             end do
             do ia = 1, NEFMat%Size_vector_beta_row(row)
               do ja = 1, NEFMat%Size_vector_alpha_col(col)
-                call integral%put(NEFMat%Main_matrix(id)%at(ia,ja,'alphabeta'),&
+                call integral%put(tmp_integral%at(ia,ja,'alphabeta'),&
                            NEFMat%Map_Matrix_Row(row)%at(ia,'beta'),&
                            NEFMat%Map_Matrix_Col(col)%at(ja,'alpha'),'alphabeta')
               end do
               do ja = 1, NEFMat%Size_vector_beta_col(col)
-                call integral%put(NEFMat%Main_matrix(id)%at(ia,ja,'beta'),&
+                call integral%put(tmp_integral%at(ia,ja,'beta'),&
                            NEFMat%Map_Matrix_Row(row)%at(ia,'beta'),&
                            NEFMat%Map_Matrix_Col(col)%at(ja,'beta'),'beta')
               end do
@@ -1347,7 +1949,10 @@
       implicit none
       type(mqc_nef_matrix),intent(in)::NEFMatrixA,NEFMatrixB
       type(mqc_nef_matrix)::NEFMatrixOut
-      integer(kind=int64)::rowA,colB,colA,final_index,nef_bidx,nef_bidx2
+      integer(kind=int64)::rowA,colB,colA
+      type(mqc_scf_integral)::blockOut
+      character(len=16)::outSymm
+      logical::started
 !
       if(NEFMatrixA%NumSpace_col.ne.NEFMatrixB%NumSpace_row) &
         call mqc_error_i('NEF number of subspaces are &
@@ -1371,25 +1976,21 @@
 
       call NEFMatrixOut%init(NEFMatrixA%Map_Matrix_Row,&
           initial_map_matrix_col=NEFMatrixB%Map_Matrix_Col)
+      call NEFMatrixOut%Symm2Full()
+      outSymm = 'asymmetric'
       do rowA = 1, NEFMatrixA%NumSpace_row
         do colB = 1, NEFMatrixB%NumSpace_col
-          final_index = NEFMatrixOut%blockIndex([1,rowA],[2,colB])
+          started = .false.
           do colA = 1, NEFMatrixA%NumSpace_col
-            nef_bidx = NEFMatrixA%blockIndex([1,rowA],[2,colA])
-            nef_bidx2 = NEFMatrixB%blockIndex([1,colA],[2,colB])
-            if (NEFMatrixA%Zero_Flag(nef_bidx).or.NEFMatrixB%Zero_Flag(nef_bidx2)) cycle
-            if (NEFMatrixOut%Zero_Flag(final_index)) then
-              NEFMatrixOut%Main_Matrix(final_index) =  &
-                matmul(NEFMatrixA%Main_Matrix(nef_bidx),&
-                       NEFMatrixB%Main_Matrix(nef_bidx2))
-              NEFMatrixOut%Zero_Flag(final_index) = .false.
+            if (NEFMatrixA%isBlockZero(rowA,colA).or.NEFMatrixB%isBlockZero(colA,colB)) cycle
+            if (.not.started) then
+              blockOut = matmul(NEFMatrixA%iat(rowA,colA),NEFMatrixB%iat(colA,colB))
+              started = .true.
             else
-              NEFMatrixOut%Main_Matrix(final_index) = &
-                 NEFMatrixOut%Main_Matrix(final_index) + &
-                matmul(NEFMatrixA%Main_Matrix(nef_bidx),&
-                       NEFMatrixB%Main_Matrix(nef_bidx2))
+              blockOut = blockOut + matmul(NEFMatrixA%iat(rowA,colA),NEFMatrixB%iat(colA,colB))
             end if
           end do
+          if (started) call NEFMatrixOut%iput(blockOut,rowA,colB,outSymm)
         end do
       end do
 !
@@ -1435,7 +2036,8 @@
       type(mqc_nef_matrix),intent(in)::NEFMatrixA
       type(mqc_nef_vector),intent(in)::NEFVectorB
       type(mqc_nef_vector)::NEFVectorOut
-      integer(kind=int64)::rowA,colA,nef_bidx
+      integer(kind=int64)::rowA,colA
+      type(mqc_scf_integral)::blockA
 !
       if(NEFMatrixA%NumSpace_col.ne.NEFVectorB%NumSpace) &
         call mqc_error_i('NEF number of subspaces are &
@@ -1460,15 +2062,15 @@
       call NEFVectorOut%init(NEFMatrixA%Map_Matrix_Row)
       do rowA = 1, NEFMatrixA%NumSpace_row
         do colA = 1, NEFMatrixA%NumSpace_col
-          nef_bidx = NEFMatrixA%blockIndex([1,rowA],[2,colA])
-          if (NEFMatrixA%Zero_Flag(nef_bidx).or.NEFVectorB%Zero_Flag(colA)) cycle
+          if (NEFMatrixA%isBlockZero(rowA,colA).or.NEFVectorB%Zero_Flag(colA)) cycle
+          blockA = NEFMatrixA%iat(rowA,colA)
           if (NEFVectorOut%Zero_Flag(rowA)) then
             NEFVectorOut%Main_Vector(rowA) = &
-              NEFMatrixA%Main_Matrix(nef_bidx).dot.NEFVectorB%Main_Vector(colA)
+              (blockA.dot.NEFVectorB%Main_Vector(colA))
             NEFVectorOut%Zero_Flag(rowA) = .false.
           else
             NEFVectorOut%Main_Vector(rowA) = NEFVectorOut%Main_Vector(rowA) + &
-              (NEFMatrixA%Main_Matrix(nef_bidx).dot.NEFVectorB%Main_Vector(colA))
+              (blockA.dot.NEFVectorB%Main_Vector(colA))
           end if
         end do
       end do
@@ -1517,6 +2119,7 @@
       type(mqc_nef_matrix)::NEFMatOut
       type(mqc_scf_eigenvalues),dimension(:),allocatable::IntegralMap
       integer(kind=int64)::row,i
+      character(len=16)::outSymm
 !
       if(NEFMatA%NumSpace_col.ne.1) &
         call mqc_error_i('NEF number of subspaces are &
@@ -1547,11 +2150,11 @@
 
       call NEFMatOut%init(NEFMatA%Map_Matrix_Row,&
           initial_map_matrix_col=IntegralMap)
+      call NEFMatOut%Symm2Full()
+      outSymm = 'asymmetric'
       do row = 1, NEFMatA%NumSpace_row
-        if (.not.NEFMatA%Zero_Flag(row)) then
-          NEFMatOut%Main_Matrix(row) =  matmul(NEFMatA%Main_Matrix(row),IntegralB)
-          NEFMatOut%Zero_Flag(row) = .false.
-        end if
+        if (.not.NEFMatA%isBlockZero(row,1)) &
+          call NEFMatOut%iput(matmul(NEFMatA%iat(row,1),IntegralB),row,1,outSymm)
       end do
 !
       end function mqc_nefmatrix_integral_multiply
@@ -1598,6 +2201,7 @@
       type(mqc_nef_matrix)::NEFMatOut
       type(mqc_scf_eigenvalues),dimension(:),allocatable::IntegralMap
       integer(kind=int64)::col,i
+      character(len=16)::outSymm
 !
       if(NEFMatB%NumSpace_row.ne.1) &
         call mqc_error_i('NEF number of subspaces are &
@@ -1627,11 +2231,11 @@
 
       call NEFMatOut%init(IntegralMap,&
           initial_map_matrix_col=NEFMatB%Map_Matrix_Col)
+      call NEFMatOut%Symm2Full()
+      outSymm = 'asymmetric'
       do col = 1, NEFMatB%NumSpace_col
-        if (.not.NEFMatB%Zero_Flag(col)) then
-          NEFMatOut%Main_Matrix(col) = matmul(IntegralA,NEFMatB%Main_Matrix(col))
-          NEFMatOut%Zero_Flag(col) = .false.
-        end if
+        if (.not.NEFMatB%isBlockZero(1,col)) &
+          call NEFMatOut%iput(matmul(IntegralA,NEFMatB%iat(1,col)),1,col,outSymm)
       end do
 !
       end function mqc_integral_nefmatrix_multiply
@@ -1747,68 +2351,203 @@
 !
       function mqc_nefmatrix_sum(NEFMatA,NEFMatB) result(NEFMatOut)
 !
-      implicit none
-      type(mqc_nef_matrix),intent(in)::NEFMatA,NEFMatB
-      type(mqc_nef_matrix)::NEFMatOut
-      integer::col,row,id
+        implicit none
+        type(mqc_nef_matrix),intent(in)::NEFMatA,NEFMatB
+        type(mqc_nef_matrix)::NEFMatOut
+        character(len=16)::newSymmetry
+        integer::col,row
+        logical::symmA,asymA,hermA,ahrmA,diagA,symmB,asymB,hermB,ahrmB,diagB
+        type(mqc_scf_eigenvalues),dimension(:),allocatable::Map1,Map2
 !
-      if(NEFMatA%NumSpace_col.ne.NEFMatB%NumSpace_col.or.&
-         NEFMatA%NumSpace_row.ne.NEFMatB%NumSpace_row) &
-        call mqc_error_i('NEF number of subspaces are &
-        &not conformable in mqc_nefmatrix_sum',6,&
-        'NEFMatA%NumSpace_col',NEFMatA%NumSpace_col,&
-        'NEFMatB%NumSpace_col',NEFMatB%NumSpace_col,&
-        'NEFMatA%NumSpace_row',NEFMatA%NumSpace_row,&
-        'NEFMatB%NumSpace_row',NEFMatB%NumSpace_row)
-
-      do col = 1, NEFMatA%NumSpace_col
-        if(NEFMatA%Size_vector_alpha_col(col)&
-           .ne.NEFMatB%Size_vector_alpha_col(col).or. &
-               NEFMatA%Size_vector_beta_col(col)  &
-           .ne.NEFMatB%Size_vector_beta_col(col)) &
-          call mqc_error_i('NEF subspace dimensions are &
-           &not conformable in mqc_nefmatrix_sum',6,&
-          'Sub-space index (col)', col,&
-          'NEFMatA%Size_vector_alpha_col(col)',NEFMatA%Size_vector_alpha_col(col),&
-          'NEFMatB%Size_vector_alpha_col(col)',NEFMatB%Size_vector_alpha_col(col),&
-          'NEFMatA%Size_vector_beta_col(col)',NEFMatA%Size_vector_beta_col(col),&
-          'NEFMatB%Size_vector_beta_col(col)',NEFMatB%Size_vector_beta_col(col))
-      end do
-      do row = 1, NEFMatA%NumSpace_row
-        if(NEFMatA%Size_vector_alpha_row(row)&
-           .ne.NEFMatB%Size_vector_alpha_row(row).or. &
-               NEFMatA%Size_vector_beta_row(row)  &
-           .ne.NEFMatB%Size_vector_beta_row(row)) &
-          call mqc_error_i('NEF subspace dimensions are &
-           &not conformable in mqc_nefmatrix_sum',6,&
-          'Sub-space index (row)', row,&
-          'NEFMatA%Size_vector_alpha_row(row)',NEFMatA%Size_vector_alpha_row(row),&
-          'NEFMatB%Size_vector_alpha_row(row)',NEFMatB%Size_vector_alpha_row(row),&
-          'NEFMatA%Size_vector_beta_row(row)',NEFMatA%Size_vector_beta_row(row),&
-          'NEFMatB%Size_vector_beta_row(row)',NEFMatB%Size_vector_beta_row(row))
-      end do
-
-      call NEFMatOut%init(NEFMatA%Map_Matrix_Row,&
-          initial_map_matrix_col=NEFMatB%Map_Matrix_Col)
-      do row = 1, NEFMatA%NumSpace_row
-        do col = 1, NEFMatB%NumSpace_col
-          id = NEFMatOut%blockIndex([1,row],[2,col])
-          if (NEFMatA%Zero_Flag(id).and.NEFMatB%Zero_Flag(id)) then
-            continue
-          else if (NEFMatA%Zero_Flag(id)) then
-            NEFMatOut%Main_Matrix(id) = NEFMatB%Main_Matrix(id)
-            NEFMatOut%Zero_Flag(id) = .false.
-          else if (NEFMatB%Zero_Flag(id)) then
-            NEFMatOut%Main_Matrix(id) = NEFMatA%Main_Matrix(id)
-            NEFMatOut%Zero_Flag(id) = .false.
-          else
-            NEFMatOut%Main_Matrix(id) = NEFMatA%Main_Matrix(id)+NEFMatB%Main_Matrix(id)
-            NEFMatOut%Zero_Flag(id) = .false.
-          end if
+        if(NEFMatA%NumSpace_col.ne.NEFMatB%NumSpace_col.or.&
+           NEFMatA%NumSpace_row.ne.NEFMatB%NumSpace_row) &
+          call mqc_error_i('NEF number of subspaces are &
+          &not conformable in mqc_nefmatrix_sum',6,&
+          'NEFMatA%NumSpace_col',NEFMatA%NumSpace_col,&
+          'NEFMatB%NumSpace_col',NEFMatB%NumSpace_col,&
+          'NEFMatA%NumSpace_row',NEFMatA%NumSpace_row,&
+          'NEFMatB%NumSpace_row',NEFMatB%NumSpace_row)
+       
+        do col = 1, NEFMatA%NumSpace_col
+          if(NEFMatA%Size_vector_alpha_col(col)&
+             .ne.NEFMatB%Size_vector_alpha_col(col).or. &
+                 NEFMatA%Size_vector_beta_col(col)  &
+             .ne.NEFMatB%Size_vector_beta_col(col)) &
+            call mqc_error_i('NEF subspace dimensions are &
+             &not conformable in mqc_nefmatrix_sum',6,&
+            'Sub-space index (col)', col,&
+            'NEFMatA%Size_vector_alpha_col(col)',NEFMatA%Size_vector_alpha_col(col),&
+            'NEFMatB%Size_vector_alpha_col(col)',NEFMatB%Size_vector_alpha_col(col),&
+            'NEFMatA%Size_vector_beta_col(col)',NEFMatA%Size_vector_beta_col(col),&
+            'NEFMatB%Size_vector_beta_col(col)',NEFMatB%Size_vector_beta_col(col))
         end do
-      end do
+        do row = 1, NEFMatA%NumSpace_row
+          if(NEFMatA%Size_vector_alpha_row(row)&
+             .ne.NEFMatB%Size_vector_alpha_row(row).or. &
+                 NEFMatA%Size_vector_beta_row(row)  &
+             .ne.NEFMatB%Size_vector_beta_row(row)) &
+            call mqc_error_i('NEF subspace dimensions are &
+             &not conformable in mqc_nefmatrix_sum',6,&
+            'Sub-space index (row)', row,&
+            'NEFMatA%Size_vector_alpha_row(row)',NEFMatA%Size_vector_alpha_row(row),&
+            'NEFMatB%Size_vector_alpha_row(row)',NEFMatB%Size_vector_alpha_row(row),&
+            'NEFMatA%Size_vector_beta_row(row)',NEFMatA%Size_vector_beta_row(row),&
+            'NEFMatB%Size_vector_beta_row(row)',NEFMatB%Size_vector_beta_row(row))
+        end do
+!      
+        call NEFMatA%symmSet(symmA,asymA,hermA,ahrmA,diagA)
+        call NEFMatB%symmSet(symmB,asymB,hermB,ahrmB,diagB)
+        newSymmetry = mqc_NEF_Matrix_pick_symmetry(symmA.and.symmB,asymA.and.asymB, &
+          hermA.and.hermB,ahrmA.and.ahrmB,diagA.and.diagB)
+!      
+        if(NEFMatA%getSymm().eq.'fullsymmetric') then
+           NEFMatOut=NEFMatB
+        elseif(NEFMatB%getSymm().eq.'fullsymmetric') then
+           NEFMatOut=NEFMatA
+        else if(newSymmetry.ne.'unknown') then
+          Map1 = NEFMatA%getMap(1) 
+          call NEFMatOut%init(Map1)
+          do row = 1, NEFMatA%NumSpace_row
+            do col = 1, row
+              if( .not.NEFMatA%isBlockZero(row,col).and..not.NEFMatB%isBlockZero(row,col)) then
+                call NEFMatOut%iput(NEFMatA%iat(row,col)+NEFMatB%iat(row,col),row,col,newSymmetry)
+              elseif(NEFMatA%isBlockZero(row,col).and..not.NEFMatB%isBlockZero(row,col)) then
+                call NEFMatOut%iput(NEFMatB%iat(row,col),row,col,newSymmetry)
+              elseif(NEFMatB%isBlockZero(row,col).and..not.NEFMatA%isBlockZero(row,col)) then
+                call NEFMatOut%iput(NEFMatA%iat(row,col),row,col,newSymmetry)
+              end if
+            end do
+          end do
+        else
+          Map1 = NEFMatA%getMap(1) 
+          Map2 = NEFMatA%getMap(2) 
+          call NEFMatOut%init(Map1,0.0,Map2)
+          newSymmetry = 'asymmetric'
+          do row = 1, NEFMatA%NumSpace_row
+            do col = 1, NEFMatA%NumSpace_col
+              if( .not.NEFMatA%isBlockZero(row,col).and..not.NEFMatB%isBlockZero(row,col)) then
+                call NEFMatOut%iput(NEFMatA%iat(row,col)+NEFMatB%iat(row,col),row,col,newSymmetry)
+              elseif(NEFMatA%isBlockZero(row,col).and..not.NEFMatB%isBlockZero(row,col)) then
+                call NEFMatOut%iput(NEFMatB%iat(row,col),row,col,newSymmetry)
+              elseif(NEFMatB%isBlockZero(row,col).and..not.NEFMatA%isBlockZero(row,col)) then
+                call NEFMatOut%iput(NEFMatA%iat(row,col),row,col,newSymmetry)
+              end if
+            end do
+          end do
+        end if
 !
       end function mqc_nefmatrix_sum
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Pick_Symmetry
+!
+!>    \brief <b> MQC_NEF_Matrix_Pick_Symmetry chooses the symmetry flag of an MQC
+!>    NEF Matrix from the symmetries it is known to have</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Returns 'fullsymmetric' when every flag holds, otherwise the first of
+!>    'hermitian', 'antihermitian', 'symmetric' and 'antisymmetric' that holds, and
+!>    'unknown' when none holds. Hermitian comes first, so that real data are
+!>    labelled Hermitian or anti-Hermitian.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_NEF_Matrix_pick_symmetry(symm,asym,herm,ahrm,diag) result(label)
+!
+      implicit none
+      logical,intent(in)::symm,asym,herm,ahrm,diag
+      character(len=16)::label
+!
+      if(diag.and.symm.and.asym.and.herm.and.ahrm) then
+        label = 'fullsymmetric'
+      elseIf(herm) then
+        label = 'hermitian'
+      elseIf(ahrm) then
+        label = 'antihermitian'
+      elseIf(symm) then
+        label = 'symmetric'
+      elseIf(asym) then
+        label = 'antisymmetric'
+      else
+        label = 'unknown'
+      endIf
+!
+      end function mqc_NEF_Matrix_pick_symmetry
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Symmetry_Set
+!
+!>    \brief <b> MQC_NEF_Matrix_Symmetry_Set returns the symmetries that the flag of an
+!>    MQC NEF Matrix implies, in the mathematical sense</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The symmetries follow from the flag and from the data type of the stored
+!>    blocks (real data are symmetric when Hermitian and antisymmetric when
+!>    anti-Hermitian):
+!>      'hermitian'      hermitian (and symmetric for real data)
+!>      'antihermitian'  antihermitian (and antisymmetric for real data)
+!>      'symmetric'      symmetric (and hermitian for real data)
+!>      'antisymmetric'  antisymmetric (and antihermitian for real data)
+!>      'fullsymmetric'  all of them (the integral is zero)
+!>      'unknown', 'asymmetric' none of them
+!>    It is used to set the flag of the result of a binary operation without
+!>    testing the elements.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_NEF_Matrix_symmetry_set(NEFMat,symm,asym,herm,ahrm,diag)
+!
+      implicit none
+      class(mqc_nef_matrix),intent(in)::NEFMat
+      logical,intent(out)::symm,asym,herm,ahrm,diag
+      logical::realData
+!
+      symm = .false.
+      asym = .false.
+      herm = .false.
+      ahrm = .false.
+      diag = .false.
+      select case (NEFMat%getSymm())
+      case('unknown','asymmetric')
+        continue
+      case('fullsymmetric')
+        symm = .true.
+        asym = .true.
+        herm = .true.
+        ahrm = .true.
+        diag = .true.
+      case('hermitian')
+        herm = .true.
+      case('antihermitian')
+        ahrm = .true.
+      case('symmetric')
+        symm = .true.
+      case('antisymmetric')
+        asym = .true.
+      case default
+        call mqc_error_a('Unknown symmetry flag in mqc_NEF_Matrix_symmetry_set',6, &
+          'NEFMat%getSymm()',NEFMat%getSymm())
+      end select
+!
+      end subroutine mqc_NEF_Matrix_symmetry_set
 !
 !
 !     PROCEDURE MQC_NEF_R4_Sum
@@ -1983,21 +2722,35 @@
       implicit none
       type(mqc_nef_matrix),intent(in)::NEFMat
       type(mqc_nef_matrix)::NEFMatOut
-      integer(kind=int64)::row,col,nef_bidx,nef_bidx2
+      integer(kind=int64)::row,col
+      character(len=16)::outSymm
 !
       call NEFMatOut%init(NEFMat%Map_Matrix_row,&
            initial_map_matrix_col=NEFMat%Map_Matrix_col)
-      do row = 1, NEFMat%NumSpace_row
-        do col = 1, NEFMat%NumSpace_col
-          nef_bidx = NEFMatOut%blockIndex([1,row],[2,col])
-          nef_bidx2 = NEFMat%blockIndex([1,row],[2,col])
-          if (.not.NEFMat%Zero_Flag(nef_bidx2)) then
-            NEFMatOut%Main_Matrix(nef_bidx) = &
-              conjg(NEFMat%Main_Matrix(nef_bidx2))
-            NEFMatOut%Zero_Flag(nef_bidx) = .false.
-          end if
+      outSymm = NEFMat%getSymm()
+      select case(outSymm)
+      case('fullsymmetric')
+        continue
+      case('hermitian','antihermitian','symmetric','antisymmetric')
+        do row = 1, NEFMat%NumSpace_row
+          do col = 1, row
+            if (.not.NEFMat%isBlockZero(row,col)) &
+              call NEFMatOut%iput(conjg(NEFMat%iat(row,col)),row,col,outSymm)
+          end do
         end do
-      end do
+      case('unknown','asymmetric')
+        call NEFMatOut%Symm2Full()
+        outSymm = 'asymmetric'
+        do row = 1, NEFMat%NumSpace_row
+          do col = 1, NEFMat%NumSpace_col
+            if (.not.NEFMat%isBlockZero(row,col)) &
+              call NEFMatOut%iput(conjg(NEFMat%iat(row,col)),row,col,outSymm)
+          end do
+        end do
+      case default
+        call mqc_error_A('Symmetry unrecognized in mqc_NEFMatrix_conjugate',6,&
+                  'NEFMat%getSymm()',NEFMat%getSymm())
+      end select
 !
       end function mqc_NEFMatrix_conjugate
 !
@@ -2070,22 +2823,35 @@
       implicit none
       type(mqc_nef_matrix),intent(in)::NEFMat
       type(mqc_nef_matrix)::NEFMatOut
-      integer(kind=int64)::row,col,nef_bidx,nef_bidx2
+      integer(kind=int64)::row,col
+      character(len=16)::outSymm
 !
       call NEFMatOut%init(NEFMat%Map_Matrix_col,&
            initial_map_matrix_col=NEFMat%Map_Matrix_row)
-
-      do row = 1, NEFMat%NumSpace_row
-        do col = 1, NEFMat%NumSpace_col
-          nef_bidx = NEFMatOut%blockIndex([2,row],[1,col])
-          nef_bidx2 = NEFMat%blockIndex([1,row],[2,col])
-          if (.not.NEFMat%Zero_Flag(nef_bidx2)) then
-            NEFMatOut%Main_Matrix(nef_bidx) = &
-              dagger(NEFMat%Main_Matrix(nef_bidx2))
-            NEFMatOut%Zero_Flag(nef_bidx) = .false.
-          end if
+      outSymm = NEFMat%getSymm()
+      select case(outSymm)
+      case('fullsymmetric')
+        continue
+      case('hermitian','antihermitian','symmetric','antisymmetric')
+        do row = 1, NEFMat%NumSpace_row
+          do col = 1, row
+            if (.not.NEFMat%isBlockZero(col,row)) &
+              call NEFMatOut%iput(dagger(NEFMat%iat(col,row)),row,col,outSymm)
+          end do
         end do
-      end do
+      case('unknown','asymmetric')
+        call NEFMatOut%Symm2Full()
+        outSymm = 'asymmetric'
+        do row = 1, NEFMat%NumSpace_row
+          do col = 1, NEFMat%NumSpace_col
+            if (.not.NEFMat%isBlockZero(row,col)) &
+              call NEFMatOut%iput(dagger(NEFMat%iat(row,col)),col,row,outSymm)
+          end do
+        end do
+      case default
+        call mqc_error_A('Symmetry unrecognized in mqc_NEFMatrix_conjugate_transpose',6,&
+                  'NEFMat%getSymm()',NEFMat%getSymm())
+      end select
 !
       end function mqc_NEFMatrix_conjugate_transpose
 !
@@ -2197,22 +2963,35 @@
       implicit none
       type(mqc_nef_matrix),intent(in)::NEFMat
       type(mqc_nef_matrix)::NEFMatOut
-      integer(kind=int64)::row,col,nef_bidx,nef_bidx2
+      integer(kind=int64)::row,col
+      character(len=16)::outSymm
 !
       call NEFMatOut%init(NEFMat%Map_Matrix_col,&
            initial_map_matrix_col=NEFMat%Map_Matrix_row)
-
-      do row = 1, NEFMat%NumSpace_row
-        do col = 1, NEFMat%NumSpace_col
-          nef_bidx = NEFMatOut%blockIndex([2,row],[1,col])
-          nef_bidx2 = NEFMat%blockIndex([1,row],[2,col])
-          if (.not.NEFMat%Zero_Flag(nef_bidx2)) then
-            NEFMatOut%Main_Matrix(nef_bidx) = &
-              transpose(NEFMat%Main_Matrix(nef_bidx2))
-            NEFMatOut%Zero_Flag(nef_bidx) = .false.
-          end if
+      outSymm = NEFMat%getSymm()
+      select case(outSymm)
+      case('fullsymmetric')
+        continue
+      case('hermitian','antihermitian','symmetric','antisymmetric')
+        do row = 1, NEFMat%NumSpace_row
+          do col = 1, row
+            if (.not.NEFMat%isBlockZero(col,row)) &
+              call NEFMatOut%iput(transpose(NEFMat%iat(col,row)),row,col,outSymm)
+          end do
         end do
-      end do
+      case('unknown','asymmetric')
+        call NEFMatOut%Symm2Full()
+        outSymm = 'asymmetric'
+        do row = 1, NEFMat%NumSpace_row
+          do col = 1, NEFMat%NumSpace_col
+            if (.not.NEFMat%isBlockZero(row,col)) &
+              call NEFMatOut%iput(transpose(NEFMat%iat(row,col)),col,row,outSymm)
+          end do
+        end do
+      case default
+        call mqc_error_A('Symmetry unrecognized in mqc_NEFMatrix_transpose',6,&
+                  'NEFMat%getSymm()',NEFMat%getSymm())
+      end select
 !
       end function mqc_NEFMatrix_transpose
 !
@@ -2391,38 +3170,107 @@
 !
       function mqc_scalar_nefmatrix_multiply(scalarIn,NEFMat) result(NEFMatOut)
 !
-      implicit none
-      type(mqc_nef_matrix),intent(in)::NEFMat
-      class(*),intent(in)::scalarIn
-      type(mqc_scalar)::scalar
-      type(mqc_nef_matrix)::NEFMatOut
-      integer::col,row,id
+        implicit none
+        type(mqc_nef_matrix),intent(in)::NEFMat
+        class(*),intent(in)::scalarIn
+        type(mqc_scalar)::scalar
+        type(mqc_nef_matrix)::NEFMatOut
+        integer::col,row,id,maxCol
+        character(len=16)::newSymmetry
+        logical::noSymm,isReal,isImag,isZero
+        Real(kind=real64)::Thresh
+        Complex(kind=real64)::c
+        type(mqc_scf_eigenvalues),dimension(:),allocatable::Map1,Map2
 !
-      select type(scalarIn)
-      type is (integer)
-        scalar = scalarIn
-      type is (real)
-        scalar = scalarIn
-      type is (complex)
-        scalar = scalarIn
-      type is (mqc_scalar)
-        scalar = scalarIn
-      class default
-        call mqc_error_I('scalarIn type not defined in mqc_scalar_NEFMat_multiply',6)
-      end select
+        If(MQC_very_small.gt.0.0) then
+          Thresh = MQC_very_small
+        Else
+          Thresh = 1e-10
+        EndIf
 !
-      NEFMatOut = NEFMat
-      if (abs(scalar).eq.0.0) then
-        NEFMatOut%Zero_Flag = .true.
-      else
-        do row = 1, NEFMat%NumSpace_row
-          do col = 1, NEFMat%NumSpace_col
-            id=NEFMat%blockIndex([1,row],[2,col])
-            if (.not.NEFMat%Zero_Flag(id)) &
-              NEFMatOut%Main_matrix(id)=scalar*NEFMat%Main_matrix(id)
-          end do
-        end do
-      end if
+        select type(scalarIn)
+        type is (integer)
+          scalar = scalarIn
+        type is (real)
+          scalar = scalarIn
+        type is (complex)
+          scalar = scalarIn
+        type is (mqc_scalar)
+          scalar = scalarIn
+        class default
+          call mqc_error_I('scalarIn type not defined in mqc_scalar_NEFMat_multiply',6)
+        end select
+!      
+        newSymmetry = 'unknown'
+        noSymm=(NEFMat%getSymm().eq.'asymmetric'.or.NEFMat%getSymm().eq.'unknown') 
+        isZero = abs(scalar).lt.Thresh
+        if(NEFMat%getSymm().eq.'fullsymmetric') then
+!         c times the zero matrix is the zero matrix
+          NEFMatOut = NEFMat
+        else if (isZero) then
+          if(noSymm) then
+            Map1 = NEFMat%getMap(1)
+            Map2 = NEFMat%getMap(2)
+            call NEFMatOut%init(Map1,0.0,Map2)
+          else
+            Map1 = NEFMat%getMap(1)
+            call NEFMatOut%init(Map1,0.0)
+          end if
+        else
+          if (.not.noSymm) then
+            c = scalar%cval()
+            isReal = abs(aimag(c)).lt.Thresh
+            isImag = abs(real(c)).lt.Thresh.and.abs(aimag(c)).ge.Thresh
+            select case (NEFMat%getSymm())
+            case('hermitian')
+              if(isImag) then
+                newSymmetry = 'antihermitian'
+              else if(isReal) then
+                newSymmetry = 'hermitian'
+              else
+                newSymmetry = 'unknown'
+              endIf
+            case('antihermitian')
+              if(isImag) then
+                newSymmetry = 'hermitian'
+              else if(isReal) then
+                newSymmetry = 'antihermitian'
+              else
+                newSymmetry = 'unknown'
+              endIf
+            case('symmetric')
+              newSymmetry = 'symmetric'
+            case('antisymmetric')
+              newSymmetry = 'antisymmetric'
+            case default
+              call mqc_error_A('Symmetry unrecognized in mqc_scalar_nefmatrix_multiply',6,&
+                        'NEFMat%getSymm()',NEFMat%getSymm())
+            end select
+          end if
+          if(newSymmetry.ne.'unknown') then
+!           Symmetry kept: lower triangle only
+            Map1 = NEFMat%getMap(1)
+            call NEFMatOut%init(Map1)
+            do row = 1, NEFMat%NumSpace_row
+              do col = 1, row
+                if(NEFMat%isBlockZero(row,col)) cycle
+                call NEFMatOut%iput(scalar*NEFMat%iat(row,col),row,col,newSymmetry)
+              end do
+            end do
+          else
+!           No symmetry left: all blocks, full layout
+            newSymmetry = 'noSym'
+            Map1 = NEFMat%getMap(1)
+            Map2 = NEFMat%getMap(2)
+            call NEFMatOut%init(Map1,0.0,Map2)
+            do row = 1, NEFMat%NumSpace_row
+              do col = 1, NEFMat%NumSpace_col 
+                if(NEFMat%isBlockZero(row,col)) cycle
+                call NEFMatOut%iput(scalar*NEFMat%iat(row,col),row,col,newSymmetry)
+              end do
+            end do
+          end if
+        end if
 !
       end function mqc_scalar_nefmatrix_multiply
 !
@@ -2483,18 +3331,7 @@
         call mqc_error_I('scalarIn type not defined in mqc_scalar_NEFMat_multiply',6)
       end select
 !
-      NEFMatOut = NEFMat
-      if (abs(scalar).eq.0.0) then
-        NEFMatOut%Zero_Flag = .true.
-      else
-        do row = 1, NEFMat%NumSpace_row
-          do col = 1, NEFMat%NumSpace_col
-            id = NEFMat%blockIndex([1,row],[2,col])
-            if (.not.NEFMat%Zero_Flag(id)) &
-              NEFMatOut%Main_matrix(id)=NEFMat%Main_matrix(id)*scalar
-          end do
-        end do
-      end if
+      NEFMatOut = scalar*NEFMat
 !
       end function mqc_nefmatrix_scalar_multiply
 !
@@ -2729,66 +3566,89 @@
 !
       function mqc_nefmatrix_difference(NEFMatA,NEFMatB) result(NEFMatOut)
 !
-      implicit none
-      type(mqc_nef_matrix),intent(in)::NEFMatA,NEFMatB
-      type(mqc_nef_matrix)::NEFMatOut
-      integer::col,row,id
-!
-      if(NEFMatA%NumSpace_col.ne.NEFMatB%NumSpace_col.or.&
-         NEFMatA%NumSpace_row.ne.NEFMatB%NumSpace_row) &
-        call mqc_error_i('NEF number of subspaces are &
-        &not conformable in mqc_nefmatrix_difference',6,&
-        'NEFMatA%NumSpace_col',NEFMatA%NumSpace_col,&
-        'NEFMatB%NumSpace_col',NEFMatB%NumSpace_col,&
-        'NEFMatA%NumSpace_row',NEFMatA%NumSpace_row,&
-        'NEFMatB%NumSpace_row',NEFMatB%NumSpace_row)
-
-      do col = 1, NEFMatA%NumSpace_col
-        if(NEFMatA%Size_vector_alpha_col(col)&
-           .ne.NEFMatB%Size_vector_alpha_col(col).or. &
-               NEFMatA%Size_vector_beta_col(col)  &
-           .ne.NEFMatB%Size_vector_beta_col(col)) &
-          call mqc_error_i('NEF subspace dimensions are &
-           &not conformable in mqc_nefmatrix_difference',6,&
-          'Sub-space index (col)', col,&
-          'NEFMatA%Size_vector_alpha_col(col)',NEFMatA%Size_vector_alpha_col(col),&
-          'NEFMatB%Size_vector_alpha_col(col)',NEFMatB%Size_vector_alpha_col(col),&
-          'NEFMatA%Size_vector_beta_col(col)',NEFMatA%Size_vector_beta_col(col),&
-          'NEFMatB%Size_vector_beta_col(col)',NEFMatB%Size_vector_beta_col(col))
-      end do
-      do row = 1, NEFMatA%NumSpace_row
-        if(NEFMatA%Size_vector_alpha_row(row)&
-           .ne.NEFMatB%Size_vector_alpha_row(row).or. &
-               NEFMatA%Size_vector_beta_row(row)  &
-           .ne.NEFMatB%Size_vector_beta_row(row)) &
-          call mqc_error_i('NEF subspace dimensions are &
-           &not conformable in mqc_nefmatrix_difference',6,&
-          'Sub-space index (row)', row,&
-          'NEFMatA%Size_vector_alpha_row(row)',NEFMatA%Size_vector_alpha_row(row),&
-          'NEFMatB%Size_vector_alpha_row(row)',NEFMatB%Size_vector_alpha_row(row),&
-          'NEFMatA%Size_vector_beta_row(row)',NEFMatA%Size_vector_beta_row(row),&
-          'NEFMatB%Size_vector_beta_row(row)',NEFMatB%Size_vector_beta_row(row))
-      end do
-
-      call NEFMatOut%init(NEFMatA%Map_Matrix_Row,&
-          initial_map_matrix_col=NEFMatB%Map_Matrix_Col)
-      do row = 1, NEFMatA%NumSpace_row
-        do col = 1, NEFMatB%NumSpace_col
-          id = NEFMatOut%blockIndex([1,row],[2,col])
-          if (NEFMatA%Zero_Flag(id).and.NEFMatB%Zero_Flag(id)) then
-            continue
-          else if (NEFMatA%Zero_Flag(id)) then
-            NEFMatOut%Main_Matrix(id) = (-1.0)*NEFMatB%Main_Matrix(id)
-            NEFMatOut%Zero_Flag(id) = .false.
-          else if (NEFMatB%Zero_Flag(id)) then
-            NEFMatOut%Main_Matrix(id) = NEFMatA%Main_Matrix(id)
-            NEFMatOut%Zero_Flag(id) = .false.
-          else
-            NEFMatOut%Main_Matrix(id) = NEFMatA%Main_Matrix(id)-NEFMatB%Main_Matrix(id)
-            NEFMatOut%Zero_Flag(id) = .false.
-          end if
+        implicit none
+        type(mqc_nef_matrix),intent(in)::NEFMatA,NEFMatB
+        type(mqc_nef_matrix)::NEFMatOut
+        integer::col,row
+        character(len=16)::newSymmetry
+        logical::symmA,asymA,hermA,ahrmA,diagA,symmB,asymB,hermB,ahrmB,diagB
+        type(mqc_scf_eigenvalues),dimension(:),allocatable::Map1,Map2
+!      
+        if(NEFMatA%NumSpace_col.ne.NEFMatB%NumSpace_col.or.&
+           NEFMatA%NumSpace_row.ne.NEFMatB%NumSpace_row) &
+          call mqc_error_i('NEF number of subspaces are &
+          &not conformable in mqc_nefmatrix_difference',6,&
+          'NEFMatA%NumSpace_col',NEFMatA%NumSpace_col,&
+          'NEFMatB%NumSpace_col',NEFMatB%NumSpace_col,&
+          'NEFMatA%NumSpace_row',NEFMatA%NumSpace_row,&
+          'NEFMatB%NumSpace_row',NEFMatB%NumSpace_row)
+       
+        do col = 1, NEFMatA%NumSpace_col
+          if(NEFMatA%Size_vector_alpha_col(col)&
+             .ne.NEFMatB%Size_vector_alpha_col(col).or. &
+                 NEFMatA%Size_vector_beta_col(col)  &
+             .ne.NEFMatB%Size_vector_beta_col(col)) &
+            call mqc_error_i('NEF subspace dimensions are &
+             &not conformable in mqc_nefmatrix_difference',6,&
+            'Sub-space index (col)', col,&
+            'NEFMatA%Size_vector_alpha_col(col)',NEFMatA%Size_vector_alpha_col(col),&
+            'NEFMatB%Size_vector_alpha_col(col)',NEFMatB%Size_vector_alpha_col(col),&
+            'NEFMatA%Size_vector_beta_col(col)',NEFMatA%Size_vector_beta_col(col),&
+            'NEFMatB%Size_vector_beta_col(col)',NEFMatB%Size_vector_beta_col(col))
         end do
-      end do
+        do row = 1, NEFMatA%NumSpace_row
+          if(NEFMatA%Size_vector_alpha_row(row)&
+             .ne.NEFMatB%Size_vector_alpha_row(row).or. &
+                 NEFMatA%Size_vector_beta_row(row)  &
+             .ne.NEFMatB%Size_vector_beta_row(row)) &
+            call mqc_error_i('NEF subspace dimensions are &
+             &not conformable in mqc_nefmatrix_difference',6,&
+            'Sub-space index (row)', row,&
+            'NEFMatA%Size_vector_alpha_row(row)',NEFMatA%Size_vector_alpha_row(row),&
+            'NEFMatB%Size_vector_alpha_row(row)',NEFMatB%Size_vector_alpha_row(row),&
+            'NEFMatA%Size_vector_beta_row(row)',NEFMatA%Size_vector_beta_row(row),&
+            'NEFMatB%Size_vector_beta_row(row)',NEFMatB%Size_vector_beta_row(row))
+        end do
+        call NEFMatA%symmSet(symmA,asymA,hermA,ahrmA,diagA)
+        call NEFMatB%symmSet(symmB,asymB,hermB,ahrmB,diagB)
+        newSymmetry = mqc_NEF_Matrix_pick_symmetry(symmA.and.symmB,asymA.and.asymB, &
+          hermA.and.hermB,ahrmA.and.ahrmB,diagA.and.diagB)
+!      
+        if(NEFMatA%getSymm().eq.'fullsymmetric') then
+           NEFMatOut=(-1)*NEFMatB
+        elseif(NEFMatB%getSymm().eq.'fullsymmetric') then
+           NEFMatOut=NEFMatA
+        else if(newSymmetry.ne.'unknown') then
+          Map1 = NEFMatA%getMap(1) 
+          call NEFMatOut%init(Map1)
+          do row = 1, NEFMatA%NumSpace_row
+            do col = 1, row
+              if( .not.NEFMatA%isBlockZero(row,col).and..not.NEFMatB%isBlockZero(row,col)) then
+                call NEFMatOut%iput(NEFMatA%iat(row,col)-NEFMatB%iat(row,col),row,col,newSymmetry)
+              elseif(NEFMatA%isBlockZero(row,col).and..not.NEFMatB%isBlockZero(row,col)) then
+                call NEFMatOut%iput((-1)*NEFMatB%iat(row,col),row,col,newSymmetry)
+              elseif(NEFMatB%isBlockZero(row,col).and..not.NEFMatA%isBlockZero(row,col)) then
+                call NEFMatOut%iput(NEFMatA%iat(row,col),row,col,newSymmetry)
+              end if
+            end do
+          end do
+        else
+          Map1 = NEFMatA%getMap(1) 
+          Map2 = NEFMatA%getMap(2) 
+          call NEFMatOut%init(Map1,0.0,Map2)
+          newSymmetry = 'asymmetric'
+          do row = 1, NEFMatA%NumSpace_row
+            do col = 1, NEFMatA%NumSpace_col
+              if( .not.NEFMatA%isBlockZero(row,col).and..not.NEFMatB%isBlockZero(row,col)) then
+                call NEFMatOut%iput(NEFMatA%iat(row,col)-NEFMatB%iat(row,col),row,col,newSymmetry)
+              elseif(NEFMatA%isBlockZero(row,col).and..not.NEFMatB%isBlockZero(row,col)) then
+                call NEFMatOut%iput((-1)*NEFMatB%iat(row,col),row,col,newSymmetry)
+              elseif(NEFMatB%isBlockZero(row,col).and..not.NEFMatA%isBlockZero(row,col)) then
+                call NEFMatOut%iput(NEFMatA%iat(row,col),row,col,newSymmetry)
+              end if
+            end do
+          end do
+        end if
       end function mqc_nefmatrix_difference
 !
 !
@@ -3091,7 +3951,8 @@
       type(mqc_nef_matrix),intent(in)::NEFMatB
       type(mqc_nef_r4)::NEFR4Out
 
-      integer::idA,idB,id,id1,id2,id3,id4,N1,N12,N123,N1234
+      integer::id,id1,id2,id3,id4,N1,N12,N123,N1234
+      type(mqc_scf_integral)::blockA,blockB
 
       NEFR4Out%NumSpace_2 = NEFMatA%NumSpace_col
       NEFR4Out%NumSpace_1 = NEFMatA%NumSpace_row
@@ -3120,14 +3981,15 @@
 
       do id1 = 1, NEFR4Out%NumSpace_1
         do id2 = 1, NEFR4Out%NumSpace_2
-          idA = NEFMatA%blockIndex([1,id1],[2,id2])
+          if (NEFMatA%isBlockZero(id1,id2)) cycle
+          blockA = NEFMatA%iat(id1,id2)
           do id3 = 1, NEFR4Out%NumSpace_3
             do id4 = 1, NEFR4Out%NumSpace_4
-              idB = NEFMatB%blockIndex([1,id3],[2,id4])
               nef_bidx = NEFR4Out%blockIndex([1,id1],[2,id2],[3,id3],[4,id4])
-              if (.not.(NEFMatA%Zero_Flag(idA).or.NEFMatB%Zero_Flag(idB))) then
+              if (.not.NEFMatB%isBlockZero(id3,id4)) then
+                blockB = NEFMatB%iat(id3,id4)
                 NEFR4Out%Main_R4(nef_bidx) = &
-                  NEFMatA%Main_Matrix(idA)%outer2ERI(NEFMatB%Main_Matrix(idB))
+                  blockA%outer2ERI(blockB)
                 NEFR4Out%Zero_Flag(nef_bidx) = .false.
               end if
             end do
@@ -3250,7 +4112,8 @@
       type(mqc_nef_matrix),intent(in)::NEFMatB
       type(mqc_nef_r4)::NEFR4Out
 
-      integer::idA,idB,id,id1,id2,id3,id4,N1,N12,N123,N1234
+      integer::id,id1,id2,id3,id4,N1,N12,N123,N1234
+      type(mqc_scf_integral)::blockA,blockB
 
       NEFR4Out%NumSpace_1 = NEFMatA%NumSpace_row
       NEFR4Out%NumSpace_4 = NEFMatA%NumSpace_col
@@ -3279,14 +4142,15 @@
 
       do id1 = 1, NEFR4Out%NumSpace_1
         do id4 = 1, NEFR4Out%NumSpace_4
-          idA = NEFMatA%blockIndex([1,id1],[2,id4])
+          if (NEFMatA%isBlockZero(id1,id4)) cycle
+          blockA = NEFMatA%iat(id1,id4)
           do id3 = 1, NEFR4Out%NumSpace_3
             do id2 = 1, NEFR4Out%NumSpace_2
-              idB = NEFMatB%blockIndex([1,id3],[2,id2])
               nef_bidx = NEFR4Out%blockIndex([1,id1],[2,id2],[3,id3],[4,id4])
-              if (.not.(NEFMatA%Zero_Flag(idA).or.NEFMatB%Zero_Flag(idB))) then
+              if (.not.NEFMatB%isBlockZero(id3,id2)) then
+                blockB = NEFMatB%iat(id3,id2)
                 NEFR4Out%Main_R4(nef_bidx) = &
-                  NEFMatA%Main_Matrix(idA)%crossouter2ERI(NEFMatB%Main_Matrix(idB))
+                  blockA%crossouter2ERI(blockB)
                 NEFR4Out%Zero_Flag(nef_bidx) = .false.
               end if
             end do
@@ -3450,9 +4314,8 @@
       output = 0.0
       do row = 1, NEFMatA%NumSpace_row
         do col = 1, NEFMatA%NumSpace_col
-          id = NEFMatA%blockIndex([1,row],[2,col])
-          if (NEFMatA%Zero_Flag(id).or.NEFMatB%Zero_Flag(id)) cycle
-          output = output + Contraction(NEFMatA%Main_Matrix(id),NEFMatB%Main_Matrix(id))
+          if (NEFMatA%isBlockZero(row,col).or.NEFMatB%isBlockZero(row,col)) cycle
+          output = output + Contraction(NEFMatA%iat(row,col),NEFMatB%iat(row,col))
         end do
       end do
 !
@@ -3685,7 +4548,10 @@
       integer(kind=int64),dimension(4)::my_indexA
       character(len=64)::myLabel
       type(mqc_nef_matrix)::output
-      integer::id1,id2,id3,id4,idA,idB,idex,idOut
+      integer::id1,id2,id3,id4,idA,idex
+      type(mqc_scf_integral)::blockB,blockOut
+      character(len=16)::outSymm
+      logical::started
       type(mqc_twoeris):: debbug_ERI
       type(MQC_SCF_Eigenvalues),Dimension(:),Allocatable::Map_Matrix_Col,Map_Matrix_Row
       Integer(kind=int64)::ia,ja,ka,la
@@ -3803,41 +4669,43 @@
       Map_Matrix_Col = NEFR4A%blockMap(la)
       Map_Matrix_Row = NEFR4A%blockMap(ka)
       call output%init(Map_Matrix_Row,initial_map_matrix_col=Map_Matrix_Col)
+      call output%Symm2Full()
+      outSymm = 'asymmetric'
       do id4 = 1, NEFR4A%blockSize(la)
         do id3 = 1, NEFR4A%blockSize(ka)
+          started = .false.
           do id2 = 1, NEFR4A%blockSize(ja)
             do id1 = 1, NEFR4A%blockSize(ia)
               idA = NEFR4A%blockIndex([ia,id1],[ja,id2],[ka,id3],[la,id4])
-              idB = NEFMatB%blockIndex([1,id1],[2,id2])
-              idOut = NEFMatB%blockIndex([1,id3],[2,id4])
               if (myLabel.eq.'doublebar'.or.myLabel.eq.'coulomb') then
                 if ((NEFR4A%blockSize(ia,id1,'alpha')+NEFR4A%blockSize(ia,id1,'beta')).eq.0.or.&
                     (NEFR4A%blockSize(ja,id2,'alpha')+NEFR4A%blockSize(ja,id2,'beta')).eq.0.or.&
                     (NEFR4A%blockSize(ka,id3,'alpha')+NEFR4A%blockSize(ka,id3,'beta')).eq.0.or.&
                     (NEFR4A%blockSize(la,id4,'alpha')+NEFR4A%blockSize(la,id4,'beta')).eq.0) cycle
-                if (.not.(NEFR4A%Zero_Flag(idA).or.NEFMatB%Zero_Flag(idB))) then
+                if (.not.(NEFR4A%Zero_Flag(idA).or.NEFMatB%isBlockZero(id1,id2))) then
+                  blockB = NEFMatB%iat(id1,id2)
                   if (ka.gt.la) then
-                    if (output%Zero_Flag(idOut)) then
-                      output%Main_Matrix(idOut) = &
+                    if (.not.started) then
+                      blockOut = &
                           transpose(contraction(NEFR4A%Main_R4(idA),&
-                                        NEFMatB%Main_Matrix(idB),[ia,ja]))
+                                        blockB,[ia,ja]))
                     else
-                      output%Main_Matrix(idOut) = output%Main_Matrix(idOut) &
+                      blockOut = blockOut &
                           + transpose(contraction(NEFR4A%Main_R4(idA),&
-                                        NEFMatB%Main_Matrix(idB),[ia,ja]))
+                                        blockB,[ia,ja]))
                     end if
                   else
-                    if (output%Zero_Flag(idOut)) then
-                      output%Main_Matrix(idOut) = &
+                    if (.not.started) then
+                      blockOut = &
                           contraction(NEFR4A%Main_R4(idA),&
-                                        NEFMatB%Main_Matrix(idB),[ia,ja])
+                                        blockB,[ia,ja])
                     else
-                      output%Main_Matrix(idOut) = output%Main_Matrix(idOut) &
+                      blockOut = blockOut &
                           + contraction(NEFR4A%Main_R4(idA),&
-                                        NEFMatB%Main_Matrix(idB),[ia,ja])
+                                        blockB,[ia,ja])
                     end if
                   end if
-                  output%Zero_Flag(idOut) = .false.
+                  started = .true.
                 end if
               end if
               if (myLabel.eq.'doublebar'.or.myLabel.eq.'exchange') then
@@ -3846,23 +4714,23 @@
                     (NEFR4A%blockSize(ka,id3,'alpha')+NEFR4A%blockSize(ka,id3,'beta')).eq.0.or.&
                     (NEFR4A%blockSize(ja,id4,'alpha')+NEFR4A%blockSize(ja,id4,'beta')).eq.0) cycle
                 idex = NEFR4A%blockIndex([ia,id1],[la,id2],[ka,id3],[ja,id4])
-                idB = NEFMatB%blockIndex([1,id1],[2,id2])
-                idOut = NEFMatB%blockIndex([1,id3],[2,id4])
-                if (.not.(NEFR4A%Zero_Flag(idex).or.NEFMatB%Zero_Flag(idB))) then
-                  if (output%Zero_Flag(idOut)) then
-                    output%Main_Matrix(idOut) = &
+                if (.not.(NEFR4A%Zero_Flag(idex).or.NEFMatB%isBlockZero(id1,id2))) then
+                  blockB = NEFMatB%iat(id1,id2)
+                  if (.not.started) then
+                    blockOut = &
                         (-1.0)*contraction(NEFR4A%Main_R4(idex),&
-                                      NEFMatB%Main_Matrix(idB),[ia,la])
+                                      blockB,[ia,la])
                   else
-                    output%Main_Matrix(idOut) = output%Main_Matrix(idOut) &
+                    blockOut = blockOut &
                         - contraction(NEFR4A%Main_R4(idex),&
-                                      NEFMatB%Main_Matrix(idB),[ia,la])
+                                      blockB,[ia,la])
                   end if
-                  output%Zero_Flag(idOut) = .false.
+                  started = .true.
                 end if
               end if
             end do
           end do
+          if (started) call output%iput(blockOut,id3,id4,outSymm)
         end do
       end do
 !
@@ -3920,8 +4788,10 @@
       integer(kind=int64),dimension(:),optional,intent(in)::rows,columns
       Type(MQC_SCF_Eigenvalues),Dimension(:),Allocatable::New_Map_Col,New_Map_Row
       integer(kind=int64),dimension(:),Allocatable::my_row,my_col
-      integer(kind=int64)::row,col,id,idOld
-      logical::full_row,full_col
+      integer(kind=int64)::row,col,id,maxCol
+      integer(kind=int64),dimension(:),Allocatable::rowSel,colSel
+      logical::full_row,full_col,sameSel,lowerOnly
+      character(len=16)::outSymm
 !
       if(present(rows)) then
         my_row = rows
@@ -3969,40 +4839,43 @@
 !
       call NEFMatOut%init(New_Map_Row,&
           initial_map_matrix_col=New_Map_Col)
+      allocate(rowSel(size(New_Map_Row)),colSel(size(New_Map_Col)))
       if(full_row) then
-        do col = 1, size(my_col)
-          do row = 1, size(NEFMat%Map_Matrix_Row)
-            id = NEFMatOut%blockIndex([1,row],[2,col])
-            idOld = NEFMat%blockIndex([1,row],[2,my_col(col)])
-            if (.not.NEFMat%Zero_Flag(idOld)) then
-              NEFMatOut%Main_matrix(id) = NEFMat%Main_matrix(idOld)
-              NEFMatOut%Zero_Flag(id) = .false.
-            end if
-          end do
-        end do
-      else if (full_col) then
-        do row = 1, size(my_row)
-          do col = 1, size(NEFMat%Map_Matrix_Col)
-            id = NEFMatOut%blockIndex([1,row],[2,col])
-            idOld = NEFMat%blockIndex([1,my_row(row)],[2,col])
-            if (.not.NEFMat%Zero_Flag(idOld)) then
-              NEFMatOut%Main_matrix(id) = NEFMat%Main_matrix(idOld)
-              NEFMatOut%Zero_Flag(id) = .false.
-            end if
-          end do
-        end do
+        rowSel = [(id, id = 1, size(New_Map_Row))]
       else
-        do row = 1, size(my_row)
-          do col = 1, size(my_col)
-            id = NEFMatOut%blockIndex([1,row],[2,col])
-            idOld = NEFMat%blockIndex([1,my_row(row)],[2,my_col(col)])
-            if (.not.NEFMat%Zero_Flag(idOld)) then
-              NEFMatOut%Main_matrix(id) = NEFMat%Main_matrix(idOld)
-              NEFMatOut%Zero_Flag(id) = .false.
-            end if
-          end do
-        end do
+        rowSel = my_row
       end if
+      if(full_col) then
+        colSel = [(id, id = 1, size(New_Map_Col))]
+      else
+        colSel = my_col
+      end if
+      sameSel = size(rowSel).eq.size(colSel)
+      if(sameSel) sameSel = all(rowSel.eq.colSel)
+      outSymm = NEFMat%getSymm()
+      select case(outSymm)
+      case('fullsymmetric')
+        lowerOnly = .true.
+      case('hermitian','antihermitian','symmetric','antisymmetric')
+        lowerOnly = sameSel
+      case('unknown','asymmetric')
+        lowerOnly = .false.
+      case default
+        call mqc_error_A('Symmetry unrecognized in mqc_nef_matrix_dimention_slice',6,&
+                  'NEFMat%getSymm()',NEFMat%getSymm())
+      end select
+      if(.not.lowerOnly) then
+        call NEFMatOut%Symm2Full()
+        outSymm = 'asymmetric'
+      end if
+      do row = 1, size(rowSel)
+        maxCol = size(colSel)
+        if(lowerOnly) maxCol = row
+        do col = 1, maxCol
+          if (NEFMat%isBlockZero(rowSel(row),colSel(col))) cycle
+          call NEFMatOut%iput(NEFMat%iat(rowSel(row),colSel(col)),row,col,outSymm)
+        end do
+      end do
 !
       end function mqc_nef_matrix_dimention_slice
 !
@@ -4948,7 +5821,10 @@
       integer(kind=int64),dimension(4)::my_index1,my_index2
       type(mqc_nef_matrix)::MatOut
       type(MQC_SCF_Eigenvalues),Dimension(:),Allocatable::Map_Matrix_Col,Map_Matrix_Row
-      Integer(kind=int64)::ia,ja,ka,la,ib,jb,kb,lb,i,j,k,l,id1,id2,id3,id4,mat_index,nef_bidx,nef_bidx2
+      Integer(kind=int64)::ia,ja,ka,la,ib,jb,kb,lb,i,j,k,l,id1,id2,id3,id4,nef_bidx,nef_bidx2
+      type(mqc_scf_integral)::blockOut
+      character(len=16)::outSymm
+      logical::started
 !
       if(present(index1)) then
         ia=index1(1)
@@ -5031,26 +5907,29 @@
       Map_Matrix_Col = NEFR4A%blockMap(la)
       Map_Matrix_Row = NEFR4A%blockMap(ka)
       call MatOut%init(Map_Matrix_Row,initial_map_matrix_col=Map_Matrix_Col)
+      call MatOut%Symm2Full()
+      outSymm = 'asymmetric'
       do id3 = 1, nefr4A%blockSize(ka)
         do id4 = 1, nefr4A%blockSize(la)
-          mat_index = MatOut%blockIndex([1,id3],[2,id4])
+          started = .false.
           do id1 = 1, nefr4A%blockSize(ia)
             do id2 = 1, nefr4A%blockSize(ja)
               nef_bidx = NEFR4A%blockIndex([ka,id3],[la,id4],[ia,id1],[ja,id2])
               nef_bidx2 = NEFR4B%blockIndex([kb,id3],[lb,id4],[ib,id1],[jb,id2])
               if (NEFR4A%Zero_Flag(nef_bidx).or.NEFR4B%Zero_Flag(nef_bidx2)) cycle
-              if (MatOut%Zero_Flag(mat_index)) then
-                MatOut%Main_Matrix(mat_index) = &
+              if (.not.started) then
+                blockOut = &
                   partialcontraction(NEFR4A%Main_R4(nef_bidx),&
                   NEFR4B%Main_R4(nef_bidx2),my_index1,my_index2)
-                MatOut%Zero_Flag(mat_index) = .false.
+                started = .true.
               else
-                MatOut%Main_Matrix(mat_index) = MatOut%Main_Matrix(mat_index) +&
+                blockOut = blockOut +&
                   partialcontraction(NEFR4A%Main_R4(nef_bidx),&
                   NEFR4B%Main_R4(nef_bidx2),my_index1,my_index2)
               end if
             end do
           end do
+          if (started) call MatOut%iput(blockOut,id3,id4,outSymm)
         end do
       end do
 !
@@ -5560,6 +6439,25 @@
 !>      set1 = [2,4]; set2 = [1,2]
 !>      This function returns the correspondent combined-index for ERI(2,4)
 !>
+!>    The indexes are shared by symmetric and asymmetric matrices (square or not)
+!>
+!>    Ex: no-sym
+!>     5x5=               3x5=              5x3=
+!>     | 1 16 17 19 22|   | 1  7  8 10 13|  | 1 13 14|
+!>     | 2  3 18 20 23|   | 2  3  9 11 14|  | 2  3 15|
+!>     | 4  5  6 21 24|   | 4  5  6 12 15|  | 4  5  6|
+!>     | 7  8  9 10 25|                     | 7  8  9|
+!>     |11 12 13 14 15|                     |10 11 12|
+!> 
+!>     If square and symm, the indexes of the upper-diagonal are returned based on the lower
+!>    Ex: sym
+!>     5x5=              
+!>     | 1  2  4  7 11|  
+!>     | 2  3  5  8 12|  
+!>     | 4  5  6  9 13|  
+!>     | 7  8  9 10 14|  
+!>     |11 12 13 14 15|  
+!>
 !>    \endverbatim
 !
 !     Arguments:
@@ -5617,7 +6515,34 @@
           'Axis 2 index defined more than once in mqc_nefmatrix_index',6)
         id2 = set2(2)
       endIf
-      indexOut = (id1-1)*NEFMat%NumSpace_col+id2
+      select case(NEFMat%getSymm())
+      case('asymmetric','unknown')
+        if (id1.ge.id2) then
+          if(NEFMat%NumSpace_row.eq.NEFMat%NumSpace_col.or.&
+             id1.lt.NEFMat%NumSpace_col) then
+            indexOut = id1*(id1-1)/2+id2
+          else if(id1.ge.NEFMat%NumSpace_col) then
+            indexOut =  NEFMat%NumSpace_col*(NEFMat%NumSpace_col-1)/2+&
+                        (id1-NEFMat%NumSpace_col)*NEFMat%NumSpace_col+id2
+          end if
+        else
+          if(NEFMat%NumSpace_row.eq.NEFMat%NumSpace_col.or.&
+             id2.le.NEFMat%NumSpace_row) then
+            indexOut = Min(NEFMat%NumSpace_row,NEFMat%NumSpace_col)*&
+                      (Min(NEFMat%NumSpace_row,NEFMat%NumSpace_col)+1)/2+&
+                       Max(0,NEFMat%NumSpace_row-NEFMat%NumSpace_col)*NEFMat%NumSpace_col
+            indexOut = indexOut + (id2-2)*(id2-1)/2+id1
+          else if(id2.gt.NEFMat%NumSpace_row) then
+            indexOut =  Min(NEFMat%NumSpace_row,NEFMat%NumSpace_col)**2+&
+                        (id2-NEFMat%NumSpace_row-1)*NEFMat%NumSpace_row+id1
+          end if
+        end if
+      case('hermitian','antihermitian','symmetric','antisymmetric','fullsymmetric')
+        indexOut = Max(id1,id2)*(Max(id1,id2)-1)/2+Min(id1,id2)
+      case default
+        call mqc_error_A('Symmetry unrecognized in mqc_nefmatrix_index',6,&
+                  'NEFMat%getSymm()',NEFMat%getSymm())
+      end select
       !write(*,*) 'Sets = ', set1,set2
       !write(*,*) 'indexIn = ', id1,id2
       !write(*,*) 'indexOut = ', indexOut
@@ -5757,8 +6682,82 @@
         spinBlock = 'alpha'
       end if
       nef_bidx = nefM%blockIndex([1,myp],[2,myq])
-      if (.not.nefM%Zero_Flag(nef_bidx)) &
-        element = nefM%Main_Matrix(nef_bidx)%at(myI,myJ,spinBlock)
+      if (.not.nefM%Zero_Flag(nef_bidx)) then
+        if (myp.ge.myq) then
+          element = nefM%Main_Matrix(nef_bidx)%at(myI,myJ,spinBlock)
+        else
+          select case(nefM%getSymm())
+          case('fullsymmetric')
+            select case(spinBlock)
+            case('alphabeta','ab')  
+              element = nefM%Main_Matrix(nef_bidx)%at(myJ,myI,'betaAlpha')
+            case('betaalpha','ba')                                 
+              element = nefM%Main_Matrix(nef_bidx)%at(myJ,myI,'alphaBeta')
+            case('beta','alpha','aa','bb','a','b')                 
+              element = nefM%Main_Matrix(nef_bidx)%at(myJ,myI,spinBlock)
+            case default
+              call mqc_error_A('Spin-block unrecognized in mqc_NEF_Matrix_at',6,&
+                        'spinBlock',spinBlock)
+            end select
+            write(*,*) 'Warning: fullsymmetric NEF_Matrix with Zero_Flag false in MQC_NEF_Matrix_at'
+            write(*,*) 'index = ',nef_bidx
+            call mqc_print(element,6,'element')
+          case('asymmetric','unknown')
+            element = nefM%Main_Matrix(nef_bidx)%at(myI,myJ,spinBlock)
+          case('hermitian')
+            select case(spinBlock)
+            case('alphabeta','ab')  
+              element = conjg(nefM%Main_Matrix(nef_bidx)%at(myJ,myI,'betaAlpha'))
+            case('betaalpha','ba')                                 
+              element = conjg(nefM%Main_Matrix(nef_bidx)%at(myJ,myI,'alphaBeta'))
+            case('beta','alpha','aa','bb','a','b')                 
+              element = conjg(nefM%Main_Matrix(nef_bidx)%at(myJ,myI,spinBlock))
+            case default
+              call mqc_error_A('Spin-block unrecognized in mqc_NEF_Matrix_at',6,&
+                        'spinBlock',spinBlock)
+            end select
+          case('antihermitian')
+            select case(spinBlock)
+            case('alphabeta','ab')  
+              element = (-1)*conjg(nefM%Main_Matrix(nef_bidx)%at(myJ,myI,'betaAlpha'))
+            case('betaalpha','ba')                                      
+              element = (-1)*conjg(nefM%Main_Matrix(nef_bidx)%at(myJ,myI,'alphaBeta'))
+            case('beta','alpha','aa','bb','a','b')                      
+              element = (-1)*conjg(nefM%Main_Matrix(nef_bidx)%at(myJ,myI,spinBlock))
+            case default
+              call mqc_error_A('Spin-block unrecognized in mqc_NEF_Matrix_at',6,&
+                        'spinBlock',spinBlock)
+            end select
+          case('symmetric')
+            select case(spinBlock)
+            case('alphabeta','ab')  
+              element = (nefM%Main_Matrix(nef_bidx)%at(myJ,myI,'betaAlpha'))
+            case('betaalpha','ba')                            
+              element = (nefM%Main_Matrix(nef_bidx)%at(myJ,myI,'alphaBeta'))
+            case('beta','alpha','aa','bb','a','b')            
+              element = (nefM%Main_Matrix(nef_bidx)%at(myJ,myI,spinBlock))
+            case default
+              call mqc_error_A('Spin-block unrecognized in mqc_NEF_Matrix_at',6,&
+                        'spinBlock',spinBlock)
+            end select
+          case('antisymmetric')
+            select case(spinBlock)
+            case('alphabeta','ab')  
+              element = (-1)*(nefM%Main_Matrix(nef_bidx)%at(myJ,myI,'betaAlpha'))
+            case('betaalpha','ba')                                 
+              element = (-1)*(nefM%Main_Matrix(nef_bidx)%at(myJ,myI,'alphaBeta'))
+            case('beta','alpha','aa','bb','a','b')                 
+              element = (-1)*(nefM%Main_Matrix(nef_bidx)%at(myJ,myI,spinBlock))
+            case default
+              call mqc_error_A('Spin-block unrecognized in mqc_NEF_Matrix_at',6,&
+                        'spinBlock',spinBlock)
+            end select
+          case default
+            call mqc_error_A('Symmetry unrecognized in mqc_NEF_Matrix_at',6,&
+                      'nefM%getSymm()',nefM%getSymm())
+          end select
+        end if
+      end if
 !
       end function mqc_nef_matrix_at
 !
@@ -6282,6 +7281,7 @@
       end if
 !
       call NEFMatOut%init(map_matrix_row,initial_map_matrix_col=map_matrix_col)
+      call NEFMatOut%Symm2Full()
       select case(mySpinType)
       case ('singlet')
         do row = 1, NEFMatOut%NumSpace_row
@@ -6290,7 +7290,7 @@
             if (mySwapOrder) then
               vecId = (col-1)*NEFMatOut%NumSpace_row + row
             else
-              vecId = id
+              vecId = (row-1)*NEFMatOut%NumSpace_col + col
             end if
             if (NEFV%Zero_Flag(vecId)) cycle
             call NEFMatOut%Main_Matrix(id)%init(&
@@ -6324,7 +7324,7 @@
             if (mySwapOrder) then
               vecId = (col-1)*NEFMatOut%NumSpace_row + row
             else
-              vecId = id
+              vecId = (row-1)*NEFMatOut%NumSpace_col + col
             end if
             if (NEFV%Zero_Flag(vecId)) cycle
             call NEFMatOut%Main_Matrix(id)%init(&
@@ -6358,7 +7358,7 @@
             if (mySwapOrder) then
               vecId = (col-1)*NEFMatOut%NumSpace_row + row
             else
-              vecId = id
+              vecId = (row-1)*NEFMatOut%NumSpace_col + col
             end if
             if (NEFV%Zero_Flag(vecId)) cycle
             call NEFMatOut%Main_Matrix(id)%init(&
@@ -6583,8 +7583,10 @@
 !
 !     Variable Declarations.
       implicit none
-      integer(kind=int64) :: nef_bidx
       class(mqc_nef_matrix),intent(inOut)::MatIn
+      type(mqc_nef_matrix)::oldMat
+      character(len=16)::outSymm
+      integer::oi,oj
       type(mqc_scf_integral),allocatable::ExtI
       integer,optional,intent(in)::idIRow,idICol
       integer::myidIRow,myidICol
@@ -6595,7 +7597,6 @@
       type(mqc_scf_integral),optional,intent(in)::ExtSCFI
       type(mqc_scf_eigenvalues),optional,intent(in)::ExtMapC,ExtMapR
       type(mqc_scf_eigenvalues)::EmptyBlockRow,EmptyBlockCol
-      type(mqc_scf_integral),dimension(:),allocatable::tempMain
       type(mqc_scf_eigenvalues),dimension(:),allocatable::tempMapRow,tempMapCol
       zero = 0
 !
@@ -6617,7 +7618,6 @@
           newNcol = mqc_nef_matrix_dimension(MatIn,1)  
         end if
 !        
-      allocate(tempMain(newNrow*newNcol))
       allocate(tempMapRow(newNrow))
       allocate(tempMapCol(newNcol))
       allocate(ExtI)
@@ -6712,38 +7712,21 @@
 
 
 
-  do i=1, newNrow
-    do j=1,newNcol
-      if (i==idIRow .or. j==idICol) then
-        call EmptyBlockIntegral%init(size(tempMapRow(i),'alpha'),size(tempMapRow(i),'beta'),&
-             0,'',size(tempMapCol(j),'alpha'), size(tempMapCol(j),'beta'))
-        tempMain(((i-1)*newNcol)+j) = &
-           EmptyBlockIntegral
-      else if (i > idIRow .and. idIRow>0) then
-        if (j>idICol .and. idICol>0) then
-          nef_bidx = MatIn%blockIndex([1,i-1],[2,j-1])
-          tempMain(((i-1)*newNcol)+j) = &
-                 MatIn%Main_matrix(nef_bidx)
-        else
-          nef_bidx = MatIn%blockIndex([1,i-1],[2,j])
-          tempMain(((i-1)*newNcol)+j) = &
-                 MatIn%Main_matrix(nef_bidx)
-        end if
-      else
-        if (j>idICol .and. idICol>0) then
-          nef_bidx = MatIn%blockIndex([1,i],[2,j-1])
-          tempMain(((i-1)*newNcol)+j) = &
-                 MatIn%Main_matrix(nef_bidx)
-        else
-          nef_bidx = MatIn%blockIndex([1,i],[2,j])
-          tempMain(((i-1)*newNcol)+j) = &
-                 MatIn%Main_matrix(nef_bidx)
-        end if
-      end if
-    end do 
-  end do   
+      oldMat = MatIn
       call MatIn%init(tempMapRow, initial_map_matrix_col=tempMapCol)
-      MatIn%main_matrix = tempMain
+      call MatIn%Symm2Full()
+      outSymm = 'asymmetric'
+      do i = 1, newNrow
+        do j = 1, newNcol
+          if (i==idIRow .or. j==idICol) cycle
+          oi = i
+          if (i > idIRow .and. idIRow>0) oi = i-1
+          oj = j
+          if (j > idICol .and. idICol>0) oj = j-1
+          if (oldMat%isBlockZero(oi,oj)) cycle
+          call MatIn%iput(oldMat%iat(oi,oj),i,j,outSymm)
+        end do
+      end do
 !
       end subroutine MQC_NEF_Matrix_Map_Insert
 !    
@@ -6891,13 +7874,14 @@
             if (mySwapOrder) then
               outId = (col-1)*NEFM%NumSpace_row + row
             else
-              outId = id
+              outId = (row-1)*NEFM%NumSpace_col + col
             end if
             call NEFVecOut%Main_vector(outId)%init(NEFVecOut%Size_vector_alpha(outId),&
                    lengthBeta=NEFVecOut%Size_vector_beta(outId))
             NEFVecOut%Zero_Flag(outId) = .false.
             do i = 1, nefM%Size_vector_alpha_row(row)
               do j = 1, nefM%Size_vector_alpha_col(col)
+                write(*,*) i,j
                 call NEFVecOut%Main_vector(outId)%put(&
                   NEFM%at(i,j,row,col,'alpha'),&
                   int(NEFM%collapseIndex(i,j,'a','a',row,col,'singlet',swapOrder=mySwapOrder)),&
@@ -6922,7 +7906,7 @@
             if (mySwapOrder) then
               outId = (col-1)*NEFM%NumSpace_row + row
             else
-              outId = id
+              outId = (row-1)*NEFM%NumSpace_col + col
             end if
             call NEFVecOut%Main_vector(outId)%init(NEFVecOut%Size_vector_alpha(outId),&
                    lengthBeta=NEFVecOut%Size_vector_beta(outId))
@@ -6953,7 +7937,7 @@
             if (mySwapOrder) then
               outId = (col-1)*NEFM%NumSpace_row + row
             else
-              outId = id
+              outId = (row-1)*NEFM%NumSpace_col + col
             end if
             call NEFVecOut%Main_vector(outId)%init(NEFVecOut%Size_vector_alpha(outId),&
                    lengthBeta=NEFVecOut%Size_vector_beta(outId))
@@ -7120,6 +8104,7 @@
 !
       call NEFMatOut%init(NEFr4%collapseMap(mySpinType,[ia,ja]),&
          initial_map_matrix_col=NEFr4%collapseMap(mySpinTypeKet,[ka,la]))
+      call NEFMatOut%Symm2Full() !!MMFM Remove (Symm)
       select case(mySpinType)
       case ('singlet')
         do dimi = 1, NEFr4%blockSize(ia)
@@ -7535,7 +8520,7 @@
       function mqc_nef_set_block_diagonal_pinv(NEFSet,spinType,Order,thresh,spaceDim) result(NEFMatOut)
 !
       implicit none
-      class(mqc_nef_set),intent(in)::NEFSet
+      class(mqc_nef_set),intent(inOut)::NEFSet !!MMFM change to in (symm)
       character(len=*),intent(in),optional::spinType
       integer(kind=int64),dimension(4),intent(in),optional::Order
       real(kind=real64),intent(in),optional::thresh
@@ -8077,7 +9062,7 @@
             if (mySwapOrder) then
               outId = (col-1)*NEFM%NumSpace_row + row
             else
-              outId = id
+              outId = (row-1)*NEFM%NumSpace_col + col
             end if
             call MapOut(outId)%init(&
                nefM%Size_vector_alpha_col(col)*nefM%Size_vector_alpha_row(row),0,&
@@ -8091,7 +9076,7 @@
             if (mySwapOrder) then
               outId = (col-1)*NEFM%NumSpace_row + row
             else
-              outId = id
+              outId = (row-1)*NEFM%NumSpace_col + col
             end if
             call MapOut(outId)%init(&
                nefM%Size_vector_alpha_col(col)*nefM%Size_vector_beta_row(row),0,&
@@ -8105,7 +9090,7 @@
             if (mySwapOrder) then
               outId = (col-1)*NEFM%NumSpace_row + row
             else
-              outId = id
+              outId = (row-1)*NEFM%NumSpace_col + col
             end if
             call MapOut(outId)%init(&
                nefM%Size_vector_alpha_col(col)*nefM%Size_vector_alpha_row(row)+&
@@ -8481,6 +9466,7 @@
       character(len=*),optional::blockName
       type(mqc_Matrix)::MatrixOut
       type(mqc_matrix)::zeroBlock
+      type(mqc_scf_integral)::tmpBlock
       character(len=64)::myBlockName,myBlockOrder
       integer(kind=int64),dimension(:),allocatable::myId,myIdKet
       logical::full,fullKet
@@ -8555,6 +9541,7 @@
             fsizeKet = 1
             do j = 1, nefMat%NumSpace_col
               id = nefMat%blockIndex([1,i],[2,j])
+              if (.not.nefMat%Zero_Flag(id)) tmpBlock = nefMat%iat(i,j)
               if(myBlockOrder.eq.'alpha'.and.myBlockName.eq.'full') then
                 size1 = nefMat%Size_vector_alpha_row(i)+nefMat%Size_vector_beta_row(i)
                 size2 = nefMat%Size_vector_alpha_col(j)+nefMat%Size_vector_beta_col(j)
@@ -8564,7 +9551,7 @@
                     call MatrixOut%mput(zeroBlock,&
                                            [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('full'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('full'),&
                                            [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   end if
                 end if
@@ -8580,7 +9567,7 @@
                     call MatrixOut%mput(zeroBlock,&
                                        [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('beta'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('beta'),&
                                        [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   end if
                 end if
@@ -8590,7 +9577,7 @@
                     call MatrixOut%mput(zeroBlock,&
                                  [fsize+size1,fsize+size1+size3-1],[fsizeKet,fsizeKet+size2-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('betaalpha'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('betaalpha'),&
                                  [fsize+size1,fsize+size1+size3-1],[fsizeKet,fsizeKet+size2-1])
                   end if
                 end if
@@ -8600,7 +9587,7 @@
                     call MatrixOut%mput(zeroBlock,&
                                  [fsize,fsize+size1-1],[fsizeKet+size2,fsizeKet+size2+size4-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('alphabeta'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('alphabeta'),&
                                  [fsize,fsize+size1-1],[fsizeKet+size2,fsizeKet+size2+size4-1])
                   end if
                 end if
@@ -8610,7 +9597,7 @@
                     call MatrixOut%mput(zeroBlock,&
                      [fsize+size1,fsize+size1+size3-1],[fsizeKet+size2,fsizeKet+size2+size4-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('alpha'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('alpha'),&
                      [fsize+size1,fsize+size1+size3-1],[fsizeKet+size2,fsizeKet+size2+size4-1])
                   end if
                 end if
@@ -8625,7 +9612,7 @@
                     call MatrixOut%mput(zeroBlock,&
                                      [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('alpha'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('alpha'),&
                                      [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   end if
                 end if
@@ -8639,7 +9626,7 @@
                     call MatrixOut%mput(zeroBlock,&
                                      [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('beta'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('beta'),&
                                      [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   end if
                 end if
@@ -8653,7 +9640,7 @@
                     call MatrixOut%mput(zeroBlock,&
                                      [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('alphabeta'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('alphabeta'),&
                                      [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   end if
                 end if
@@ -8669,9 +9656,9 @@
                     call MatrixOut%mput(zeroBlock,&
                                  [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('betaalpha'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('betaalpha'),&
                                      [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('full'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('full'),&
                                  [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   end if
                 end if
@@ -8687,7 +9674,7 @@
                     call MatrixOut%mput(zeroBlock,&
                                        [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('beta'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('beta'),&
                                        [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   end if
                 end if
@@ -8697,7 +9684,7 @@
                     call MatrixOut%mput(zeroBlock,&
                                  [fsize+size1,fsize+size1+size3-1],[fsizeKet,fsizeKet+size2-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('betaalpha'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('betaalpha'),&
                                  [fsize+size1,fsize+size1+size3-1],[fsizeKet,fsizeKet+size2-1])
                   end if
                 end if
@@ -8707,7 +9694,7 @@
                     call MatrixOut%mput(zeroBlock,&
                                  [fsize,fsize+size1-1],[fsizeKet+size2,fsizeKet+size2+size4-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('alphabeta'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('alphabeta'),&
                                  [fsize,fsize+size1-1],[fsizeKet+size2,fsizeKet+size2+size4-1])
                   end if
                 end if
@@ -8717,7 +9704,7 @@
                     call MatrixOut%mput(zeroBlock,&
                      [fsize+size1,fsize+size1+size3-1],[fsizeKet+size2,fsizeKet+size2+size4-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('alpha'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('alpha'),&
                      [fsize+size1,fsize+size1+size3-1],[fsizeKet+size2,fsizeKet+size2+size4-1])
                   end if
                 end if
@@ -8732,7 +9719,7 @@
                     call MatrixOut%mput(zeroBlock,&
                                      [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   else
-                    call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('alpha'),&
+                    call MatrixOut%mput(tmpBlock%getBlock('alpha'),&
                                      [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                   end if
                 end if
@@ -8747,7 +9734,7 @@
                   call MatrixOut%mput(zeroBlock,&
                                    [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                 else
-                  call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('betaalpha'),&
+                  call MatrixOut%mput(tmpBlock%getBlock('betaalpha'),&
                                    [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                 end if
                 fsizeKet = fsizeKet + size2
@@ -8756,7 +9743,7 @@
                   call MatrixOut%mput(zeroBlock,&
                                    [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                 else
-                  call MatrixOut%mput(nefMat%Main_matrix(id)%getBlock('betaalpha'),&
+                  call MatrixOut%mput(tmpBlock%getBlock('betaalpha'),&
                                    [fsize,fsize+size1-1],[fsizeKet,fsizeKet+size2-1])
                 end if
                 fsizeKet = fsizeKet + size2
@@ -8895,7 +9882,9 @@
       Integer(kind=int64),optional::spaceDim
       type(mqc_nef_matrix)::NEFMatOut
       real(kind=real64)::myThresh
-      integer(kind=int64)::N,id
+      integer(kind=int64)::N
+      type(mqc_scf_integral)::tmpBlock,pinvBlock
+      character(len=16)::outSymm,diagSymm
       Integer(kind=int64)::mySpaceDim,tmpspacedim
 !
       if(present(thresh)) then
@@ -8907,15 +9896,24 @@
       call NEFMatOut%init(NEFMat%Map_Matrix_Row,&
            initial_map_matrix_col=NEFMat%Map_Matrix_Col)
 !
+      outSymm = NEFMat%getSymm()
+      select case(outSymm)
+      case('fullsymmetric','hermitian','antihermitian','symmetric','antisymmetric')
+        NEFMatOut%Symmetry = outSymm
+      case('unknown','asymmetric')
+        call NEFMatOut%Symm2Full()
+      case default
+        call mqc_error_A('Symmetry unrecognized in mqc_nef_matrix_block_diagonal_pinv',6,&
+                  'NEFMat%getSymm()',NEFMat%getSymm())
+      end select
+      diagSymm = 'keep'
       mySpaceDim = 0
       do N = 1, NEFMat%NumSpace_row
-        id = NEFMat%blockIndex([1,N],[2,N])
-        if (.not.NEFMat%Zero_Flag(id)) then
-          NEFMatOut%Main_Matrix(id) = NEFMat%Main_Matrix(id)%pinv(myThresh,spaceDim=tmpSpaceDim)
-          if(tmpSpaceDim.eq.0) then
-            NEFMatOut%Zero_Flag(id) = .true.
-          else
-            NEFMatOut%Zero_Flag(id) = .false.
+        if (.not.NEFMat%isBlockZero(N,N)) then
+          tmpBlock = NEFMat%iat(N,N)
+          pinvBlock = tmpBlock%pinv(myThresh,spaceDim=tmpSpaceDim)
+          if(tmpSpaceDim.ne.0) then
+            call NEFMatOut%iput(pinvBlock,N,N,diagSymm)
             mySpaceDim = mySpaceDim + tmpSpaceDim
           end if
         end if
@@ -9005,7 +10003,8 @@
       real(kind=real64),intent(in),optional::thresh
       type(mqc_nef_matrix)::RotOut
       real(kind=real64)::myThresh
-      integer::row,si,sj,idx
+      integer::row,si,sj
+      character(len=16)::diagSymm
 !
       if(present(thresh)) then
         myThresh = thresh
@@ -9018,13 +10017,13 @@
 !
       call RotOut%init(ThetaMat%Map_Matrix_Row,&
            initial_map_matrix_col=ThetaMat%Map_Matrix_Col)
+      if(RotOut%getSymm().eq.'fullsymmetric') RotOut%Symmetry = 'hermitian'
+      diagSymm = 'keep'
       do row = 1, RotOut%NumSpace_row
-        idx = RotOut%blockIndex([1,row],[2,row])
-        RotOut%Main_Matrix(idx) = mqc_integral_identity_func(&
+        call RotOut%iput(mqc_integral_identity_func(&
              RotOut%Size_vector_alpha_row(row),RotOut%Size_vector_beta_row(row),&
              nAlpha2=RotOut%Size_vector_alpha_col(row),&
-             nBeta2=RotOut%Size_vector_beta_col(row))
-        RotOut%Zero_Flag(idx) = .false.
+             nBeta2=RotOut%Size_vector_beta_col(row)),row,row,diagSymm)
       end do
 !
       do si = 1, ThetaMat%NumSpace_row
@@ -9044,71 +10043,68 @@
         complex(kind=real64),intent(in)::zFirst,zSecond
         logical,intent(in)::spinFlip
         type(mqc_nef_matrix)::Rk
-        integer::idDiagI,idDiagJ,idFwd,idBwd,rowSeed
+        integer::rowSeed
+        character(len=16)::outSymm
+!
+!       Rk starts as the identity, stored in full layout ('unknown' label) so
+!       the (si,sj) and (sj,si) blocks written by putPlane are independent.
 !
         call Rk%init(ThetaMat%Map_Matrix_Row,&
              initial_map_matrix_col=ThetaMat%Map_Matrix_Col)
+        call Rk%Symm2Full()
+        outSymm = 'asymmetric'
         do rowSeed = 1, Rk%NumSpace_row
-          idDiagI = Rk%blockIndex([1,rowSeed],[2,rowSeed])
-          Rk%Main_Matrix(idDiagI) = mqc_integral_identity_func(&
+          call Rk%iput(mqc_integral_identity_func(&
                Rk%Size_vector_alpha_row(rowSeed),Rk%Size_vector_beta_row(rowSeed),&
                nAlpha2=Rk%Size_vector_alpha_col(rowSeed),&
-               nBeta2=Rk%Size_vector_beta_col(rowSeed))
-          Rk%Zero_Flag(idDiagI) = .false.
+               nBeta2=Rk%Size_vector_beta_col(rowSeed)),rowSeed,rowSeed,outSymm)
         end do
 !
-        idDiagI = Rk%blockIndex([1,si],[2,si])
-        idDiagJ = Rk%blockIndex([1,sj],[2,sj])
-!
-!       Off-diagonal blocks: idFwd=idBwd when si==sj (the diagonal block
-!       itself, already non-zero-flagged above); when si/=sj these are the
-!       two cross-space blocks, zero-flagged until initialized here.
-        idFwd = Rk%blockIndex([1,si],[2,sj])
-        idBwd = Rk%blockIndex([1,sj],[2,si])
-        if(Rk%Zero_Flag(idFwd)) then
-          call Rk%Main_Matrix(idFwd)%init(Rk%Size_vector_alpha_row(si),&
-               Rk%Size_vector_beta_row(si),nAlpha2=Rk%Size_vector_alpha_col(sj),&
-               nBeta2=Rk%Size_vector_beta_col(sj))
-          Rk%Zero_Flag(idFwd) = .false.
-        end if
-        if(Rk%Zero_Flag(idBwd)) then
-          call Rk%Main_Matrix(idBwd)%init(Rk%Size_vector_alpha_row(sj),&
-               Rk%Size_vector_beta_row(sj),nAlpha2=Rk%Size_vector_alpha_col(si),&
-               nBeta2=Rk%Size_vector_beta_col(si))
-          Rk%Zero_Flag(idBwd) = .false.
-        end if
-!
         if(spinFlip) then
-          call putPlane(Rk,idDiagI,idDiagJ,idFwd,idBwd,p,q,zFirst,'beta','alpha','alphaBeta','betaAlpha')
-          call putPlane(Rk,idDiagI,idDiagJ,idFwd,idBwd,p,q,zSecond,'alpha','beta','betaAlpha','alphaBeta')
+          call putPlane(Rk,si,sj,p,q,zFirst,'beta','alpha','alphaBeta','betaAlpha')
+          call putPlane(Rk,si,sj,p,q,zSecond,'alpha','beta','betaAlpha','alphaBeta')
         else
-          call putPlane(Rk,idDiagI,idDiagJ,idFwd,idBwd,p,q,zFirst,'alpha','alpha','alpha','alpha')
-          call putPlane(Rk,idDiagI,idDiagJ,idFwd,idBwd,p,q,zSecond,'beta','beta','beta','beta')
+          call putPlane(Rk,si,sj,p,q,zFirst,'alpha','alpha','alpha','alpha')
+          call putPlane(Rk,si,sj,p,q,zSecond,'beta','beta','beta','beta')
         end if
 !
         RotOut = matmul(RotOut,Rk)
         end subroutine buildPlanes
 !
-        subroutine putPlane(Rk,idDiagI,idDiagJ,idFwd,idBwd,p,q,z,spinP,spinQ,blockFwd,blockBwd)
+        subroutine putPlane(Rk,si,sj,p,q,z,spinP,spinQ,blockFwd,blockBwd)
 !       One 2x2 plane (a,b) of exp(X) with X(a,b) = z, X(b,a) = -conjg(z).
+!       Each touched block is read with iat, updated and written back with iput,
+!       so si==sj (all four writes on the same diagonal block) stays consistent.
         implicit none
         type(mqc_nef_matrix),intent(inout)::Rk
-        integer,intent(in)::idDiagI,idDiagJ,idFwd,idBwd,p,q
+        integer,intent(in)::si,sj,p,q
         complex(kind=real64),intent(in)::z
         character(len=*),intent(in)::spinP,spinQ,blockFwd,blockBwd
         type(mqc_scalar)::sElement
         real(kind=real64)::r
         complex(kind=real64)::cVal
+        type(mqc_scf_integral)::tmpBlock
+        character(len=16)::outSymm
 !
         r = abs(z)
-        if(r.le.myThresh) return
-        cVal = cos(r); sElement = cVal
-        call Rk%Main_Matrix(idDiagI)%put(sElement,p,p,spinP)
-        call Rk%Main_Matrix(idDiagJ)%put(sElement,q,q,spinQ)
-        cVal = z/r*sin(r); sElement = cVal
-        call Rk%Main_Matrix(idFwd)%put(sElement,p,q,blockFwd)
-        cVal = -conjg(z)/r*sin(r); sElement = cVal
-        call Rk%Main_Matrix(idBwd)%put(sElement,q,p,blockBwd)
+        if(r.gt.myThresh) then
+          outSymm = 'asymmetric'
+          cVal = cos(r); sElement = cVal
+          tmpBlock = Rk%iat(si,si)
+          call tmpBlock%put(sElement,p,p,spinP)
+          call Rk%iput(tmpBlock,si,si,outSymm)
+          tmpBlock = Rk%iat(sj,sj)
+          call tmpBlock%put(sElement,q,q,spinQ)
+          call Rk%iput(tmpBlock,sj,sj,outSymm)
+          cVal = z/r*sin(r); sElement = cVal
+          tmpBlock = Rk%iat(si,sj)
+          call tmpBlock%put(sElement,p,q,blockFwd)
+          call Rk%iput(tmpBlock,si,sj,outSymm)
+          cVal = -conjg(z)/r*sin(r); sElement = cVal
+          tmpBlock = Rk%iat(sj,si)
+          call tmpBlock%put(sElement,q,p,blockBwd)
+          call Rk%iput(tmpBlock,sj,si,outSymm)
+        end if
         end subroutine putPlane
 !
         subroutine applyPair(si,sj)
@@ -9320,48 +10316,58 @@
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      subroutine mqc_nef_generator_write_slots(TargetMat,idFwd,idBwd,p,q,mag,K)
+      subroutine mqc_nef_generator_write_slots(TargetMat,rowF,colF,p,q,mag,K)
 !
       implicit none
       type(mqc_nef_matrix),intent(inout)::TargetMat
-      integer,intent(in)::idFwd,idBwd,p,q
+      integer,intent(in)::rowF,colF,p,q
       complex(kind=real64),intent(in)::mag
       complex(kind=real64),dimension(8),intent(in)::K
       type(mqc_scalar)::sElement
       complex(kind=real64)::cVal
+      type(mqc_scf_integral)::tmpBlock
+      character(len=16)::outSymm
 !
+!     Forward block (rowF,colF): slots 1,3,5,7. Backward block (colF,rowF): slots
+!     2,4,6,8. Each block is read with iat and written back with iput.
+!
+      outSymm = 'asymmetric'
+      tmpBlock = TargetMat%iat(rowF,colF)
       if(abs(K(1)).gt.0.5) then
         cVal = mag*K(1); sElement = cVal
-        call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'alpha')
-      end if
-      if(abs(K(2)).gt.0.5) then
-        cVal = mag*K(2); sElement = cVal
-        call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'alpha')
+        call tmpBlock%put(sElement,p,q,'alpha')
       end if
       if(abs(K(3)).gt.0.5) then
         cVal = mag*K(3); sElement = cVal
-        call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'beta')
-      end if
-      if(abs(K(4)).gt.0.5) then
-        cVal = mag*K(4); sElement = cVal
-        call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'beta')
+        call tmpBlock%put(sElement,p,q,'beta')
       end if
       if(abs(K(5)).gt.0.5) then
         cVal = mag*K(5); sElement = cVal
-        call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'alphaBeta')
-      end if
-      if(abs(K(6)).gt.0.5) then
-        cVal = mag*K(6); sElement = cVal
-        call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'alphaBeta')
+        call tmpBlock%put(sElement,p,q,'alphaBeta')
       end if
       if(abs(K(7)).gt.0.5) then
         cVal = mag*K(7); sElement = cVal
-        call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'betaAlpha')
+        call tmpBlock%put(sElement,p,q,'betaAlpha')
+      end if
+      call TargetMat%iput(tmpBlock,rowF,colF,outSymm)
+      tmpBlock = TargetMat%iat(colF,rowF)
+      if(abs(K(2)).gt.0.5) then
+        cVal = mag*K(2); sElement = cVal
+        call tmpBlock%put(sElement,q,p,'alpha')
+      end if
+      if(abs(K(4)).gt.0.5) then
+        cVal = mag*K(4); sElement = cVal
+        call tmpBlock%put(sElement,q,p,'beta')
+      end if
+      if(abs(K(6)).gt.0.5) then
+        cVal = mag*K(6); sElement = cVal
+        call tmpBlock%put(sElement,q,p,'alphaBeta')
       end if
       if(abs(K(8)).gt.0.5) then
         cVal = mag*K(8); sElement = cVal
-        call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'betaAlpha')
+        call tmpBlock%put(sElement,q,p,'betaAlpha')
       end if
+      call TargetMat%iput(tmpBlock,colF,rowF,outSymm)
 !
       end subroutine mqc_nef_generator_write_slots
 !
@@ -9379,39 +10385,57 @@
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      subroutine mqc_nef_generator_write_antihermitian(TargetMat,idFwd,idBwd,p,q,mag,K)
+      subroutine mqc_nef_generator_write_antihermitian(TargetMat,rowF,colF,p,q,mag,K)
 !
       implicit none
       type(mqc_nef_matrix),intent(inout)::TargetMat
-      integer,intent(in)::idFwd,idBwd,p,q
+      integer,intent(in)::rowF,colF,p,q
       complex(kind=real64),intent(in)::mag
       complex(kind=real64),dimension(8),intent(in)::K
       complex(kind=real64),dimension(8)::V
       type(mqc_scalar)::sElement
+      type(mqc_scf_integral)::tmpBlock
+      character(len=16)::outSymm
 !
-!     Forward slots alpha(p,q), beta(p,q), alphaBeta(p,q), betaAlpha(p,q);
-!     partners alpha(q,p), beta(q,p), betaAlpha(q,p), alphaBeta(q,p).
       V = mag*K
       V(2) = -conjg(V(1))
       V(4) = -conjg(V(3))
       V(8) = -conjg(V(5))
       V(6) = -conjg(V(7))
+!
+!     Forward block (rowF,colF) first, then backward block (colF,rowF). When
+!     rowF=colF both are the same block; the second iat then already holds the
+!     forward writes, and the (p,q)/(q,p) elements never overlap (q>p).
+!
+      outSymm = 'asymmetric'
+      tmpBlock = TargetMat%iat(rowF,colF)
       if(abs(K(1)).gt.0.5) then
-        sElement = V(1); call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'alpha')
-        sElement = V(2); call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'alpha')
+        sElement = V(1); call tmpBlock%put(sElement,p,q,'alpha')
       end if
       if(abs(K(3)).gt.0.5) then
-        sElement = V(3); call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'beta')
-        sElement = V(4); call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'beta')
+        sElement = V(3); call tmpBlock%put(sElement,p,q,'beta')
       end if
       if(abs(K(5)).gt.0.5) then
-        sElement = V(5); call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'alphaBeta')
-        sElement = V(8); call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'betaAlpha')
+        sElement = V(5); call tmpBlock%put(sElement,p,q,'alphaBeta')
       end if
       if(abs(K(7)).gt.0.5) then
-        sElement = V(7); call TargetMat%Main_Matrix(idFwd)%put(sElement,p,q,'betaAlpha')
-        sElement = V(6); call TargetMat%Main_Matrix(idBwd)%put(sElement,q,p,'alphaBeta')
+        sElement = V(7); call tmpBlock%put(sElement,p,q,'betaAlpha')
       end if
+      call TargetMat%iput(tmpBlock,rowF,colF,outSymm)
+      tmpBlock = TargetMat%iat(colF,rowF)
+      if(abs(K(1)).gt.0.5) then
+        sElement = V(2); call tmpBlock%put(sElement,q,p,'alpha')
+      end if
+      if(abs(K(3)).gt.0.5) then
+        sElement = V(4); call tmpBlock%put(sElement,q,p,'beta')
+      end if
+      if(abs(K(5)).gt.0.5) then
+        sElement = V(8); call tmpBlock%put(sElement,q,p,'betaAlpha')
+      end if
+      if(abs(K(7)).gt.0.5) then
+        sElement = V(6); call tmpBlock%put(sElement,q,p,'alphaBeta')
+      end if
+      call TargetMat%iput(tmpBlock,colF,rowF,outSymm)
 !
       end subroutine mqc_nef_generator_write_antihermitian
 !
@@ -9506,7 +10530,8 @@
       type(mqc_scalar)::sElement
       complex(kind=real64)::theta,thetaAlpha,thetaBeta
       real(kind=real64)::myThresh
-      integer::genIdx,idIn,idFwd,idBwd,p,q,qStart
+      integer::genIdx,p,q,qStart
+      type(mqc_scf_integral)::inBlock
       integer::nRowIn,nColIn,nRowTemplate,nColTemplate
 !
       if(present(thresh)) then
@@ -9519,8 +10544,8 @@
       if(genIdx.ne.9) call mqc_nef_generator_template(genIdx,K)
 !
       call ThetaMat%init(templateMap)
+      call ThetaMat%Symm2Full()
 !
-      idIn = InputNEF%blockIndex([1,InputPair(1)],[2,InputPair(2)])
       if(genIdx.le.4.or.genIdx.eq.9) then
         nRowIn = InputNEF%Size_vector_alpha_row(InputPair(1))
         nColIn = InputNEF%Size_vector_alpha_col(InputPair(2))
@@ -9537,33 +10562,15 @@
         'nRowIn',nRowIn,'nRowTemplate',nRowTemplate,&
         'nColIn',nColIn,'nColTemplate',nColTemplate)
 !
-      idFwd = ThetaMat%blockIndex([1,TemplatePair(1)],[2,TemplatePair(2)])
-      idBwd = ThetaMat%blockIndex([1,TemplatePair(2)],[2,TemplatePair(1)])
-      if(ThetaMat%Zero_Flag(idFwd)) then
-        call ThetaMat%Main_Matrix(idFwd)%init(&
-             ThetaMat%Size_vector_alpha_row(TemplatePair(1)),&
-             ThetaMat%Size_vector_beta_row(TemplatePair(1)),&
-             nAlpha2=ThetaMat%Size_vector_alpha_col(TemplatePair(2)),&
-             nBeta2=ThetaMat%Size_vector_beta_col(TemplatePair(2)))
-        ThetaMat%Zero_Flag(idFwd) = .false.
-      end if
-      if(ThetaMat%Zero_Flag(idBwd)) then
-        call ThetaMat%Main_Matrix(idBwd)%init(&
-             ThetaMat%Size_vector_alpha_row(TemplatePair(2)),&
-             ThetaMat%Size_vector_beta_row(TemplatePair(2)),&
-             nAlpha2=ThetaMat%Size_vector_alpha_col(TemplatePair(1)),&
-             nBeta2=ThetaMat%Size_vector_beta_col(TemplatePair(1)))
-        ThetaMat%Zero_Flag(idBwd) = .false.
-      end if
-!
-      if(.not.InputNEF%Zero_Flag(idIn)) then
+      if(.not.InputNEF%isBlockZero(InputPair(1),InputPair(2))) then
+        inBlock = InputNEF%iat(InputPair(1),InputPair(2))
         if(genIdx.eq.9) then
           KAlphaOnly = [(1.0d0,0.0d0),(-1.0d0,0.0d0),(0.0d0,0.0d0),(0.0d0,0.0d0),&
                (0.0d0,0.0d0),(0.0d0,0.0d0),(0.0d0,0.0d0),(0.0d0,0.0d0)]
           KBetaOnly = [(0.0d0,0.0d0),(0.0d0,0.0d0),(1.0d0,0.0d0),(-1.0d0,0.0d0),&
                (0.0d0,0.0d0),(0.0d0,0.0d0),(0.0d0,0.0d0),(0.0d0,0.0d0)]
-          baseBlockAlpha = InputNEF%Main_Matrix(idIn)%getBlock('alpha')
-          baseBlockBeta = InputNEF%Main_Matrix(idIn)%getBlock('beta')
+          baseBlockAlpha = inBlock%getBlock('alpha')
+          baseBlockBeta = inBlock%getBlock('beta')
           do p = 1, nRowIn
             if(TemplatePair(1).eq.TemplatePair(2)) then
               qStart = p+1
@@ -9574,16 +10581,16 @@
               sElement = baseBlockAlpha%at(p,q); thetaAlpha = sElement
               sElement = baseBlockBeta%at(p,q); thetaBeta = sElement
               if(abs(thetaAlpha).gt.myThresh) &
-                call mqc_nef_generator_write_antihermitian(ThetaMat,idFwd,idBwd,p,q,thetaAlpha,KAlphaOnly)
+                call mqc_nef_generator_write_antihermitian(ThetaMat,TemplatePair(1),TemplatePair(2),p,q,thetaAlpha,KAlphaOnly)
               if(abs(thetaBeta).gt.myThresh) &
-                call mqc_nef_generator_write_antihermitian(ThetaMat,idFwd,idBwd,p,q,thetaBeta,KBetaOnly)
+                call mqc_nef_generator_write_antihermitian(ThetaMat,TemplatePair(1),TemplatePair(2),p,q,thetaBeta,KBetaOnly)
             end do
           end do
         else
           if(genIdx.le.4) then
-            baseBlock = InputNEF%Main_Matrix(idIn)%getBlock('alpha')
+            baseBlock = inBlock%getBlock('alpha')
           else
-            baseBlock = InputNEF%Main_Matrix(idIn)%getBlock('alphaBeta')
+            baseBlock = inBlock%getBlock('alphaBeta')
           end if
           do p = 1, nRowIn
             if(TemplatePair(1).eq.TemplatePair(2)) then
@@ -9595,7 +10602,7 @@
               sElement = baseBlock%at(p,q)
               theta = sElement
               if(abs(theta).le.myThresh) cycle
-              call mqc_nef_generator_write_antihermitian(ThetaMat,idFwd,idBwd,p,q,theta,K)
+              call mqc_nef_generator_write_antihermitian(ThetaMat,TemplatePair(1),TemplatePair(2),p,q,theta,K)
             end do
           end do
         end if
@@ -9704,17 +10711,18 @@
       implicit none
       class(mqc_nef_matrix),intent(in)::Template
       type(mqc_nef_matrix)::IdentOut
-      integer::row,idx
+      integer::row
+      character(len=16)::diagSymm
 !
       call IdentOut%init(Template%Map_Matrix_Row,&
            initial_map_matrix_col=Template%Map_Matrix_Col)
+      if(IdentOut%getSymm().eq.'fullsymmetric') IdentOut%Symmetry = 'hermitian'
+      diagSymm = 'keep'
       do row = 1, IdentOut%NumSpace_row
-        idx = IdentOut%blockIndex([1,row],[2,row])
-        IdentOut%Main_Matrix(idx) = mqc_integral_identity_func(&
+        call IdentOut%iput(mqc_integral_identity_func(&
              IdentOut%Size_vector_alpha_row(row),IdentOut%Size_vector_beta_row(row),&
              nAlpha2=IdentOut%Size_vector_alpha_col(row),&
-             nBeta2=IdentOut%Size_vector_beta_col(row))
-        IdentOut%Zero_Flag(idx) = .false.
+             nBeta2=IdentOut%Size_vector_beta_col(row)),row,row,diagSymm)
       end do
 !
       end function mqc_nef_matrix_identity
@@ -9735,13 +10743,16 @@
       class(mqc_nef_matrix),intent(in)::NEFMat
       real(kind=real64)::normOut
       type(mqc_scalar)::blockNorm
-      integer::idx
-!
+      integer::row,col
+      type(mqc_scf_integral)::tmpBlock
       normOut = 0.0
-      do idx = 1, size(NEFMat%Zero_Flag)
-        if(NEFMat%Zero_Flag(idx)) cycle
-        blockNorm = NEFMat%Main_Matrix(idx)%norm('F')
-        normOut = normOut + abs(blockNorm%cval())**2
+      do row = 1, NEFMat%NumSpace_row
+        do col = 1, NEFMat%NumSpace_col
+          if(NEFMat%isBlockZero(row,col)) cycle
+          tmpBlock = NEFMat%iat(row,col)
+          blockNorm = tmpBlock%norm('F')
+          normOut = normOut + abs(blockNorm%cval())**2
+        end do
       end do
       normOut = sqrt(normOut)
 !
@@ -10274,7 +11285,8 @@
         type(mqc_nef_matrix),intent(in)::CoeffRow,CoeffCol
         type(mqc_nef_r4)::outR4
         integer(kind=int64)::axisO1,axisO2,nRowOut,nColOut,nO1,nO2
-        integer(kind=int64)::pOut,qOut,idO1,idO2,idOutLocal,iRow,iCol,idA,idCR,idCC
+        integer(kind=int64)::pOut,qOut,idO1,idO2,idOutLocal,iRow,iCol,idA
+        type(mqc_scf_integral)::coeffBlockRow,coeffBlockCol
         type(mqc_r4tensor)::rawSrc,contribution,acc
         type(mqc_matrix)::denseRow,denseCol
         logical::first
@@ -10321,13 +11333,13 @@
                     idA = srcR4%blockIndex([axisRow,iRow],[axisCol,iCol],&
                          [axisO1,idO1],[axisO2,idO2])
                     if(srcR4%Zero_Flag(idA)) cycle
-                    idCR = CoeffRow%blockIndex([1,iRow],[2,pOut])
-                    if(CoeffRow%Zero_Flag(idCR)) cycle
-                    idCC = CoeffCol%blockIndex([1,iCol],[2,qOut])
-                    if(CoeffCol%Zero_Flag(idCC)) cycle
+                    if(CoeffRow%isBlockZero(iRow,pOut)) cycle
+                    if(CoeffCol%isBlockZero(iCol,qOut)) cycle
                     rawSrc = srcR4%Main_R4(idA)%getBlock('full')
-                    denseRow = CoeffRow%Main_Matrix(idCR)%getBlock('full')
-                    denseCol = CoeffCol%Main_Matrix(idCC)%getBlock('full')
+                    coeffBlockRow = CoeffRow%iat(iRow,pOut)
+                    coeffBlockCol = CoeffCol%iat(iCol,qOut)
+                    denseRow = coeffBlockRow%getBlock('full')
+                    denseCol = coeffBlockCol%getBlock('full')
                     contribution = rawAxisTransform(rawSrc,axisRow,axisCol,denseRow,denseCol)
                     if(first) then
                       acc = contribution
@@ -10464,7 +11476,7 @@
       type(mqc_nef_matrix)::myCoeff_2,myCoeff_3,myCoeff_4
       type(mqc_scf_integral)::block_1,block_2,block_3,block_4
       type(mqc_twoERIs)::localERIs,MO_ERIs
-      integer(kind=int64)::p,q,r,s,idC1,idC2,idC3,idC4,idOut
+      integer(kind=int64)::p,q,r,s,idOut
 !
       if(present(NEFCoeff_2)) then
         myCoeff_2 = NEFCoeff_2
@@ -10504,21 +11516,17 @@
       NEFR4Out%Size_vector_beta_4  = myCoeff_4%Size_vector_beta_col
 !
       do p = 1, NEFR4Out%NumSpace_1
-        idC1 = NEFCoeff_1%blockIndex([1,1],[2,p])
-        if(NEFCoeff_1%Zero_Flag(idC1)) cycle
-        block_1 = NEFCoeff_1%Main_Matrix(idC1)
+        if(NEFCoeff_1%isBlockZero(1,p)) cycle
+        block_1 = NEFCoeff_1%iat(1,p)
         do q = 1, NEFR4Out%NumSpace_2
-          idC2 = myCoeff_2%blockIndex([1,1],[2,q])
-          if(myCoeff_2%Zero_Flag(idC2)) cycle
-          block_2 = myCoeff_2%Main_Matrix(idC2)
+          if(myCoeff_2%isBlockZero(1,q)) cycle
+          block_2 = myCoeff_2%iat(1,q)
           do r = 1, NEFR4Out%NumSpace_3
-            idC3 = myCoeff_3%blockIndex([1,1],[2,r])
-            if(myCoeff_3%Zero_Flag(idC3)) cycle
-            block_3 = myCoeff_3%Main_Matrix(idC3)
+            if(myCoeff_3%isBlockZero(1,r)) cycle
+            block_3 = myCoeff_3%iat(1,r)
             do s = 1, NEFR4Out%NumSpace_4
-              idC4 = myCoeff_4%blockIndex([1,1],[2,s])
-              if(myCoeff_4%Zero_Flag(idC4)) cycle
-              block_4 = myCoeff_4%Main_Matrix(idC4)
+              if(myCoeff_4%isBlockZero(1,s)) cycle
+              block_4 = myCoeff_4%iat(1,s)
               idOut = NEFR4Out%blockIndex([1,p],[2,q],[3,r],[4,s])
               localERIs = ERIs
               call TwoERI_Trans_Full(6,0,block_1,block_2,block_3,block_4,localERIs,MO_ERIs)
@@ -13730,7 +14738,7 @@
       function mqc_nef_set_collapse(NEFSet,spinType,swapOrder,spinTypeKet,Order) result(NEFSetOut)
 !
       implicit none
-      class(mqc_nef_set),intent(in)::NEFSet
+      class(mqc_nef_set),intent(inOut)::NEFSet !! MMFM Change it to in (symm)
       character(len=*),intent(in),optional::spinType,spinTypeKet
       logical,intent(in),optional::swapOrder
       integer(kind=int64),dimension(4),intent(in),optional::Order
@@ -14104,6 +15112,8 @@
       function mqc_nef_set_outer_collapse(NEFSet,jointIJ,jointAxis,IAxisR4,JAxisR4) result(NEFSetOut)
 !
       implicit none
+      type(mqc_scf_integral)::blockTmp
+      character(len=16)::outSymm
       class(mqc_nef_set),intent(in)::NEFSet
       logical,intent(in),optional::jointIJ
       integer,intent(in),optional::jointAxis
@@ -14188,6 +15198,8 @@
             call New_Map_2(J)%init(1,0,lengthBeta=1)
           end do
           call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
+          call NEFMatOut%Symm2Full()
+          outSymm = 'asymmetric'
           do I = 1, myNumI
             do J = 1, myNumJ
               if(NEFSet%isZero(I,J)) cycle
@@ -14195,19 +15207,18 @@
               do b = 1, origNumSpace
                 if(cellVector%Zero_Flag(b)) cycle
                 newRowId = (I-1)*origNumSpace+b
-                newId = NEFMatOut%blockIndex([1,newRowId],[2,J])
-                call NEFMatOut%Main_Matrix(newId)%init(&
+                call blockTmp%init(&
                      NEFSet%Size_vector_alpha_1(b),NEFSet%Size_vector_beta_1(b),&
                      nAlpha2=1,nBeta2=1)
-                NEFMatOut%Zero_Flag(newId) = .false.
                 do ka = 1, NEFSet%Size_vector_alpha_1(b)
                   tmpScalar = cellVector%Main_Vector(b)%at(ka,'alpha')
-                  call NEFMatOut%Main_Matrix(newId)%put(tmpScalar,ka,1_int64,'aa')
+                  call blockTmp%put(tmpScalar,ka,1_int64,'aa')
                 end do
                 do ka = 1, NEFSet%Size_vector_beta_1(b)
                   tmpScalar = cellVector%Main_Vector(b)%at(ka,'beta')
-                  call NEFMatOut%Main_Matrix(newId)%put(tmpScalar,ka,1_int64,'bb')
+                  call blockTmp%put(tmpScalar,ka,1_int64,'bb')
                 end do
+                call NEFMatOut%iput(blockTmp,newRowId,J,outSymm)
               end do
             end do
           end do
@@ -14266,6 +15277,8 @@
           end if
         end if
         call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
+        call NEFMatOut%Symm2Full()
+        outSymm = 'asymmetric'
         do I = 1, myNumI
           do J = 1, myNumJ
             if(NEFSet%isZero(I,J)) cycle
@@ -14273,8 +15286,7 @@
             G = (I-1)*myNumJ+J
             do r = 1, origNumSpace_row
               do c = 1, origNumSpace_col
-                origId = cellMatrix%blockIndex([1,r],[2,c])
-                if(cellMatrix%Zero_Flag(origId)) cycle
+                if(cellMatrix%isBlockZero(r,c)) cycle
                 if(.not.myJointIJ) then
                   newRowId = (I-1)*origNumSpace_row+r
                   newColId = (J-1)*origNumSpace_col+c
@@ -14285,9 +15297,7 @@
                   newRowId = r
                   newColId = (G-1)*origNumSpace_col+c
                 end if
-                newId = NEFMatOut%blockIndex([1,newRowId],[2,newColId])
-                NEFMatOut%Main_Matrix(newId) = cellMatrix%Main_Matrix(origId)
-                NEFMatOut%Zero_Flag(newId) = .false.
+                call NEFMatOut%iput(cellMatrix%iat(r,c),newRowId,newColId,outSymm)
               end do
             end do
           end do
@@ -14510,6 +15520,9 @@
       function mqc_nef_set_outer_merge_space(NEFSet,jointIJ,jointAxis,IAxisR4,JAxisR4) result(NEFSetOut)
 !
       implicit none
+      type(mqc_scf_integral)::blockTmp
+      character(len=16)::outSymm
+      logical::blockStarted
       class(mqc_nef_set),intent(in)::NEFSet
       logical,intent(in),optional::jointIJ
       integer,intent(in),optional::jointAxis
@@ -14606,10 +15619,13 @@
                             NEFSet%Size_vector_alpha_1(b)*myNumI,0,&
                  lengthBeta=NEFSet%Size_vector_beta_1(b)*myNumI)
           end do
-          call New_Map_2(1)%init(myNumJ,0)
+          call New_Map_2(1)%init(myNumJ,0,lengthBeta=0)
           call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
+          call NEFMatOut%Symm2Full()
+          outSymm = 'asymmetric'
           started=.false.
           do b = 1, origNumSpace
+            blockStarted = .false.
             do I = 1, myNumI
               outerIdx = (I-1)*NEFSet%Size_vector_alpha_1(b)
               outerIdxb = (I-1)*NEFSet%Size_vector_beta_1(b)
@@ -14618,23 +15634,24 @@
                 cellVector = NEFSet%atVector(I,J)
                 if(cellVector%Zero_Flag(b)) cycle
                 started=.true.
-                if (NEFMatOut%Zero_Flag(b))&
-                   call NEFMatOut%Main_Matrix(b)%init(NEFMatOut%Size_vector_alpha_row(b),&
-                                                      NEFMatOut%Size_vector_beta_row(b),&
-                                                      0.0,'',myNumJ,0)
-                NEFMatOut%Zero_Flag(b) = .false.
+                if (.not.blockStarted)&
+                   call blockTmp%init(NEFMatOut%Size_vector_alpha_row(b),&
+                                      NEFMatOut%Size_vector_beta_row(b),&
+                                      0.0,'',myNumJ,0)
+                blockStarted = .true.
                 !!! THIS BLOCK should be a mput in mqc_est !!!
                 do b1 = 1, NEFSet%Size_vector_alpha_1(b)
-                  call NEFMatOut%Main_Matrix(b)%put(&
+                  call blockTmp%put(&
                        cellVector%Main_Vector(b)%at(b1,'alpha'),b1+outerIdx,J,'alpha')
                 end do
                 do b1 = 1, NEFSet%Size_vector_beta_1(b)
-                  call NEFMatOut%Main_Matrix(b)%put(&
+                  call blockTmp%put(&
                        cellVector%Main_Vector(b)%at(b1,'beta'),b1+outerIdxb,J,'alphaBeta')
                 end do
                 !!! !!!
               end do
             end do
+            if (blockStarted) call NEFMatOut%iput(blockTmp,b,1,outSymm)
           end do
           call NEFSetOut%init(1,1)
           if (started) then 
@@ -14687,6 +15704,7 @@
           end if
         end if
         call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
+        call NEFMatOut%Symm2Full() !!! MMFM THIS IS TEMPOARY !!!
         started=.false.
         do r = 1, origNumSpace_row
           do c = 1, origNumSpace_col
@@ -14695,6 +15713,7 @@
               do J = 1, myNumJ
                 if(NEFSet%isZero(I,J)) cycle
                 cellMatrix = NEFSet%atMatrix(I,J)
+                call cellMatrix%Symm2Full() !!! MMFM THIS IS TEMPOARY !!!
                 if(cellMatrix%Zero_Flag(origId)) cycle
                 started=.true.
                 if (NEFMatOut%Zero_Flag(origId))&
@@ -14814,6 +15833,8 @@
       function mqc_nef_set_outer_unmerge_space(mergedSet,template,jointIJ,jointAxis) result(NEFSetOut)
 !
       implicit none
+      type(mqc_scf_integral)::mergedBlock,cellBlock
+      character(len=16)::outSymm
       class(mqc_nef_set),intent(in)::mergedSet,template
       logical,intent(in),optional::jointIJ
       integer,intent(in),optional::jointAxis
@@ -14878,7 +15899,8 @@
             do J = 1, myNumJ
               call cellVector%init(template%Map_Matrix_1)
               do b = 1, origNumSpace
-                if(mergedMat%Zero_Flag(b)) cycle
+                if(mergedMat%isBlockZero(b,1)) cycle
+                mergedBlock = mergedMat%iat(b,1)
                 outerIdxAlpha = (I-1)*template%Size_vector_alpha_1(b)
                 outerIdxBeta = (I-1)*template%Size_vector_beta_1(b)
                 if(cellVector%Zero_Flag(b)) &
@@ -14886,11 +15908,11 @@
                         0.0,lengthBeta=template%Size_vector_beta_1(b))
                 cellVector%Zero_Flag(b) = .false.
                 do b1 = 1, template%Size_vector_alpha_1(b)
-                  tmpScalar = mergedMat%Main_Matrix(b)%at(b1+outerIdxAlpha,J,'alpha')
+                  tmpScalar = mergedBlock%at(b1+outerIdxAlpha,J,'alpha')
                   call cellVector%Main_Vector(b)%put(tmpScalar,b1,'alpha')
                 end do
                 do b1 = 1, template%Size_vector_beta_1(b)
-                  tmpScalar = mergedMat%Main_Matrix(b)%at(b1+outerIdxBeta,J,'alphaBeta')
+                  tmpScalar = mergedBlock%at(b1+outerIdxBeta,J,'alphaBeta')
                   call cellVector%Main_Vector(b)%put(tmpScalar,b1,'beta')
                 end do
               end do
@@ -14908,10 +15930,12 @@
           do J = 1, myNumJ
             G = (I-1)*myNumJ+J
             call cellMatrix%init(template%Map_Matrix_1,initial_map_matrix_col=template%Map_Matrix_2)
+            call cellMatrix%Symm2Full()
+            outSymm = 'asymmetric'
             do r = 1, origNumSpace_row
               do c = 1, origNumSpace_col
-                origId = mergedMat%blockIndex([1,r],[2,c])
-                if(mergedMat%Zero_Flag(origId)) cycle
+                if(mergedMat%isBlockZero(r,c)) cycle
+                mergedBlock = mergedMat%iat(r,c)
                 if(.not.myJointIJ) then
                   newRowId  = (I-1)*template%Size_vector_alpha_1(r)
                   newRowIdb = (I-1)*template%Size_vector_beta_1(r)
@@ -14928,37 +15952,36 @@
                   newColId  = (G-1)*template%Size_vector_alpha_2(c)
                   newColIdb = (G-1)*template%Size_vector_beta_2(c)
                 end if
-                if(cellMatrix%Zero_Flag(origId)) &
-                   call cellMatrix%Main_Matrix(origId)%init(template%Size_vector_alpha_1(r),&
-                        template%Size_vector_beta_1(r),0.0,'',template%Size_vector_alpha_2(c),&
-                        template%Size_vector_beta_2(c))
-                cellMatrix%Zero_Flag(origId) = .false.
+                call cellBlock%init(template%Size_vector_alpha_1(r),&
+                     template%Size_vector_beta_1(r),0.0,'',template%Size_vector_alpha_2(c),&
+                     template%Size_vector_beta_2(c))
                 do b1 = 1, template%Size_vector_alpha_1(r)
                   do b2 = 1, template%Size_vector_alpha_2(c)
-                    tmpScalar = mergedMat%Main_Matrix(origId)%at(newRowId+b1,newColId+b2,'alpha')
-                    call cellMatrix%Main_Matrix(origId)%put(tmpScalar,b1,b2,'alpha')
+                    tmpScalar = mergedBlock%at(newRowId+b1,newColId+b2,'alpha')
+                    call cellBlock%put(tmpScalar,b1,b2,'alpha')
                   end do
                 end do
                 do b1 = 1, template%Size_vector_beta_1(r)
                   do b2 = 1, template%Size_vector_beta_2(c)
-                    tmpScalar = mergedMat%Main_Matrix(origId)%at(newRowIdb+b1,newColIdb+b2,'beta')
-                    call cellMatrix%Main_Matrix(origId)%put(tmpScalar,b1,b2,'beta')
+                    tmpScalar = mergedBlock%at(newRowIdb+b1,newColIdb+b2,'beta')
+                    call cellBlock%put(tmpScalar,b1,b2,'beta')
                   end do
                 end do
-                if(cellMatrix%Main_Matrix(origId)%Type().eq.'general') then
+                if(cellBlock%Type().eq.'general') then
                   do b1 = 1, template%Size_vector_alpha_1(r)
                     do b2 = 1, template%Size_vector_beta_2(c)
-                      tmpScalar = mergedMat%Main_Matrix(origId)%at(newRowId+b1,newColIdb+b2,'betaalpha')
-                      call cellMatrix%Main_Matrix(origId)%put(tmpScalar,b1,b2,'betaalpha')
+                      tmpScalar = mergedBlock%at(newRowId+b1,newColIdb+b2,'betaalpha')
+                      call cellBlock%put(tmpScalar,b1,b2,'betaalpha')
                     end do
                   end do
                   do b1 = 1, template%Size_vector_beta_1(r)
                     do b2 = 1, template%Size_vector_alpha_2(c)
-                      tmpScalar = mergedMat%Main_Matrix(origId)%at(newRowIdb+b1,newColId+b2,'alphabeta')
-                      call cellMatrix%Main_Matrix(origId)%put(tmpScalar,b1,b2,'alphabeta')
+                      tmpScalar = mergedBlock%at(newRowIdb+b1,newColId+b2,'alphabeta')
+                      call cellBlock%put(tmpScalar,b1,b2,'alphabeta')
                     end do
                   end do
                 end if
+                call cellMatrix%iput(cellBlock,r,c,outSymm)
               end do
             end do
             call NEFSetOut%put(cellMatrix,int(I),int(J))
@@ -15057,6 +16080,7 @@
            templateSet,jointIJ,jointAxis,IAxisR4,JAxisR4) result(NEFSetOut)
 !
       implicit none
+      character(len=16)::outSymm
       class(mqc_nef_set),intent(in)::NEFSet
       type(mqc_nef_set),intent(in)::templateSet
       logical,intent(in),optional::jointIJ
@@ -15199,6 +16223,8 @@
           do J = 1, myNumJ
             G = (I-1)*myNumJ+J
             call cellMatrix%init(cellMap1,initial_map_matrix_col=cellMap2)
+            call cellMatrix%Symm2Full()
+            outSymm = 'asymmetric'
             do r = 1, origNumSpace_row
               do c = 1, origNumSpace_col
                 if(.not.myJointIJ) then
@@ -15211,11 +16237,8 @@
                   newRowId = r
                   newColId = (G-1)*origNumSpace_col+c
                 end if
-                newId = combMatrix%blockIndex([1,newRowId],[2,newColId])
-                if(combMatrix%Zero_Flag(newId)) cycle
-                origId = cellMatrix%blockIndex([1,r],[2,c])
-                cellMatrix%Main_Matrix(origId) = combMatrix%Main_Matrix(newId)
-                cellMatrix%Zero_Flag(origId) = .false.
+                if(combMatrix%isBlockZero(newRowId,newColId)) cycle
+                call cellMatrix%iput(combMatrix%iat(newRowId,newColId),r,c,outSymm)
               end do
             end do
             call NEFSetOut%put(cellMatrix,int(I),int(J))
@@ -15460,6 +16483,8 @@
            jointIJ,jointAxis) result(NEFSetOut)
 !
       implicit none
+      type(mqc_scf_integral)::blockTmp
+      character(len=16)::outSymm
       class(mqc_nef_set),intent(in)::NEFSet
       character(len=*),intent(in),optional::spinType,spinTypeKet
       logical,intent(in),optional::swapOrder
@@ -15545,6 +16570,8 @@
             call New_Map_2(J)%init(1,0,lengthBeta=1)
           end do
           call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
+          call NEFMatOut%Symm2Full()
+          outSymm = 'asymmetric'
           do I = 1, myNumI
             do J = 1, myNumJ
               tmpMatIn = NEFSet%atMatrix(I,J)
@@ -15552,19 +16579,18 @@
               do b = 1, origNumSpace
                 if(cellVector%Zero_Flag(b)) cycle
                 newRowId = (I-1)*origNumSpace+b
-                newId = NEFMatOut%blockIndex([1,newRowId],[2,J])
-                call NEFMatOut%Main_Matrix(newId)%init(&
+                call blockTmp%init(&
                      cellVector%Size_vector_alpha(b),cellVector%Size_vector_beta(b),&
                      nAlpha2=1,nBeta2=1)
-                NEFMatOut%Zero_Flag(newId) = .false.
                 do ka = 1, cellVector%Size_vector_alpha(b)
                   tmpScalar = cellVector%Main_Vector(b)%at(ka,'alpha')
-                  call NEFMatOut%Main_Matrix(newId)%put(tmpScalar,ka,1_int64,'aa')
+                  call blockTmp%put(tmpScalar,ka,1_int64,'aa')
                 end do
                 do ka = 1, cellVector%Size_vector_beta(b)
                   tmpScalar = cellVector%Main_Vector(b)%at(ka,'beta')
-                  call NEFMatOut%Main_Matrix(newId)%put(tmpScalar,ka,1_int64,'bb')
+                  call blockTmp%put(tmpScalar,ka,1_int64,'bb')
                 end do
+                call NEFMatOut%iput(blockTmp,newRowId,J,outSymm)
               end do
             end do
           end do
@@ -15655,6 +16681,8 @@
           end if
         end if
         call NEFMatOut%init(New_Map_1,initial_map_matrix_col=New_Map_2)
+        call NEFMatOut%Symm2Full()
+        outSymm = 'asymmetric'
         do I = 1, myNumI
           do J = 1, myNumJ
             tmpR4In = NEFSet%atR4(I,J)
@@ -15663,8 +16691,7 @@
             G = (I-1)*myNumJ+J
             do r = 1, origNumSpace_row
               do c = 1, origNumSpace_col
-                origId = cellMatrix%blockIndex([1,r],[2,c])
-                if(cellMatrix%Zero_Flag(origId)) cycle
+                if(cellMatrix%isBlockZero(r,c)) cycle
                 if(.not.myJointIJ) then
                   newRowId = (I-1)*origNumSpace_row+r
                   newColId = (J-1)*origNumSpace_col+c
@@ -15675,9 +16702,7 @@
                   newRowId = r
                   newColId = (G-1)*origNumSpace_col+c
                 end if
-                newId = NEFMatOut%blockIndex([1,newRowId],[2,newColId])
-                NEFMatOut%Main_Matrix(newId) = cellMatrix%Main_Matrix(origId)
-                NEFMatOut%Zero_Flag(newId) = .false.
+                call NEFMatOut%iput(cellMatrix%iat(r,c),newRowId,newColId,outSymm)
               end do
             end do
           end do
@@ -16845,6 +17870,7 @@
            map_matrix_3,map_matrix_4,spinType,spinTypeKet,Order) result(NEFR4Out)
 !
       implicit none
+      type(mqc_scf_integral)::matBlock
       class(mqc_nef_matrix),intent(in)::NEFMat
       Type(MQC_SCF_Eigenvalues),Dimension(:),Allocatable,intent(in)::&
            map_matrix_1,map_matrix_2,map_matrix_3,map_matrix_4
@@ -16986,6 +18012,7 @@
             finalid = NEFMat%blockIndex([1,idij],[2,idlk])
             nef_bidx = NEFR4Out%blockIndex([ia,dimi],[ja,dimj],[la,diml],[ka,dimk])
             if (NEFMat%Zero_Flag(finalid)) cycle
+            matBlock = NEFMat%iat(idij,idlk)
             if(ia.eq.1) then
               nA1=NEFR4Out%blockSize(ia,dimi,'alpha'); nB1=NEFR4Out%blockSize(ia,dimi,'beta')
             else if(ja.eq.1) then
@@ -17031,7 +18058,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'alpha')
                 call NEFR4Out%put([ia,dimi,i,1_int64],[ja,dimj,j,1_int64],&
                      [ka,dimk,k,1_int64],[la,diml,l,1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'a','a',dimi,dimj,ia,ja,'singlet')),&
                        int(NEFR4Out%collapseIndex(k,l,'a','a',dimk,diml,ka,la,'singlet')),&
                        'alpha'))
@@ -17041,7 +18068,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'beta')
                 call NEFR4Out%put([ia,dimi,i,1_int64],[ja,dimj,j,1_int64],&
                      [ka,dimk,k,-1_int64],[la,diml,l,-1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'a','a',dimi,dimj,ia,ja,'singlet')),&
                        int(NEFR4Out%collapseIndex(k,l,'b','b',dimk,diml,ka,la,'singlet')),&
                        'betaalpha'))
@@ -17055,7 +18082,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'alpha')
                 call NEFR4Out%put([ia,dimi,i,-1_int64],[ja,dimj,j,-1_int64],&
                      [ka,dimk,k,1_int64],[la,diml,l,1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'b','b',dimi,dimj,ia,ja,'singlet')),&
                        int(NEFR4Out%collapseIndex(k,l,'a','a',dimk,diml,ka,la,'singlet')),&
                        'alphabeta'))
@@ -17065,7 +18092,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'beta')
                 call NEFR4Out%put([ia,dimi,i,-1_int64],[ja,dimj,j,-1_int64],&
                      [ka,dimk,k,-1_int64],[la,diml,l,-1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'b','b',dimi,dimj,ia,ja,'singlet')),&
                        int(NEFR4Out%collapseIndex(k,l,'b','b',dimk,diml,ka,la,'singlet')),&
                        'beta'))
@@ -17087,6 +18114,7 @@
             finalid = NEFMat%blockIndex([1,idij],[2,idlk])
             nef_bidx = NEFR4Out%blockIndex([ia,dimi],[ja,dimj],[la,diml],[ka,dimk])
             if (NEFMat%Zero_Flag(finalid)) cycle
+            matBlock = NEFMat%iat(idij,idlk)
             if(ia.eq.1) then
               nA1=NEFR4Out%blockSize(ia,dimi,'alpha'); nB1=NEFR4Out%blockSize(ia,dimi,'beta')
             else if(ja.eq.1) then
@@ -17132,7 +18160,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'beta')
                 call NEFR4Out%put([ia,dimi,i,1_int64],[ja,dimj,j,-1_int64],&
                      [ka,dimk,k,1_int64],[la,diml,l,-1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'triplet')),&
                        int(NEFR4Out%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'triplet')),&
                        'alpha'))
@@ -17142,7 +18170,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'alpha')
                 call NEFR4Out%put([ia,dimi,i,1_int64],[ja,dimj,j,-1_int64],&
                      [ka,dimk,k,-1_int64],[la,diml,l,1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'triplet')),&
                        int(NEFR4Out%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'triplet')),&
                        'alphabeta'))
@@ -17156,7 +18184,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'beta')
                 call NEFR4Out%put([ia,dimi,i,-1_int64],[ja,dimj,j,1_int64],&
                      [ka,dimk,k,1_int64],[la,diml,l,-1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'triplet')),&
                        int(NEFR4Out%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'triplet')),&
                        'betaalpha'))
@@ -17166,7 +18194,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'alpha')
                 call NEFR4Out%put([ia,dimi,i,-1_int64],[ja,dimj,j,1_int64],&
                      [ka,dimk,k,-1_int64],[la,diml,l,1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'triplet')),&
                        int(NEFR4Out%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'triplet')),&
                        'beta'))
@@ -17188,6 +18216,7 @@
             finalid = NEFMat%blockIndex([1,idij],[2,idlk])
             nef_bidx = NEFR4Out%blockIndex([ia,dimi],[ja,dimj],[la,diml],[ka,dimk])
             if (NEFMat%Zero_Flag(finalid)) cycle
+            matBlock = NEFMat%iat(idij,idlk)
             if(ia.eq.1) then
               nA1=NEFR4Out%blockSize(ia,dimi,'alpha'); nB1=NEFR4Out%blockSize(ia,dimi,'beta')
             else if(ja.eq.1) then
@@ -17233,7 +18262,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'alpha')
                 call NEFR4Out%put([ia,dimi,i,1_int64],[ja,dimj,j,1_int64],&
                      [ka,dimk,k,1_int64],[la,diml,l,1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'a','a',dimi,dimj,ia,ja,'all')),&
                        int(NEFR4Out%collapseIndex(k,l,'a','a',dimk,diml,ka,la,'all')),&
                        'alpha'))
@@ -17243,7 +18272,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'beta')
                 call NEFR4Out%put([ia,dimi,i,1_int64],[ja,dimj,j,1_int64],&
                      [ka,dimk,k,-1_int64],[la,diml,l,-1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'a','a',dimi,dimj,ia,ja,'all')),&
                        int(NEFR4Out%collapseIndex(k,l,'b','b',dimk,diml,ka,la,'all')),&
                        'alphabeta'))
@@ -17257,7 +18286,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'alpha')
                 call NEFR4Out%put([ia,dimi,i,-1_int64],[ja,dimj,j,-1_int64],&
                      [ka,dimk,k,1_int64],[la,diml,l,1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'b','b',dimi,dimj,ia,ja,'all')),&
                        int(NEFR4Out%collapseIndex(k,l,'a','a',dimk,diml,ka,la,'all')),&
                        'betaalpha'))
@@ -17267,7 +18296,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'beta')
                 call NEFR4Out%put([ia,dimi,i,-1_int64],[ja,dimj,j,-1_int64],&
                      [ka,dimk,k,-1_int64],[la,diml,l,-1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'b','b',dimi,dimj,ia,ja,'all')),&
                        int(NEFR4Out%collapseIndex(k,l,'b','b',dimk,diml,ka,la,'all')),&
                        'beta'))
@@ -17281,7 +18310,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'beta')
                 call NEFR4Out%put([ia,dimi,i,1_int64],[ja,dimj,j,-1_int64],&
                      [ka,dimk,k,1_int64],[la,diml,l,-1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'all')),&
                        int(NEFR4Out%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'all')),&
                        'alpha'))
@@ -17291,7 +18320,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'alpha')
                 call NEFR4Out%put([ia,dimi,i,1_int64],[ja,dimj,j,-1_int64],&
                      [ka,dimk,k,-1_int64],[la,diml,l,1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'all')),&
                        int(NEFR4Out%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'all')),&
                        'alphabeta'))
@@ -17305,7 +18334,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'beta')
                 call NEFR4Out%put([ia,dimi,i,-1_int64],[ja,dimj,j,1_int64],&
                      [ka,dimk,k,1_int64],[la,diml,l,-1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'all')),&
                        int(NEFR4Out%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'all')),&
                        'betaalpha'))
@@ -17315,7 +18344,7 @@
                do l = 1, NEFR4Out%blockSize(la,diml,'alpha')
                 call NEFR4Out%put([ia,dimi,i,-1_int64],[ja,dimj,j,1_int64],&
                      [ka,dimk,k,-1_int64],[la,diml,l,1_int64],&
-                     NEFMat%Main_Matrix(finalid)%at(&
+                     matBlock%at(&
                        int(NEFR4Out%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'all')),&
                        int(NEFR4Out%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'all')),&
                        'beta'))

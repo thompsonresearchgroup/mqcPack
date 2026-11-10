@@ -888,7 +888,7 @@
           blank_at_top,blank_at_bottom,formatStr)
 !
       implicit none
-      class(mqc_scf_integral)::integral
+      class(mqc_scf_integral),intent(in)::integral
       integer(kind=int64),intent(in)::iOut
       character(len=*),intent(in)::header
       character(len=64)::arrayType
@@ -903,7 +903,6 @@
       endif
       write(iout,1000) trim(header)
       
-      call string_change_case(integral%array_type,'L')
       if(integral%array_type.eq.'space') then
         if(present(formatStr)) then
           if(integral%hasAlpha()) then
@@ -1063,7 +1062,7 @@
           blank_at_top,blank_at_bottom,formatstr)
 !
       implicit none
-      class(mqc_scf_eigenvalues)::eigenvalues
+      class(mqc_scf_eigenvalues),intent(in)::eigenvalues
       integer(kind=int64),intent(in)::iOut
       character(len=*),intent(in)::header
       character(len=64)::integralType
@@ -1078,7 +1077,6 @@
       endif
       write(iout,1000) trim(header)
       
-      call string_change_case(eigenvalues%array_type,'L')
       if(eigenvalues%array_type.eq.'space') then
         if(present(formatStr)) then
           if(eigenvalues%hasAlpha()) call eigenvalues%alpha%print(iout,'',formatStr=formatStr)
@@ -1170,7 +1168,7 @@
           blank_at_top,blank_at_bottom,short_print_threshold)
 !
       implicit none
-      class(mqc_twoERIs)::twoERIs
+      class(mqc_twoERIs),intent(in)::twoERIs
       integer(kind=int64),intent(in)::iOut
       character(len=*),intent(in)::header
       Real(kind=real64),intent(in),optional::short_print_threshold
@@ -1194,7 +1192,6 @@
         print_threshold = -1.0
         short_print = .false.
       EndIf      
-      call string_change_case(trim(twoERIs%integraltype),'L')
       if(trim(twoERIs%integralType).eq.'regular') then
         if(twoERIs%hasSpinBlock('aaaa')) &
           call twoERIs%alpha%print(iout,'Regular 2ERIs',short_print_threshold=print_threshold)
@@ -3321,24 +3318,25 @@
 !
       implicit none
       class(mqc_twoERIs)::twoERIs
-      character(len=*)::storIntType,integralType
+      character(len=*),intent(in)::storIntType,integralType
       type(mqc_r4tensor),optional::alpha,beta,alphaBeta,betaAlpha,abab,abba,baab, &
         baba,aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb
       integer,optional::nA1,nA2,nA3,nA4,nB1,nB2,nB3,nB4
       logical,dimension(16),optional::allocationVector
       logical,dimension(16)::allocVec
       integer::i
+      character(len=64)::myStorIntType,myIntegralType
 !
-      call string_change_case(storIntType,'L')
-      call string_change_case(integralType,'L')
-      storIntType = trim(storIntType)
-      twoERIs%storageType = storIntType(1:4) 
-      if(len(storIntType).eq.4) then
+!     The type labels are read into local copies: the actual arguments are often literals.
+      call string_change_case(storIntType,'L',myStorIntType)
+      call string_change_case(integralType,'L',myIntegralType)
+      twoERIs%storageType = myStorIntType(1:4)
+      if(len_trim(myStorIntType).eq.4) then
         twoERIs%interactionType = 'coulomb'
       else
-        twoERIs%interactionType = storIntType(6:) 
+        twoERIs%interactionType = myStorIntType(6:)
       endIf
-      twoERIs%integralType = trim(integralType) 
+      twoERIs%integralType = trim(myIntegralType)
       if(twoERIs%storageType.ne.'symm'.and.&
         twoERIs%storageType.ne.'full') &
         call mqc_error_a('Unrecognized storage type in mqc_twoeris_allocate',6,&
@@ -3991,26 +3989,27 @@
         implicit none
         type(mqc_matrix)::matrix
         class(mqc_scf_integral),intent(out)::integral
-        character(len=*)::integralName,integralType
+        character(len=*),intent(in)::integralName,integralType
         integer(kind=int64),optional::nBasis
+        character(len=64)::myIntegralType
 !
-        call string_change_case(integralType,'L')
+        call string_change_case(integralType,'L',myIntegralType)
 !
-        if((integralType /= 'space').and.(integralType /= 'spin').and.&
-          (integralType /= 'general')) &
+        if((myIntegralType /= 'space').and.(myIntegralType /= 'spin').and.&
+          (myIntegralType /= 'general')) &
           call mqc_error_a('Bad integralType specification in MQC_Matrix_To_Integral',6,&
-            'integralType = ', integralType)
+            'integralType = ', myIntegralType)
 !
-        if((integralType /= 'space').and..not.(present(nBasis))) then
+        if((myIntegralType /= 'space').and..not.(present(nBasis))) then
           call mqc_error('Integral types "spin" and "general" require nBasis argument '&
             //'in MQC_Matrix_To_Integral',6)
         end if
 !
-        if(integralType == 'space') then
+        if(myIntegralType == 'space') then
           call mqc_integral_allocate(integral,integralName,'space',matrix)
           call integral%storageSymm(matrix)
         else
-          call mqc_integral_allocate(integral,integralName,integralType,nDimA1=nBasis, &
+          call mqc_integral_allocate(integral,integralName,myIntegralType,nDimA1=nBasis, &
             nDimA2=nBasis,nDimB1=nBasis,nDimB2=nBasis)
           call integral%imp(matrix)
         endIf
@@ -4268,16 +4267,17 @@
 !
       implicit none
       class(mqc_scf_eigenvalues)::eigenvalues
-      character(len=*)::arrayName,arrayType
+      character(len=*),intent(in)::arrayName,arrayType
       type(mqc_vector),optional::alpha,beta
+      character(len=64)::myArrayName,myArrayType
 !
-      call string_change_case(arrayType,'L')
-      call string_change_case(arrayName,'L')
-      eigenvalues%array_type = arrayType 
-      eigenvalues%array_name = arrayName 
+      call string_change_case(arrayType,'L',myArrayType)
+      call string_change_case(arrayName,'L',myArrayName)
+      eigenvalues%array_type = myArrayType
+      eigenvalues%array_name = myArrayName
 !
       if(present(alpha)) eigenvalues%alpha = alpha
-      if(arrayType.eq.'spin'.or.arrayType.eq.'general') then
+      if(myArrayType.eq.'spin'.or.myArrayType.eq.'general') then
         if(present(beta)) eigenvalues%beta = beta
       endIf
 !
@@ -16895,7 +16895,8 @@
         case('spin','general')
           BetaB=transpose(eigB%getBlock('b'))
           ab = AlphaA.outer.BetaB
-          call mqc_integral_allocate(IntOut,'','general',aa,ab,ab,aa)
+!         alphaBeta = rows beta(A) x cols alpha(B) = A_a (x) B_a; betaAlpha = A_a (x) B_b
+          call mqc_integral_allocate(IntOut,'','general',aa,ab,aa,ab)
         case default
           call mqc_error_A('Unknown Eigenvalue type in mqc_eigen_eigen_outer_product', 6, &
                'eigB%type', eigB%type() )
@@ -16905,14 +16906,16 @@
         case('space')
           BetaA=eigA%getBlock('b')
           ba = BetaA.outer.AlphaB
-          call mqc_integral_allocate(IntOut,'','general',aa,ba,aa,ba)
+!         alphaBeta = A_b (x) B_a; betaAlpha = rows alpha(A) x cols beta(B) = A_a (x) B_a
+          call mqc_integral_allocate(IntOut,'','general',aa,ba,ba,aa)
         case('spin','general')
           BetaA=eigA%getBlock('b')
           BetaB=transpose(eigB%getBlock('b'))
           ab = AlphaA.outer.BetaB
           ba = BetaA.outer.AlphaB
           bb = BetaA.outer.BetaB
-          call mqc_integral_allocate(IntOut,'','general',aa,bb,ab,ba)
+!         alphaBeta = rows beta(A) x cols alpha(B) = A_b (x) B_a; betaAlpha = A_a (x) B_b
+          call mqc_integral_allocate(IntOut,'','general',aa,bb,ba,ab)
         case default
           call mqc_error_A('Unknown Eigenvalue type in mqc_eigen_eigen_outer_product', 6, &
                'eigB%type', eigB%type() )
@@ -26762,7 +26765,7 @@
       elseIf(eig%type().eq.'spin') then
         tmpVec1 = conjg(eig%getblock('alpha'))
         tmpVec2 = conjg(eig%getblock('beta'))
-        call mqc_eigenvalues_allocate(eigOut,myLabel,'space',tmpVec1,tmpVec2)
+        call mqc_eigenvalues_allocate(eigOut,myLabel,'spin',tmpVec1,tmpVec2)
       endIf
 !
       end function mqc_scf_eigenvalues_conjg
@@ -29247,8 +29250,10 @@
             call bbba%put(element,myI,myJ,myK,myL)
             allocVec(13)=.true.
           end if
+!         copy the stored block first: twoERIs is re-allocated by the call
+          aaaa = twoERIs%alpha
           call mqc_twoeris_allocate(twoERIs,'full-coulomb','general',&
-                      twoERIs%alpha,twoERIs%alpha,twoERIs%alpha,twoERIs%alpha,&
+                      aaaa,aaaa,aaaa,aaaa,&
                                abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,&
                                bbab,babb,abbb,allocationVector=allocVec,&
               nA1=size(twoERIs,'alpha',1),nA2=size(twoERIs,'alpha',2),&
@@ -29284,11 +29289,11 @@
             call twoERIs%alphabeta%put(element,myI,myJ,myK,myL)
           end if
         elseif(spinblock.eq.'betaalpha'.or.spinBlock.eq.'bbaa') then
-          if(twoERIs%hasSpinBlock('aabb')) then
+          if(twoERIs%hasSpinBlock('bbaa')) then
             call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
           else
             call twoERIs%betaAlpha%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
-                                   size(twoERIs,'alphaa',3),size(twoERIs,'alpha',4))
+                                   size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
             call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
           end if
         else
@@ -29359,8 +29364,13 @@
             call bbba%put(element,myI,myJ,myK,myL)
             allocVec(13)=.true.
           end if
+!         copy the stored blocks first: twoERIs is re-allocated by the call
+          aaaa = twoERIs%alpha
+          bbbb = twoERIs%beta
+          aabb = twoERIs%alphaBeta
+          bbaa = twoERIs%betaAlpha
           call mqc_twoeris_allocate(twoERIs,'full-coulomb','general',&
-                      twoERIs%alpha,twoERIs%beta,twoERIs%alphaBeta,twoERIs%betaAlpha,&
+                      aaaa,bbbb,aabb,bbaa,&
                                abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,&
                                bbab,babb,abbb,allocationVector=allocVec,&
               nA1=size(twoERIs,'alpha',1),nA2=size(twoERIs,'alpha',2),&
@@ -29370,6 +29380,14 @@
         endIf
 !     GENERAL
       elseIf(twoERIs%integralType.eq.'general') then
+!       symm storage keeps one block per mirror group: a mirror-only block is never read
+        if(trim(twoERIs%storType()).eq.'symm') then
+          select case(trim(spinBlock))
+          case('bbaa','betaalpha','baab','baba','aaba','abaa','baaa','bbba','bbab','babb')
+            call mqc_error_a('MQC_TwoERIs_Put: block is a mirror of a stored block in '//&
+              'symm storage (put the stored block)',6,'spinBlock',spinBlock)
+          end select
+        end if
         if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
           if(twoERIs%hasSpinBlock('aaaa')) then
             call twoERIs%alpha%put(element,myI,myJ,myK,myL)
@@ -29395,108 +29413,108 @@
             call twoERIs%alphabeta%put(element,myI,myJ,myK,myL)
           end if
         elseif(spinblock.eq.'betaalpha'.or.spinBlock.eq.'bbaa') then
-          if(twoERIs%hasSpinBlock('aabb')) then
+          if(twoERIs%hasSpinBlock('bbaa')) then
             call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
           else
             call twoERIs%betaAlpha%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
-                                   size(twoERIs,'alphaa',3),size(twoERIs,'alpha',4))
+                                   size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
             call twoERIs%betaAlpha%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'aaab') then 
           if(twoERIs%hasSpinBlock('aaab')) then
-            call aaab%put(element,myI,myJ,myK,myL)
+            call twoERIs%aaab%put(element,myI,myJ,myK,myL)
           else
-            call aaab%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+            call twoERIs%aaab%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
                            size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
-            call aaab%put(element,myI,myJ,myK,myL)
+            call twoERIs%aaab%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'aaba') then 
           if(twoERIs%hasSpinBlock('aaba')) then
-            call aaba%put(element,myI,myJ,myK,myL)
+            call twoERIs%aaba%put(element,myI,myJ,myK,myL)
           else
-            call aaba%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
+            call twoERIs%aaba%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
                            size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
-            call aaba%put(element,myI,myJ,myK,myL)
+            call twoERIs%aaba%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'abaa') then 
           if(twoERIs%hasSpinBlock('abaa')) then
-            call abaa%put(element,myI,myJ,myK,myL)
+            call twoERIs%abaa%put(element,myI,myJ,myK,myL)
           else
-            call abaa%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+            call twoERIs%abaa%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
                            size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
-            call abaa%put(element,myI,myJ,myK,myL)
+            call twoERIs%abaa%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'baaa') then 
           if(twoERIs%hasSpinBlock('baaa')) then
-            call baaa%put(element,myI,myJ,myK,myL)
+            call twoERIs%baaa%put(element,myI,myJ,myK,myL)
           else
-            call baaa%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+            call twoERIs%baaa%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
                            size(twoERIs,'alpha',3),size(twoERIs,'alpha',4))
-            call baaa%put(element,myI,myJ,myK,myL)
+            call twoERIs%baaa%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'abab') then 
           if(twoERIs%hasSpinBlock('abab')) then
-            call abab%put(element,myI,myJ,myK,myL)
+            call twoERIs%abab%put(element,myI,myJ,myK,myL)
           else
-            call abab%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+            call twoERIs%abab%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
                            size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
-            call abab%put(element,myI,myJ,myK,myL)
+            call twoERIs%abab%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'abba') then 
           if(twoERIs%hasSpinBlock('abba')) then
-            call abba%put(element,myI,myJ,myK,myL)
+            call twoERIs%abba%put(element,myI,myJ,myK,myL)
           else
-            call abba%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+            call twoERIs%abba%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
                            size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
-            call abba%put(element,myI,myJ,myK,myL)
+            call twoERIs%abba%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'baab') then 
           if(twoERIs%hasSpinBlock('baab')) then
-            call baab%put(element,myI,myJ,myK,myL)
+            call twoERIs%baab%put(element,myI,myJ,myK,myL)
           else
-            call baab%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+            call twoERIs%baab%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
                            size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
-            call baab%put(element,myI,myJ,myK,myL)
+            call twoERIs%baab%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'baba') then 
           if(twoERIs%hasSpinBlock('baba')) then
-            call baba%put(element,myI,myJ,myK,myL)
+            call twoERIs%baba%put(element,myI,myJ,myK,myL)
           else
-            call baba%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+            call twoERIs%baba%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
                            size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
-            call baba%put(element,myI,myJ,myK,myL)
+            call twoERIs%baba%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'abbb') then 
           if(twoERIs%hasSpinBlock('abbb')) then
-            call abbb%put(element,myI,myJ,myK,myL)
+            call twoERIs%abbb%put(element,myI,myJ,myK,myL)
           else
-            call abbb%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
+            call twoERIs%abbb%init(size(twoERIs,'alpha',1),size(twoERIs,'beta',2),&
                            size(twoERIs,'beta',3),size(twoERIs,'beta',4))
-            call abbb%put(element,myI,myJ,myK,myL)
+            call twoERIs%abbb%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'babb') then 
           if(twoERIs%hasSpinBlock('babb')) then
-            call babb%put(element,myI,myJ,myK,myL)
+            call twoERIs%babb%put(element,myI,myJ,myK,myL)
           else
-            call babb%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
+            call twoERIs%babb%init(size(twoERIs,'beta',1),size(twoERIs,'alpha',2),&
                            size(twoERIs,'beta',3),size(twoERIs,'beta',4))
-            call babb%put(element,myI,myJ,myK,myL)
+            call twoERIs%babb%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'bbab') then 
           if(twoERIs%hasSpinBlock('bbab')) then
-            call bbab%put(element,myI,myJ,myK,myL)
+            call twoERIs%bbab%put(element,myI,myJ,myK,myL)
           else
-            call bbab%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+            call twoERIs%bbab%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
                            size(twoERIs,'alpha',3),size(twoERIs,'beta',4))
-            call bbab%put(element,myI,myJ,myK,myL)
+            call twoERIs%bbab%put(element,myI,myJ,myK,myL)
           end if
         else if (spinBlock.eq.'bbba') then 
           if(twoERIs%hasSpinBlock('bbba')) then
-            call bbba%put(element,myI,myJ,myK,myL)
+            call twoERIs%bbba%put(element,myI,myJ,myK,myL)
           else
-            call bbba%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
+            call twoERIs%bbba%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
                            size(twoERIs,'beta',3),size(twoERIs,'alpha',4))
-            call bbba%put(element,myI,myJ,myK,myL)
+            call twoERIs%bbba%put(element,myI,myJ,myK,myL)
           end if
         end if
       else

@@ -444,7 +444,7 @@
  PASS  real-general symmetry abbb -> bbba
  PASS  real-general symmetry abbb -> bbab
  PASS  real-general symmetry abbb -> babb
- real-general full tensor oracle error=  1.249001E-16
+ real-general full tensor oracle error=  1.387779E-16
  PASS  asymmetric four-coefficient transform block aaaa
  PASS  asymmetric four-coefficient transform block aaab
  PASS  asymmetric four-coefficient transform block aaba

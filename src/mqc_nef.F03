@@ -12549,18 +12549,19 @@
 !
         subroutine detectR4InteractionType(R4In,interactionTypeOut)
         implicit none
-        type(mqc_nef_r4),intent(in)::R4In
+        class(mqc_nef_r4),intent(in),target::R4In
         character(len=*),intent(out)::interactionTypeOut
         character(len=64)::blockInteractionType
-        integer(kind=int64)::i1,i2,i3,i4,bid
+        integer(kind=int64)::i1,i2,i3,i4
+        type(mqc_twoeris),pointer::block
         interactionTypeOut = ''
         do i1=1,R4In%blockSize(1)
           do i2=1,R4In%blockSize(2)
             do i3=1,R4In%blockSize(3)
               do i4=1,R4In%blockSize(4)
-                bid = R4In%blockIndex([1,i1],[2,i2],[3,i3],[4,i4])
-                if(R4In%Zero_Flag(bid)) cycle
-                blockInteractionType = trim(R4In%Main_R4(bid)%intType())
+                if(R4In%isBlockZero(i1,i2,i3,i4)) cycle
+                block => R4In%iref(i1,i2,i3,i4)
+                blockInteractionType = trim(block%intType())
                 if(len_trim(interactionTypeOut).eq.0) then
                   interactionTypeOut = trim(blockInteractionType)
                 else if(trim(interactionTypeOut).ne.trim(blockInteractionType)) then

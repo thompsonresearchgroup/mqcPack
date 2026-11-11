@@ -73,6 +73,8 @@
         call flatCoeff%put(sc,i,i,'beta')
       end do
 !
+      write(*,*) 'MMFM aqui'
+      call flatCoeff%print(6,'MMFM test')
       call natOrbLike%init(rowMap,initial_map_matrix_col=colMap)
       call natOrbLike%imp(flatCoeff)
 !

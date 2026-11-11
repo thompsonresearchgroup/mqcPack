@@ -7726,7 +7726,7 @@
               call r4tOut%init(NDimBeta1,NDimAlpha2,NDimBeta3,NDimAlpha4,zeroR)
             endIf
           elseIf(eris%storType().eq.'symm') then
-            If (eris%hasSpinBlock('aabb')) then
+            If (eris%hasSpinBlock('aabb',interactionIn='stored')) then
               r4tOut = eris%alphaBeta%permute([2,1,4,3],.true.)
             else
               call r4tOut%init(NDimBeta1,NDimAlpha2,NDimBeta3,NDimAlpha4,zeroR)
@@ -7734,7 +7734,7 @@
           endIf
         elseIf (eris%type().eq.'spin'.and.eris%intType().eq.'ms') then
           If (eris%storType().eq.'symm') then
-            If (eris%hasSpinBlock('abab')) then
+            If (eris%hasSpinBlock('abab',interactionIn='stored')) then
               r4tOut = eris%abab%permute([2,1,4,3],.true.)
             else
               call r4tOut%init(NDimBeta1,NDimAlpha2,NDimBeta3,NDimAlpha4,zeroR)

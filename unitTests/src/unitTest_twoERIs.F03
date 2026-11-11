@@ -44,6 +44,7 @@
       integer::colP,colQ,colR,colS
       character(len=4),dimension(16)::spinLabels
       character(len=9),dimension(3)::interactionLabels
+      character(len=9),dimension(2)::derivedInteractionLabels
       character(len=4)::spinLabel,exchangeLabel
 !
 !     Format Statements
@@ -2314,8 +2315,8 @@
 !
 !--------------------------------------------------------------------
 !     Tests 69-78: space integralType.
-!     All space intTypes behave identically in %at (all read from
-!     the alpha block).  Tests cover all 5 intTypes and both storageTypes.
+!     The requested interaction must match the stored interaction unless
+!     the input is Coulomb or MS.  Tests cover all interaction and storage types.
 !--------------------------------------------------------------------
 !
 !     Test 69: full-coulomb space, aaaa/J
@@ -2337,9 +2338,9 @@
         write(*,1010) 'at/space-coul-full/aaaa/K',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 71: full-exchange space, aaaa/J
+!     Test 71: full-exchange space, default stored access
       call mqc_twoeris_allocate(eriA,'full-exchange','space',blk)
-      sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='coulomb')
+      sc = eriA%at(1,1,1,2,spinBlockIn='aaaa')
       got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/space-exch-full/aaaa/J'
@@ -2347,19 +2348,19 @@
         write(*,1010) 'at/space-exch-full/aaaa/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 72: full-exchange space, aaaa/K
+!     Test 72: full-exchange space, explicit stored interaction
       sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='exchange')
-      got = sc%rval() ; expected = v6
+      got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/space-exch-full/aaaa/K'
       else
         write(*,1010) 'at/space-exch-full/aaaa/K',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 73: full-doublebar space, aaaa/JK at (1,1,1,2) → v5-v6
+!     Test 73: full-doublebar space stores the supplied JK tensor directly
       call mqc_twoeris_allocate(eriA,'full-doublebar','space',blk)
       sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='doublebar')
-      got = sc%rval() ; expected = v5-v6
+      got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/space-dbar-full/aaaa/JK'
       else
@@ -2378,7 +2379,7 @@
 !
 !     Test 75: full-inverted space, aaaa/J at (1,1,1,1) → v2
       call mqc_twoeris_allocate(eriA,'full-inverted','space',tA)
-      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='coulomb')
+      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='inverted')
       got = sc%rval() ; expected = v2
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/space-inv-full/aaaa/J'
@@ -2396,10 +2397,10 @@
         write(*,1010) 'at/space-coul-symm/aaaa/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 77: symm-exchange space, aaaa/K at (1,1,1,2) → v6
+!     Test 77: symm-exchange space stores the supplied K tensor directly
       call mqc_twoeris_allocate(eriA,'symm-exchange','space',blk)
       sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='exchange')
-      got = sc%rval() ; expected = v6
+      got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/space-exch-symm/aaaa/K'
       else
@@ -2513,9 +2514,9 @@
       call mqc_twoeris_allocate(eriA,'full-doublebar','spin',blk,tD,  &
         alphaBeta=tE,abba=tF)
 !
-!     Test 87: aaaa/JK at (1,1,1,2) → alpha(1,1,1,2)-alpha(1,2,1,1)=v5-v6
+!     Test 87: aaaa/JK reads the supplied antisymmetrized tensor directly
       sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='doublebar')
-      got = sc%rval() ; expected = v5-v6
+      got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/spin-dbar-full/aaaa/JK'
       else
@@ -2531,9 +2532,9 @@
         write(*,1010) 'at/spin-dbar-full/aabb/JK',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 89: abba/JK at (1,1,1,1) → (-1)*alphaBeta(i,l,k,j)=-v10
+!     Test 89: abba/JK reads the separately stored abba block
       sc = eriA%at(1,1,1,1,spinBlockIn='abba',interactionIn='doublebar')
-      got = sc%rval() ; expected = -v10
+      got = sc%rval() ; expected = v11
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/spin-dbar-full/abba/JK'
       else
@@ -2587,8 +2588,8 @@
 !     Inverted ERI: alphaBeta stores abab data (tG=v12).
       call mqc_twoeris_allocate(eriA,'full-inverted','spin',tC,tD,tG)
 !
-!     Test 94: aaaa/J at (1,1,1,1) → alpha(1,1,1,1)=v8
-      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='coulomb')
+!     Test 94: aaaa/inverted at (1,1,1,1) → alpha(1,1,1,1)=v8
+      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='inverted')
       got = sc%rval() ; expected = v8
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/spin-inv-full/aaaa/J'
@@ -2596,32 +2597,68 @@
         write(*,1010) 'at/spin-inv-full/aaaa/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 95: aabb/J at (1,1,1,1) → alphaBeta(1,1,1,1)=v12 (abab data)
-      sc = eriA%at(1,1,1,1,spinBlockIn='aabb',interactionIn='coulomb')
+!     Test 95: abab/inverted at (1,1,1,1) → alphaBeta storage=v12
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='inverted')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
-        write(*,1000) 'at/spin-inv-full/aabb/J'
+        write(*,1000) 'at/spin-inv-full/abab/inverted'
       else
-        write(*,1010) 'at/spin-inv-full/aabb/J',got,expected ; nfail=nfail+1
+        write(*,1010) 'at/spin-inv-full/abab/inverted',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 96: symm-inverted spin, aabb/J → v12
+!     Test 96: symm-inverted spin, abab/inverted → v12
       call mqc_twoeris_allocate(eriA,'symm-inverted','spin',tC,tD,tG)
-      sc = eriA%at(1,1,1,1,spinBlockIn='aabb',interactionIn='coulomb')
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='inverted')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
-        write(*,1000) 'at/spin-inv-symm/aabb/J'
+        write(*,1000) 'at/spin-inv-symm/abab/inverted'
       else
-        write(*,1010) 'at/spin-inv-symm/aabb/J',got,expected ; nfail=nfail+1
+        write(*,1010) 'at/spin-inv-symm/abab/inverted',got,expected ; nfail=nfail+1
       endIf
 !
-!     Tests 97-98: spin/ms abab BUG.
-!     spin integralType has no abab/baba spinBlock cases; silently returns 0.
-!     Both tests will FAIL until missing cases are added.
+!     Stored-interaction regression: alphaBeta is a physical aabb block for
+!     doublebar storage, but the same compact slot is physical abab for
+!     inverted storage.  MQC_TwoERIs%at must decode the stored interaction.
+      call mqc_twoeris_allocate(eriA,'full-doublebar','spin',tC,tD,&
+        alphaBeta=tE,abba=tF)
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab')
+      got = sc%rval() ; expected = 0.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'at/spin-dbar-full/abab/stored=0'
+      else
+        write(*,1010) 'at/spin-dbar-full/abab/stored=0',got,expected ; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'full-inverted','spin',tC,tD,tG)
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab')
+      got = sc%rval() ; expected = v12
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'at/spin-inv-full/abab/default-stored'
+      else
+        write(*,1010) 'at/spin-inv-full/abab/default-stored',got,expected ; nfail=nfail+1
+      endIf
+!
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='stored')
+      got = sc%rval() ; expected = 0.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'at/spin-inv-full/abab/literal-stored=0'
+      else
+        write(*,1010) 'at/spin-inv-full/abab/literal-stored=0',got,expected ; nfail=nfail+1
+      endIf
+!
+      sc = eriA%at(1,1,1,1,spinBlockIn='aabb',interactionIn='stored')
+      got = sc%rval() ; expected = v12
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'at/spin-inv-full/aabb/literal-stored'
+      else
+        write(*,1010) 'at/spin-inv-full/aabb/literal-stored',got,expected ; nfail=nfail+1
+      endIf
+!
+!     Tests 97-98: spin/ms abab access by named and global indices.
       call mqc_twoeris_allocate(eriA,'full-ms','spin',tC,tD,alphaBeta=tE,  &
         abba=tF,abab=tG)
 !
-!     Test 97: spinBlock='abab'/J → should be v12; BUG: returns 0
+!     Test 97: spinBlock='abab'/J → v12
       sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='coulomb')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
@@ -2630,7 +2667,7 @@
         write(*,1010) 'at/spin-ms-full/abab/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 98: no-spinBlock composite (1,3,1,3) → ABAB pattern → should be v12; BUG: 0
+!     Test 98: no-spinBlock composite (1,3,1,3) → ABAB pattern → v12
       sc = eriA%at(1,3,1,3,interactionIn='coulomb')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
@@ -2686,8 +2723,8 @@
         write(*,1010) 'at/gen-exch-full/aaaa/K',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 103: abba/J at (1,1,1,1) → abba(1,1,1,1)=v11
-      sc = eriA%at(1,1,1,1,spinBlockIn='abba',interactionIn='coulomb')
+!     Test 103: abba/K at (1,1,1,1) → abba(1,1,1,1)=v11
+      sc = eriA%at(1,1,1,1,spinBlockIn='abba',interactionIn='exchange')
       got = sc%rval() ; expected = v11
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-exch-full/abba/J'
@@ -2695,9 +2732,9 @@
         write(*,1010) 'at/gen-exch-full/abba/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 104: symm-exchange general, baab/J → abba(k,l,i,j)=v11
+!     Test 104: symm-exchange general, baab/K → abba(k,l,i,j)=v11
       call mqc_twoeris_allocate(eriA,'symm-exchange','general',tC,tD,abba=tF)
-      sc = eriA%at(1,1,1,1,spinBlockIn='baab',interactionIn='coulomb')
+      sc = eriA%at(1,1,1,1,spinBlockIn='baab',interactionIn='exchange')
       got = sc%rval() ; expected = v11
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-exch-symm/baab/J'
@@ -2709,29 +2746,29 @@
       call mqc_twoeris_allocate(eriA,'full-doublebar','general',blk,tD,  &
         alphaBeta=tE,abba=tF)
 !
-!     Test 105: aaaa/JK at (1,1,1,2) → alpha(1,1,1,2)-alpha(1,2,1,1)=v5-v6
+!     Test 105: aaaa/JK reads the supplied antisymmetrized tensor directly
       sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='doublebar')
-      got = sc%rval() ; expected = v5-v6
+      got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-dbar-full/aaaa/JK'
       else
         write(*,1010) 'at/gen-dbar-full/aaaa/JK',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 106: aabb/JK at (1,1,1,1) → alphaBeta(1,1,1,1)-abba(i,l,k,j)=v10-v11
+!     Test 106: aabb/JK reads the supplied aabb block directly
       sc = eriA%at(1,1,1,1,spinBlockIn='aabb',interactionIn='doublebar')
-      got = sc%rval() ; expected = v10-v11
+      got = sc%rval() ; expected = v10
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-dbar-full/aabb/JK'
       else
         write(*,1010) 'at/gen-dbar-full/aabb/JK',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 107: symm-doublebar general, bbaa/JK → alphaBeta(k,l,i,j)-abba(k,j,i,l)=v10-v11
+!     Test 107: symm-doublebar general, bbaa/JK is the symmetric aabb partner
       call mqc_twoeris_allocate(eriA,'symm-doublebar','general',blk,tD,  &
         alphaBeta=tE,abba=tF)
       sc = eriA%at(1,1,1,1,spinBlockIn='bbaa',interactionIn='doublebar')
-      got = sc%rval() ; expected = v10-v11
+      got = sc%rval() ; expected = v10
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-dbar-symm/bbaa/JK'
       else
@@ -2784,8 +2821,8 @@
 !     For general type, inverted uses a dedicated abab block (not alphaBeta).
       call mqc_twoeris_allocate(eriA,'full-inverted','general',tC,tD,abab=tG)
 !
-!     Test 112: aaaa/J at (1,1,1,1) → v8
-      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='coulomb')
+!     Test 112: aaaa/inverted at (1,1,1,1) → v8
+      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='inverted')
       got = sc%rval() ; expected = v8
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-inv-full/aaaa/J'
@@ -2793,8 +2830,8 @@
         write(*,1010) 'at/gen-inv-full/aaaa/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 113: abab/J at (1,1,1,1) → abab(1,1,1,1)=v12
-      sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='coulomb')
+!     Test 113: abab/inverted at (1,1,1,1) → abab(1,1,1,1)=v12
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='inverted')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-inv-full/abab/J'
@@ -2802,9 +2839,9 @@
         write(*,1010) 'at/gen-inv-full/abab/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 114: symm-inverted general, baba/J → conjg(abab(j,i,l,k))=v12
+!     Test 114: symm-inverted general, baba/inverted → conjg(abab(j,i,l,k))=v12
       call mqc_twoeris_allocate(eriA,'symm-inverted','general',tC,tD,abab=tG)
-      sc = eriA%at(1,1,1,1,spinBlockIn='baba',interactionIn='coulomb')
+      sc = eriA%at(1,1,1,1,spinBlockIn='baba',interactionIn='inverted')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-inv-symm/baba/J'
@@ -3627,6 +3664,7 @@
         'abaa','abab','abba','abbb','baaa','baab','baba','babb',&
         'bbaa','bbab','bbba','bbbb']
       interactionLabels=[character(len=9)::'coulomb','exchange','doublebar']
+      derivedInteractionLabels=[character(len=9)::'inverted','ms']
       do iblock=1,size(spinLabels)
         spinLabel=spinLabels(iblock)
         tB=eriPartial%getBlock(spinLabel)
@@ -3759,6 +3797,12 @@
           if(jblock.eq.0) stop 'exchange spin block not found'
           do spin1=1,2
             atError=0.0_real64
+            fullError=0.0_real64
+            if(spin1.eq.1) then
+              tB=eriFull%getBlock(spinLabel,interactionIn=interactionLabels(iinteraction))
+            else
+              tB=eriSymm%getBlock(spinLabel,interactionIn=interactionLabels(iinteraction))
+            endIf
             do p=1,n; do q=1,n; do r=1,n; do s=1,n
               sc=oracleBlocks(iblock)%at(p,q,r,s)
               directValue=sc%cval()
@@ -3774,17 +3818,60 @@
                 sc=eriSymm%at(p,q,r,s,spinLabel,interactionLabels(iinteraction))
               endIf
               atError=max(atError,abs(sc%cval()-directValue))
+              sc=tB%at(p,q,r,s)
+              fullError=max(fullError,abs(sc%cval()-directValue))
             end do; end do; end do; end do
-            if(atError.le.tol) then
-              write(*,'(1X,A,1X,A,1X,A4,1X,A)') 'PASS  at oracle',&
+            if(atError.le.tol.and.fullError.le.tol) then
+              write(*,'(1X,A,1X,A,1X,A4,1X,A)') 'PASS  accessors oracle',&
                 merge('full','symm',spin1.eq.1),spinLabel,trim(interactionLabels(iinteraction))
             else
-              write(*,'(1X,A,1X,A,1X,A4,1X,A,A,ES14.6)') 'FAIL  at oracle',&
+              write(*,'(1X,A,1X,A,1X,A4,1X,A,2(A,ES14.6))') 'FAIL  accessors oracle',&
                 merge('full','symm',spin1.eq.1),spinLabel,trim(interactionLabels(iinteraction)),&
-                ' error=',atError
+                ' at error=',atError,' getBlock error=',fullError
               nfail=nfail+1
             endIf
+            if(spin1.eq.1) then
+              if(.not.eriFull%hasSpinBlock(spinLabel,interactionIn=interactionLabels(iinteraction))) then
+                write(*,'(1X,A,1X,A4,1X,A)') 'FAIL  hasSpinBlock oracle full',spinLabel,&
+                  trim(interactionLabels(iinteraction))
+                nfail=nfail+1
+              endIf
+            else
+              if(.not.eriSymm%hasSpinBlock(spinLabel,interactionIn=interactionLabels(iinteraction))) then
+                write(*,'(1X,A,1X,A4,1X,A)') 'FAIL  hasSpinBlock oracle symm',spinLabel,&
+                  trim(interactionLabels(iinteraction))
+                nfail=nfail+1
+              endIf
+            endIf
           end do
+        end do
+      end do
+!
+!     Inverted and mixed-spin interactions have separate at-oracle tests
+!     above.  Here verify that block extraction returns exactly the same
+!     physical elements as scalar access for a Coulomb source.
+      do iinteraction=1,size(derivedInteractionLabels)
+        do iblock=1,size(spinLabels)
+          spinLabel=spinLabels(iblock)
+          tB=eriFull%getBlock(spinLabel,&
+            interactionIn=derivedInteractionLabels(iinteraction))
+          fullError=0.0_real64
+          do p=1,n; do q=1,n; do r=1,n; do s=1,n
+            sc=eriFull%at(p,q,r,s,spinLabel,&
+              derivedInteractionLabels(iinteraction))
+            directValue=sc%cval()
+            sc=tB%at(p,q,r,s)
+            fullError=max(fullError,abs(sc%cval()-directValue))
+          end do; end do; end do; end do
+          if(fullError.le.tol) then
+            write(*,'(1X,A,1X,A4,1X,A)') 'PASS  getBlock/at consistency',&
+              spinLabel,trim(derivedInteractionLabels(iinteraction))
+          else
+            write(*,'(1X,A,1X,A4,1X,A,A,ES14.6)') 'FAIL  getBlock/at consistency',&
+              spinLabel,trim(derivedInteractionLabels(iinteraction)),&
+              ' error=',fullError
+            nfail=nfail+1
+          endIf
         end do
       end do
 !
@@ -4044,6 +4131,164 @@
           nfail=nfail+1
         end if
       end do
+!
+!
+!--------------------------------------------------------------------
+!     Tests 163-174: physical versus literal-storage block access.
+!     Use off-diagonal indices so Coulomb and exchange permutations do
+!     not accidentally coincide.
+!--------------------------------------------------------------------
+!
+      call tF%put(31.0_real64,1,2,2,1)
+      call tG%put(37.0_real64,2,1,1,2)
+      call mqc_twoeris_allocate(eriA,'full-exchange','spin',tC,tD,tF,tG)
+!
+      if(.not.eriA%hasSpinBlock('bbaa').and.&
+         eriA%hasSpinBlock('bbaa',interactionIn='stored')) then
+        write(*,1000) 'access/full-exchange: bbaa physical=0, stored=present'
+      else
+        write(*,1010) 'access/full-exchange: bbaa physical=0, stored=present',1.0_real64,0.0_real64
+        nfail=nfail+1
+      endIf
+      if(eriA%hasSpinBlock('baab').and.&
+         .not.eriA%hasSpinBlock('baab',interactionIn='stored')) then
+        write(*,1000) 'access/full-exchange: baab physical=present, stored=0'
+      else
+        write(*,1010) 'access/full-exchange: baab physical=present, stored=0',1.0_real64,0.0_real64
+        nfail=nfail+1
+      endIf
+!
+      blk=eriA%getBlock('bbaa')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=0.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/full-exchange: getBlock(bbaa) physical zero'
+      else
+        write(*,1010) 'access/full-exchange: getBlock(bbaa) physical zero',got,expected; nfail=nfail+1
+      endIf
+      blk=eriA%getBlock('bbaa',interactionIn='stored')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=37.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/full-exchange: getBlock(bbaa,stored) literal betaAlpha'
+      else
+        write(*,1010) 'access/full-exchange: getBlock(bbaa,stored) literal betaAlpha',got,expected; nfail=nfail+1
+      endIf
+      blk=eriA%getBlock('baab')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=37.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/full-exchange: getBlock(baab) maps betaAlpha'
+      else
+        write(*,1010) 'access/full-exchange: getBlock(baab) maps betaAlpha',got,expected; nfail=nfail+1
+      endIf
+      sc=eriA%at(2,1,1,2,spinBlockIn='baab')
+      got=sc%rval(); expected=37.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/full-exchange: at(baab) agrees with getBlock'
+      else
+        write(*,1010) 'access/full-exchange: at(baab) agrees with getBlock',got,expected; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'symm-exchange','spin',tC,tD,tF)
+      if(.not.eriA%hasSpinBlock('bbaa').and.eriA%hasSpinBlock('baab')) then
+        write(*,1000) 'access/symm-exchange: bbaa=0 and baab=present'
+      else
+        write(*,1010) 'access/symm-exchange: bbaa=0 and baab=present',1.0_real64,0.0_real64
+        nfail=nfail+1
+      endIf
+      blk=eriA%getBlock('baab')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=31.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/symm-exchange: getBlock(baab) maps symmetric aabb slot'
+      else
+        write(*,1010) 'access/symm-exchange: getBlock(baab) maps symmetric aabb slot',got,expected; nfail=nfail+1
+      endIf
+      sc=eriA%at(2,1,1,2,spinBlockIn='baab')
+      got=sc%rval(); expected=31.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/symm-exchange: at(baab) agrees with getBlock'
+      else
+        write(*,1010) 'access/symm-exchange: at(baab) agrees with getBlock',got,expected; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'full-coulomb','spin',tC,tD,tE,tG)
+      blk=eriA%getBlock('baab',interactionIn='exchange')
+      sc=blk%at(2,1,1,2); got=sc%rval()
+      sc=eriA%at(2,1,1,2,spinBlockIn='baab',interactionIn='exchange')
+      expected=sc%rval()
+      if(abs(got-expected).le.tol.and.eriA%hasSpinBlock('baab',interactionIn='exchange')) then
+        write(*,1000) 'access/full-coulomb: getBlock/at/hasSpinBlock exchange consistency'
+      else
+        write(*,1010) 'access/full-coulomb: getBlock/at/hasSpinBlock exchange consistency',got,expected
+        nfail=nfail+1
+      endIf
+!
+!--------------------------------------------------------------------
+!     Tests 175-178: scalar multiplication must preserve the literal
+!     betaAlpha slot used by full spin exchange and inverted storage.
+!--------------------------------------------------------------------
+!
+      call mqc_twoeris_allocate(eriA,'full-exchange','spin',tC,tD,tF,tG)
+      eriC=2.0_real64*eriA
+      blk=eriC%getBlock('bbaa',interactionIn='stored')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=74.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'scalar/full-exchange: literal bbaa preserved'
+      else
+        write(*,1010) 'scalar/full-exchange: literal bbaa preserved',got,expected; nfail=nfail+1
+      endIf
+      blk=eriC%getBlock('baab')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=74.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'scalar/full-exchange: physical baab preserved'
+      else
+        write(*,1010) 'scalar/full-exchange: physical baab preserved',got,expected; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'full-inverted','spin',tC,tD,tF,tG)
+      eriC=2.0_real64*eriA
+      blk=eriC%getBlock('bbaa',interactionIn='stored')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=74.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'scalar/full-inverted: literal bbaa preserved'
+      else
+        write(*,1010) 'scalar/full-inverted: literal bbaa preserved',got,expected; nfail=nfail+1
+      endIf
+      blk=eriC%getBlock('baba')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=74.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'scalar/full-inverted: physical baba preserved'
+      else
+        write(*,1010) 'scalar/full-inverted: physical baba preserved',got,expected; nfail=nfail+1
+      endIf
+!
+!     Dimension-swap regression: swapping tensor axes 1 and 3 maps
+!     Coulomb <-> exchange while leaving inverted storage invariant.
+      call mqc_twoeris_allocate(eriA,'full-coulomb','spin',tC,tD,tE,tG)
+      blk=eriA%getBlock('aabb')
+      sc=blk%at(2,1,1,2); expected=sc%rval()
+      eriC=eriA%swap(1,3)
+      blk=eriC%getBlock('baab')
+      sc=blk%at(1,1,2,2); got=sc%rval()
+      if(trim(eriC%intType()).eq.'exchange'.and.abs(got-expected).le.tol) then
+        write(*,1000) 'swap(1,3)/spin: coulomb -> exchange'
+      else
+        write(*,1010) 'swap(1,3)/spin: coulomb -> exchange',got,expected; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'full-exchange','spin',tC,tD,tF,tG)
+      eriC=eriA%swap(1,3)
+      if(trim(eriC%intType()).eq.'coulomb') then
+        write(*,1000) 'swap(1,3)/spin: exchange -> coulomb'
+      else
+        write(*,1010) 'swap(1,3)/spin: exchange -> coulomb',1.0_real64,0.0_real64; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'full-inverted','spin',tC,tD,tF,tG)
+      eriC=eriA%swap(1,3)
+      if(trim(eriC%intType()).eq.'inverted') then
+        write(*,1000) 'swap(1,3)/spin: inverted -> inverted'
+      else
+        write(*,1010) 'swap(1,3)/spin: inverted -> inverted',1.0_real64,0.0_real64; nfail=nfail+1
+      endIf
 !
       write(*,9000) nfail
       if(nfail.gt.0) stop 1

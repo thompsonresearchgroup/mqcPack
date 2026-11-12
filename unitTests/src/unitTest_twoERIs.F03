@@ -43,7 +43,7 @@
       complex(kind=real64)::directValue,partialValue,transValue
       complex(kind=real64)::coef1,coef2,coef3,coef4
       integer::p,q,r,s,mu,nu,lambda,sigma,spin1,spin2,iblock,jblock,iinteraction,kCoeff
-      integer(kind=int64)::indexA(4),indexB(4)
+      integer(kind=int64)::indexA(4),indexB(4),idxValsA(4),idxValsB(4)
       integer::colP,colQ,colR,colS
       character(len=4),dimension(16)::spinLabels
       character(len=9),dimension(3)::interactionLabels
@@ -3624,8 +3624,10 @@
         do nu=1,n
           do lambda=1,n
             do sigma=1,n
-              call tA%put(real((mu+nu)*(lambda+sigma)+mu*nu+lambda*sigma,&
-                                  real64)/37.0_real64,&
+              colP=max(mu,nu)*(max(mu,nu)-1)/2+min(mu,nu)
+              colQ=max(lambda,sigma)*(max(lambda,sigma)-1)/2+min(lambda,sigma)
+              call tA%put(real(7*min(colP,colQ)+13*max(colP,colQ)+&
+                                  min(colP,colQ)*max(colP,colQ),real64)/37.0_real64,&
                           mu,nu,lambda,sigma)
             end do
           end do
@@ -3675,12 +3677,104 @@
         nfail=nfail+1
       end if
 
+!     Form G[D] independently in the complete spin-orbital basis.  The
+!     energy contracts G[D] with transpose(D), so the Fock expression uses
+!     D(s tau,r sigma); an off-diagonal output spin block therefore contracts
+!     the opposite input block in the exchange term.
+      call mA%init(2*n,2*n,(0.0_real64,0.0_real64))
+      do p=1,2*n
+        mu=mod(p-1,n)+1
+        spin1=(p-1)/n
+        do q=1,2*n
+          nu=mod(q-1,n)+1
+          spin2=(q-1)/n
+          directValue=(0.0_real64,0.0_real64)
+          if(spin1.eq.spin2) then
+            do iblock=0,1
+              do r=1,n
+                do s=1,n
+                  sc=tA%at(mu,nu,r,s)
+                  partialValue=sc%cval()
+                  sc=moFull%at(s+iblock*n,r+iblock*n)
+                  directValue=directValue+partialValue*sc%cval()
+                end do
+              end do
+            end do
+          end if
+          do r=1,n
+            do s=1,n
+              sc=tA%at(mu,s,r,nu)
+              partialValue=sc%cval()
+              sc=moFull%at(s+spin2*n,r+spin1*n)
+              directValue=directValue-partialValue*sc%cval()
+            end do
+          end do
+          call mA%put(directValue,p,q)
+        end do
+      end do
+
 !     The optimized ERI-set contraction and the explicit square contraction
 !     must select the same lower-left/upper-right density blocks.
       call eriSetTest%addToSet(eriAO)
       gRegular=contraction(eriSetTest,generalMO,0.0_real64)
       gSquare=contraction(eriSetTest,generalMO,0.0_real64,'coulomb')+&
               contraction(eriSetTest,generalMO,0.0_real64,'exchange')
+      outBlk=gSquare%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general square contraction agrees with full spin-orbital oracle'
+      else
+        write(*,1010) 'general square contraction agrees with full spin-orbital oracle',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
+      outBlk=gRegular%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular contraction agrees with full spin-orbital oracle'
+      else
+        write(*,1010) 'general regular contraction agrees with full spin-orbital oracle',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
+      outBlk=gRegular%getBlock('alpha')-gSquare%getBlock('alpha')
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular and square contractions agree: aa'
+      else
+        write(*,1010) 'general regular and square contractions agree: aa',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+      outBlk=gRegular%getBlock('beta')-gSquare%getBlock('beta')
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular and square contractions agree: bb'
+      else
+        write(*,1010) 'general regular and square contractions agree: bb',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+      outBlk=gRegular%getBlock('alpha-beta')-gSquare%getBlock('alpha-beta')
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular and square contractions agree: ab'
+      else
+        write(*,1010) 'general regular and square contractions agree: ab',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+      outBlk=gRegular%getBlock('beta-alpha')-gSquare%getBlock('beta-alpha')
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular and square contractions agree: ba'
+      else
+        write(*,1010) 'general regular and square contractions agree: ba',fullError,0.0_real64
+        nfail=nfail+1
+      end if
       outBlk=gRegular%getBlock('full')-gSquare%getBlock('full')
       sc=outBlk%norm('M')
       fullError=sc%rval()
@@ -3769,8 +3863,34 @@
           indexB=[1_int64,3_int64,2_int64,4_int64]
         end select
         oracleMat=MQC_R4Tensor_R4Tensor_Partial_Contraction(tD,tD,indexA,indexB)
+        call mB%init(size(oracleMat,1),size(oracleMat,2))
+        do r=1,size(oracleMat,1)
+          do s=1,size(oracleMat,2)
+            do p=1,size(tD,indexA(1))
+              do q=1,size(tD,indexA(2))
+                idxValsA(indexA(1))=p
+                idxValsA(indexA(2))=q
+                idxValsA(indexA(3))=r
+                idxValsA(indexA(4))=s
+                idxValsB(indexB(1))=p
+                idxValsB(indexB(2))=q
+                idxValsB(indexB(3))=r
+                idxValsB(indexB(4))=s
+                call mB%put(mB%at(r,s)+tD%at(idxValsA(1),idxValsA(2),idxValsA(3),idxValsA(4))*&
+                  tD%at(idxValsB(1),idxValsB(2),idxValsB(3),idxValsB(4)),r,s)
+              end do
+            end do
+          end do
+        end do
+        outBlk=oracleMat-mB
+        sc=outBlk%norm('M')
+        if(sc%rval().ge.tol) then
+          write(*,1010) 'low-level R4 partial contraction agrees with explicit loop',&
+            sc%rval(),0.0_real64
+          nfail=nfail+1
+        end if
         intOut=mqc_eri_eri_partial_contraction(eriTrans,eriTrans,indexA,indexB)
-        outBlk=intOut%getBlock('full')-oracleMat
+        outBlk=intOut%getBlock('full')-mB
         sc=outBlk%norm('M')
         fullError=max(fullError,sc%rval())
       end do
@@ -3797,6 +3917,87 @@
       call mqc_integral_allocate(generalMO2,'complex general ket MOs','general',&
                                  moAA2,moBB2,moAB2,moBA2)
       moFull2=generalMO2%getBlock('full')
+
+!     General one-electron operations must reproduce the same operation on
+!     the complete spin-orbital matrices.  Check each stage used by the
+!     mixed-bra/ket MO transformation separately.
+      intOut=dagger(generalMO)
+      mA=dagger(moFull)
+      outBlk=intOut%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'complex-general dagger agrees with full matrix'
+      else
+        write(*,1010) 'complex-general dagger agrees with full matrix',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
+      intOut=matmul(dagger(generalMO),generalMO2)
+      mA=matmul(dagger(moFull),moFull2)
+      outBlk=intOut%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'complex-general product agrees with full matrix'
+      else
+        write(*,1010) 'complex-general product agrees with full matrix',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
+      intOut=matmul(matmul(dagger(generalMO),generalMO2),generalMO)
+      mA=matmul(matmul(dagger(moFull),moFull2),moFull)
+      outBlk=intOut%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'complex-general three-factor product agrees with full matrix'
+      else
+        write(*,1010) 'complex-general three-factor product agrees with full matrix',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
+!     Repeat the mixed-bra/ket transformation with the operator stored in the
+!     compressed Hermitian form used for one-electron matrix-file data.
+      mA=moAA+dagger(moAA)
+      mB=moBB+dagger(moBB)
+      call mqc_integral_allocate(intGen,'complex general Hermitian operator','general',&
+        mA,mB,moAB,nDimA1=n,nDimA2=n,nDimB1=n,nDimB2=n,symmetry='hermitian')
+      intOut=matmul(matmul(dagger(generalMO),intGen),generalMO2)
+      mA=matmul(matmul(dagger(moFull),intGen%getBlock('full')),moFull2)
+      outBlk=intOut%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'compressed-Hermitian mixed-bra/ket product agrees with full matrix'
+      else
+        write(*,1010) 'compressed-Hermitian mixed-bra/ket product agrees with full matrix',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
+!     Matrix-file import supplies both off-diagonal blocks before requesting
+!     Hermitian compression; verify that this equivalent representation is
+!     also unchanged by the transformation.
+      mA=moAA+dagger(moAA)
+      mB=moBB+dagger(moBB)
+      mC=dagger(moAB)
+      call mqc_integral_allocate(intGen,'full-input general Hermitian operator','general',&
+        mA,mB,moAB,mC,nDimA1=n,nDimA2=n,nDimB1=n,nDimB2=n,symmetry='hermitian')
+      intOut=matmul(matmul(dagger(generalMO),intGen),generalMO2)
+      mA=matmul(matmul(dagger(moFull),intGen%getBlock('full')),moFull2)
+      outBlk=intOut%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'full-input Hermitian mixed-bra/ket product agrees with full matrix'
+      else
+        write(*,1010) 'full-input Hermitian mixed-bra/ket product agrees with full matrix',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
       call TwoERI_Trans(6,0,generalMO,eriAO,eriTransLR,Right_MOs=generalMO2)
       tD=eriTransLR%getBlock('full')
       fullError=0.0_real64

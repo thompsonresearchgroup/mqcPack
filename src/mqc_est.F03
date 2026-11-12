@@ -19296,8 +19296,8 @@
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,(-1)*abAHRfoc,'antisymmetric')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat2,abHARfoc,'symmetric')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat3,(-1)*abAARfoc,'antisymmetric')
-                betaAlpha = alphaBeta - tmpMat - tmpMat2 + tmpMat3
-                alphaBeta = alphaBeta + tmpMat + tmpMat2 + tmpMat3
+                betaAlpha = alphaBeta + tmpMat + tmpMat2 + tmpMat3
+                alphaBeta = alphaBeta - tmpMat - tmpMat2 + tmpMat3
                 alphaBeta = transpose(alphaBeta)
                 betaAlpha = transpose(betaAlpha)
               endIf
@@ -19317,8 +19317,8 @@
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,cmplx((-1)*abAHRfoc,abAHCfoc),'antihermitian')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat2,cmplx(abHARfoc,(-1)*abHACfoc),'hermitian')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat3,cmplx((-1)*abAARfoc,abAACfoc),'antihermitian')
-                betaAlpha = alphaBeta - tmpMat - tmpMat2 + tmpMat3 
-                alphaBeta = alphaBeta + tmpMat + tmpMat2 + tmpMat3 
+                betaAlpha = alphaBeta + tmpMat + tmpMat2 + tmpMat3
+                alphaBeta = alphaBeta - tmpMat - tmpMat2 + tmpMat3
                 alphaBeta = transpose(alphaBeta)
                 betaAlpha = transpose(betaAlpha)
               endIf
@@ -19332,8 +19332,8 @@
               if(mod(flag,10).eq.2) then
                 call MQC_Matrix_SymmMatrix_Put(alphaBeta,abHHRfoc,'symmetric')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,abAHRfoc,'antisymmetric')
-                betaAlpha = alphaBeta + tmpMat
-                alphaBeta = alphaBeta - tmpMat
+                betaAlpha = alphaBeta - tmpMat
+                alphaBeta = alphaBeta + tmpMat
                 alphaBeta = transpose(alphaBeta)
                 betaAlpha = transpose(betaAlpha)
               endIf
@@ -19347,8 +19347,8 @@
               if(mod(flag,10).eq.2) then
                 call MQC_Matrix_SymmMatrix_Put(alphaBeta,cmplx(abHHRfoc,abHHCfoc),'hermitian')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,cmplx((-1)*abAHRfoc,(-1)*abAHCfoc),'antihermitian')
-                betaAlpha = alphaBeta + tmpMat
-                alphaBeta = alphaBeta - tmpMat
+                betaAlpha = alphaBeta - tmpMat
+                alphaBeta = alphaBeta + tmpMat
               endIf
             endIf
           endIf
@@ -19360,8 +19360,8 @@
               if(mod(flag,10).eq.2) then
                 call MQC_Matrix_SymmMatrix_Put(alphaBeta,abHARfoc,'symmetric')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,abAARfoc,'antisymmetric')
-                betaAlpha = tmpMat - alphaBeta
-                alphaBeta = alphaBeta + tmpMat
+                betaAlpha = alphaBeta + tmpMat
+                alphaBeta = tmpMat - alphaBeta
               endIf
             endIf
           elseIf(mod(flag,100)/10.eq.1) then
@@ -19371,8 +19371,8 @@
               if(mod(flag,10).eq.2) then
                 call MQC_Matrix_SymmMatrix_Put(alphaBeta,cmplx(abHARfoc,abHACfoc),'hermitian')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,cmplx(abAARfoc,abAACfoc),'antihermitian')
-                betaAlpha = tmpMat - alphaBeta 
-                alphaBeta = alphaBeta + tmpMat
+                betaAlpha = alphaBeta + tmpMat
+                alphaBeta = tmpMat - alphaBeta
               endIf
             endIf
           endIf
@@ -19404,26 +19404,26 @@
 !                  abs(eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)).le.zero) cycle
                 ! AA Block
                 if(myLabel.eq.'coulomb'.or.myLabel.eq.'doublebar') then
-                  call alphaLoc%put(alphaLoc%at(k,l)+&
-                    eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m,n),k,l)
-                  call alphaLoc%put(alphaLoc%at(k,l)+&
-                    eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m+nBasis,n+nBasis),k,l)
+                  call alphaLoc%put(alphaLoc%at(l,k)+&
+                    eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m,n),l,k)
+                  call alphaLoc%put(alphaLoc%at(l,k)+&
+                    eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m+nBasis,n+nBasis),l,k)
                 endIf
                 if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
-                  call alphaLoc%put(alphaLoc%at(k,l)-&
-                    eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n),k,l)
+                  call alphaLoc%put(alphaLoc%at(l,k)-&
+                    eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n),l,k)
                 endIf
                 !BB Block
                 if(integral%array_type.eq.'spin'.or.integral%array_type.eq.'general') then
                   if(myLabel.eq.'coulomb'.or.myLabel.eq.'doublebar') then
-                    call betaLoc%put(betaLoc%at(k,l)+&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m+nBasis,n+nBasis),k,l)
-                    call betaLoc%put(betaLoc%at(k,l)+&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m,n),k,l)
+                    call betaLoc%put(betaLoc%at(l,k)+&
+                      eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m+nBasis,n+nBasis),l,k)
+                    call betaLoc%put(betaLoc%at(l,k)+&
+                      eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m,n),l,k)
                   endIf
                   if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
-                    call betaLoc%put(betaLoc%at(k,l)-&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n+nBasis),k,l)
+                    call betaLoc%put(betaLoc%at(l,k)-&
+                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n+nBasis),l,k)
                   endIf
                 endIf
                 !AB Block
@@ -19453,10 +19453,8 @@
         endIf
         !$OMP END CRITICAL
         !$OMP END PARALLEL
-        alpha = transpose(alpha)
-        if(integral%array_type.eq.'spin'.or.integral%array_type.eq.'general') &
-          beta = transpose(beta)
       endIf
+
 !
 !     expected symmetry: the real AO integrals give G[D]^dagger = G[D^dagger], so a hermitian
 !     (antihermitian) density gives a hermitian (antihermitian) result; from the density
@@ -22715,6 +22713,7 @@
       integer(kind=int64)::r4t1,r4t2,r4t3,r4t4,nB1,nB2,nB3,nB4
       type(mqc_twoERIs)::temp
       Integer(kind=int64)::ia,ja,ka,la,ib,jb,kb,lb,i,j,k,l
+      Integer(kind=int64),dimension(4)::inverseIndex1,inverseIndex2
       Integer(kind=int64)::dimAi,dimAj,dimAk,dimAl,dimBi,dimBj,dimBk,dimBl
       character(len=4)::str1,str2,active_conf
       character(len=4),dimension(4)::allowed_spin,a_bbb_array,aaa_b_array
@@ -22777,6 +22776,11 @@
           la.gt.4.or.la.le.0.or.lb.gt.4.or.lb.le.0.) Call MQC_Error(&
            'Index out of range in MQC_ERI_ERI_Partial_Contraction', 6)
 
+!     active_conf follows contraction/output order.  Invert each index order
+!     before using it to select a spin block in the original tensor.
+      inverseIndex1([ia,ja,ka,la])=[1_int64,2_int64,3_int64,4_int64]
+      inverseIndex2([ib,jb,kb,lb])=[1_int64,2_int64,3_int64,4_int64]
+
        if (eris1%blockSize('alpha',ia).ne.eris2%blockSize('alpha',ib).or.&
            eris1%blockSize('alpha',ja).ne.eris2%blockSize('alpha',jb).or.&
            eris1%blockSize('alpha',ka).ne.eris2%blockSize('alpha',kb).or.&
@@ -22807,8 +22811,8 @@
               eris1%getBlock('aaaa'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
                 if (active_conf(3:4).eq.'aa') then
@@ -22840,8 +22844,8 @@
               eris1%getBlock('aaaa'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if (active_conf(3:4).eq.'aa') then
                 if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
@@ -22877,8 +22881,8 @@
               eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
                 if (active_conf(3:4).eq.'aa') then
@@ -22910,8 +22914,8 @@
               eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if (active_conf(3:4).eq.'aa') then
                 if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
@@ -22947,8 +22951,8 @@
               eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
               if (active_conf(3:4).eq.'aa') then
                 if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
@@ -22978,8 +22982,8 @@
               eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if (active_conf(3:4).eq.'aa') then
               if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
                 aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
@@ -23002,8 +23006,8 @@
           end do
           do i=1,4
             active_conf=a_bbb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if (active_conf(3:4) == 'aa') then
               if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
                 aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
@@ -23026,8 +23030,8 @@
           end do
           do i=1,4
             active_conf=aaa_b_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if (active_conf(3:4) == 'aa') then
               if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
                 aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
@@ -30469,10 +30473,10 @@
             if(integral%hasAlpha()) element = integral%alpha%at(myI,myJ)
           elseIf(myI.le.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myJ = myJ - integral%blockSize('alpha',2)
-            if(integral%hasAlphaBeta()) element = integral%alphaBeta%at(myI,myJ)
+            if(integral%hasBetaAlpha()) element = integral%baElement(myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
-            if(integral%hasBetaAlpha()) element = integral%baElement(myI,myJ)
+            if(integral%hasAlphaBeta()) element = integral%alphaBeta%at(myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
             myJ = myJ - integral%blockSize('alpha',2)

@@ -901,6 +901,15 @@
         Module Procedure MQC_Matrix_To_ComplexArray
       End Interface
 !
+!>    \brief <b> Copies an intrinsic 2D array into an MQC matrix; with Classify = .false.
+!>    the data are kept as given (StorFull square, StorNoSym non-square), with no zero,
+!>    diagonal or symmetry detection (the assignment, and Classify = .true., classify)</b>
+      Interface MQC_Array_To_Matrix
+        Module Procedure MQC_IntegerArray_To_Matrix
+        Module Procedure MQC_RealArray_To_Matrix
+        Module Procedure MQC_ComplexArray_To_Matrix
+      End Interface
+!
 !>    \brief <b> Sums two variables</b>
       Interface Operator (+)
         Module Procedure MQC_ScalarAdd
@@ -23336,6 +23345,210 @@
 !
       Return
       End Subroutine MQC_Set_ComplexArray2Matrix
+!
+!
+!     PROCEDURE MQC_IntegerArray_To_Matrix
+!
+!>    \brief <b> MQC_IntegerArray_To_Matrix copies an intrinsic integer rank-2 array
+!>    into an MQC matrix, optionally without classifying it</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_IntegerArray_To_Matrix sets MatrixOut equal to ArrayIn. With Classify =
+!>    .true. (the default) it is the assignment MatrixOut = ArrayIn (the result is
+!>    classified with MQC_Matrix_Classify). With Classify = .false. the data are kept
+!>    as given: StorFull for a square array, StorNoSym otherwise, with no zero,
+!>    diagonal or symmetry test, so no element is changed by packing within the
+!>    threshold. This is the storage an element-by-element put leaves.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] MatrixOut
+!>    \verbatim
+!>        MatrixOut is Type(MQC_Matrix)
+!>        The MQC matrix to be set equal to the array.
+!>    \endverbatim
+!>
+!>    \param[in] ArrayIn
+!>    \verbatim
+!>        ArrayIn is Integer(kind=int64),Dimension(:,:)
+!>        The array to be input into MatrixOut.
+!>    \endverbatim
+!>
+!>    \param[in] Classify
+!>    \verbatim
+!>        Classify is Logical, optional
+!>        = .true.:  classify the result (default, as the assignment).
+!>        = .false.: keep the full data (StorFull / StorNoSym).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_IntegerArray_To_Matrix(MatrixOut,ArrayIn,Classify)
+!
+      Implicit None
+      Type(MQC_Matrix),Intent(InOut)::MatrixOut
+      Integer(kind=int64),Dimension(:,:),Intent(In)::ArrayIn
+      Logical,Intent(In),Optional::Classify
+      Logical::myClassify
+!
+      myClassify = .True.
+      If(Present(Classify)) myClassify = Classify
+      Call MQC_Deallocate_Matrix(MatrixOut)
+      Call MQC_Allocate_Matrix(Size(ArrayIn,1),Size(ArrayIn,2),MatrixOut,'Integer', &
+        'StorFull')
+      MatrixOut%MatI = ArrayIn
+      If(myClassify) then
+        Call MQC_Matrix_Classify(MatrixOut)
+      ElseIf(Size(ArrayIn,1).ne.Size(ArrayIn,2)) then
+        MatrixOut%Storage = 'StorNoSym'
+      EndIf
+!
+      End Subroutine MQC_IntegerArray_To_Matrix
+!
+!
+!     PROCEDURE MQC_RealArray_To_Matrix
+!
+!>    \brief <b> MQC_RealArray_To_Matrix copies an intrinsic real rank-2 array
+!>    into an MQC matrix, optionally without classifying it</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_RealArray_To_Matrix sets MatrixOut equal to ArrayIn. With Classify =
+!>    .true. (the default) it is the assignment MatrixOut = ArrayIn (the result is
+!>    classified with MQC_Matrix_Classify). With Classify = .false. the data are kept
+!>    as given: StorFull for a square array, StorNoSym otherwise, with no zero,
+!>    diagonal or symmetry test, so no element is changed by packing within the
+!>    threshold. This is the storage an element-by-element put leaves.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] MatrixOut
+!>    \verbatim
+!>        MatrixOut is Type(MQC_Matrix)
+!>        The MQC matrix to be set equal to the array.
+!>    \endverbatim
+!>
+!>    \param[in] ArrayIn
+!>    \verbatim
+!>        ArrayIn is Real(kind=real64),Dimension(:,:)
+!>        The array to be input into MatrixOut.
+!>    \endverbatim
+!>
+!>    \param[in] Classify
+!>    \verbatim
+!>        Classify is Logical, optional
+!>        = .true.:  classify the result (default, as the assignment).
+!>        = .false.: keep the full data (StorFull / StorNoSym).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_RealArray_To_Matrix(MatrixOut,ArrayIn,Classify)
+!
+      Implicit None
+      Type(MQC_Matrix),Intent(InOut)::MatrixOut
+      Real(kind=real64),Dimension(:,:),Intent(In)::ArrayIn
+      Logical,Intent(In),Optional::Classify
+      Logical::myClassify
+!
+      myClassify = .True.
+      If(Present(Classify)) myClassify = Classify
+      Call MQC_Deallocate_Matrix(MatrixOut)
+      Call MQC_Allocate_Matrix(Size(ArrayIn,1),Size(ArrayIn,2),MatrixOut,'Real', &
+        'StorFull')
+      MatrixOut%MatR = ArrayIn
+      If(myClassify) then
+        Call MQC_Matrix_Classify(MatrixOut)
+      ElseIf(Size(ArrayIn,1).ne.Size(ArrayIn,2)) then
+        MatrixOut%Storage = 'StorNoSym'
+      EndIf
+!
+      End Subroutine MQC_RealArray_To_Matrix
+!
+!
+!     PROCEDURE MQC_ComplexArray_To_Matrix
+!
+!>    \brief <b> MQC_ComplexArray_To_Matrix copies an intrinsic complex rank-2 array
+!>    into an MQC matrix, optionally without classifying it</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_ComplexArray_To_Matrix sets MatrixOut equal to ArrayIn. With Classify =
+!>    .true. (the default) it is the assignment MatrixOut = ArrayIn (the result is
+!>    classified with MQC_Matrix_Classify). With Classify = .false. the data are kept
+!>    as given: StorFull for a square array, StorNoSym otherwise, with no zero,
+!>    diagonal or symmetry test, so no element is changed by packing within the
+!>    threshold. This is the storage an element-by-element put leaves.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] MatrixOut
+!>    \verbatim
+!>        MatrixOut is Type(MQC_Matrix)
+!>        The MQC matrix to be set equal to the array.
+!>    \endverbatim
+!>
+!>    \param[in] ArrayIn
+!>    \verbatim
+!>        ArrayIn is Complex(kind=real64),Dimension(:,:)
+!>        The array to be input into MatrixOut.
+!>    \endverbatim
+!>
+!>    \param[in] Classify
+!>    \verbatim
+!>        Classify is Logical, optional
+!>        = .true.:  classify the result (default, as the assignment).
+!>        = .false.: keep the full data (StorFull / StorNoSym).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_ComplexArray_To_Matrix(MatrixOut,ArrayIn,Classify)
+!
+      Implicit None
+      Type(MQC_Matrix),Intent(InOut)::MatrixOut
+      Complex(kind=real64),Dimension(:,:),Intent(In)::ArrayIn
+      Logical,Intent(In),Optional::Classify
+      Logical::myClassify
+!
+      myClassify = .True.
+      If(Present(Classify)) myClassify = Classify
+      Call MQC_Deallocate_Matrix(MatrixOut)
+      Call MQC_Allocate_Matrix(Size(ArrayIn,1),Size(ArrayIn,2),MatrixOut,'Complex', &
+        'StorFull')
+      MatrixOut%MatC = ArrayIn
+      If(myClassify) then
+        Call MQC_Matrix_Classify(MatrixOut)
+      ElseIf(Size(ArrayIn,1).ne.Size(ArrayIn,2)) then
+        MatrixOut%Storage = 'StorNoSym'
+      EndIf
+!
+      End Subroutine MQC_ComplexArray_To_Matrix
 !
 !
 !     PROCEDURE MQC_Set_Matrix2IntegerArray

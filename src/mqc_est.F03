@@ -7509,7 +7509,7 @@
       case('baab')
         If (eris%type().ne.'general'.and.(eris%intType().eq.'coulomb'.or.&
           eris%intType().eq.'inverted')) then 
-          call r4tOut%init(NDimAlpha1,NDimBeta2,NDimBeta3,NDimAlpha4,zeroR)
+          call r4tOut%init(NDimBeta1,NDimAlpha2,NDimAlpha3,NDimBeta4,zeroR)
         elseIf (eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or. &
           eris%type().eq.'raffenetti2'.or.eris%type().eq.'raffenetti3'.or. &
           (eris%type().eq.'space'.and.eris%inttype().ne.'doublebar')) then
@@ -28091,7 +28091,9 @@
               elseif(interaction.eq.'doublebar') then
                 element = twoERIs%abab%at(myI,myJ,myK,myL) - twoERIs%abab%at(myI,myL,myK,myJ)
               endIf
-            elseif(twoERIs%hasSpinBlock('aabb')) then
+!           Only inverted storage keeps abab in the aabb block (table above); for
+!           coulomb/exchange/doublebar the abab block is zero, as in getBlock.
+            elseif(twoERIs%interactionType.eq.'inverted'.and.twoERIs%hasSpinBlock('aabb')) then
               if(interaction.eq.'coulomb') then
                 element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28110,7 +28112,8 @@
                 elseif(interaction.eq.'doublebar') then
                   element = conjg(twoERIs%abab%at(myJ,myI,myL,myK)) - conjg(twoERIs%abab%at(myL,myI,myJ,myK))
                 endIf
-              elseif(twoERIs%hasSpinBlock('aabb')) then
+!             Only inverted storage keeps baba in the aabb block (see abab above).
+              elseif(twoERIs%interactionType.eq.'inverted'.and.twoERIs%hasSpinBlock('aabb')) then
                 if(interaction.eq.'coulomb') then
                   element = twoeris%alphaBeta%at(myK,myL,myI,myJ)
                 elseif(interaction.eq.'exchange') then
@@ -30111,6 +30114,18 @@
           endIf
         else
           call mqc_error_A('Array type not valid in MQC_Integral_Put',6,'Array_Type',integral%array_type)
+        endIf
+      endIf
+
+!
+!     A stored non-zero element ends the all-zero label: changeType (above) rebuilds an
+!     object with no data yet, labelled 'fullsymmetric'; with that label the element
+!     read as zero and a later diagonal put re-initialized the block, losing it.
+      if(nonZero.and.integral%symmetry.eq.'fullsymmetric') then
+        if(integral%isSquare()) then
+          integral%symmetry = 'unknown'
+        else
+          integral%symmetry = 'asymmetric'
         endIf
       endIf
 

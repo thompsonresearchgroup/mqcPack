@@ -31,11 +31,17 @@
       integer::nfail
       real(kind=real64),parameter::tol=1.0d-8
 !
-      type(mqc_scf_eigenvalues),dimension(:),allocatable::rowMap
+      type(mqc_scf_eigenvalues),dimension(:),allocatable::rowMap,oneSpaceMap
+      type(mqc_scf_eigenvalues),dimension(:),allocatable::asymRowMapA,asymColMapA
+      type(mqc_scf_eigenvalues),dimension(:),allocatable::asymRowMapB,asymColMapB
       type(mqc_scf_integral)::flatA,flatB,flatC1,flatC2,flatC3,flatC4
       type(mqc_nef_matrix)::matA,matB,NEFCoeff_1,NEFCoeff_2,NEFCoeff_3,NEFCoeff_4
       type(mqc_nef_matrix)::coeff1Conjg,coeff3Conjg
       type(mqc_nef_r4)::NEFR4A,transformResult,stage1,refResult,outerPQ,outerRS
+      type(mqc_nef_r4)::coulombR4,exchangeR4,doublebarR4
+      type(mqc_nef_r4)::doublebarTransform,doublebarReference
+      type(mqc_nef_matrix)::singleMatA,singleMatB,asymMatA,asymMatB
+      type(mqc_nef_r4)::singleR4,asymR4,swappedR4,doubleSwappedR4,antisymmetrizedR4
       type(mqc_scalar)::sc
       complex(kind=real64)::cGot,cExpected
       integer(kind=int64)::P,Q,R,S,spaceIdx
@@ -182,6 +188,227 @@
                   write(*,1000) trim(testLabel)
                 else
                   write(*,1010) trim(testLabel),real(cGot),aimag(cGot),real(cExpected),aimag(cExpected)
+                  nfail = nfail+1
+                end if
+              end do
+            end do
+          end do
+        end do
+      end do
+
+!--------------------------------------------------------------------
+!     A NEF rank-four swap must permute both the outer space grid and
+!     the four indices within every stored two-ERI block.
+!--------------------------------------------------------------------
+!
+      swappedR4 = NEFR4A%swap(2,4)
+      doubleSwappedR4 = swappedR4%swap(2,4)
+      do P = 1, 2
+        do Q = 1, 2
+          do R = 1, 2
+            do S = 1, 2
+              set1 = [1,P,1,1]
+              set2 = [2,Q,1,1]
+              set3 = [3,R,1,1]
+              set4 = [4,S,1,1]
+              sc = swappedR4%at(set1,set2,set3,set4); cGot = sc
+              set2 = [2,S,1,1]
+              set4 = [4,Q,1,1]
+              sc = NEFR4A%at(set1,set2,set3,set4); cExpected = sc
+              write(testLabel,'(a,i0,a,i0,a,i0,a,i0,a)') &
+                'rank-four outer-space swap(2,4): space(',P,',',Q,',',R,',',S,')'
+              if(abs(cGot-cExpected).le.tol) then
+                write(*,1000) trim(testLabel)
+              else
+                write(*,1010) trim(testLabel),real(cGot),aimag(cGot),&
+                  real(cExpected),aimag(cExpected)
+                nfail = nfail+1
+              end if
+
+              set2 = [2,Q,1,1]
+              set4 = [4,S,1,1]
+              sc = doubleSwappedR4%at(set1,set2,set3,set4); cGot = sc
+              sc = NEFR4A%at(set1,set2,set3,set4); cExpected = sc
+              write(testLabel,'(a,i0,a,i0,a,i0,a,i0,a)') &
+                'rank-four double swap(2,4): space(',P,',',Q,',',R,',',S,')'
+              if(abs(cGot-cExpected).le.tol) then
+                write(*,1000) trim(testLabel)
+              else
+                write(*,1010) trim(testLabel),real(cGot),aimag(cGot),&
+                  real(cExpected),aimag(cExpected)
+                nfail = nfail+1
+              end if
+            end do
+          end do
+        end do
+      end do
+
+      allocate(oneSpaceMap(1))
+      call oneSpaceMap(1)%init(0,0)
+      do P = 1, 2
+        call oneSpaceMap(1)%push(P,'alpha')
+        call oneSpaceMap(1)%push(P,'beta')
+      end do
+      call singleMatA%init(oneSpaceMap)
+      call singleMatA%imp(flatA)
+      call singleMatB%init(oneSpaceMap)
+      call singleMatB%imp(flatB)
+      singleR4 = singleMatA%outer2R4(singleMatB)
+      swappedR4 = singleR4%swap(2,4)
+      do P = 1, 2
+        do Q = 1, 2
+          do R = 1, 2
+            do S = 1, 2
+              set1 = [1,1,P,1]
+              set2 = [2,1,Q,1]
+              set3 = [3,1,R,1]
+              set4 = [4,1,S,1]
+              sc = swappedR4%at(set1,set2,set3,set4); cGot = sc
+              set2 = [2,1,S,1]
+              set4 = [4,1,Q,1]
+              sc = singleR4%at(set1,set2,set3,set4); cExpected = sc
+              write(testLabel,'(a,i0,a,i0,a,i0,a,i0,a)') &
+                'rank-four within-block swap(2,4): index(',P,',',Q,',',R,',',S,')'
+              if(abs(cGot-cExpected).le.tol) then
+                write(*,1000) trim(testLabel)
+              else
+                write(*,1010) trim(testLabel),real(cGot),aimag(cGot),&
+                  real(cExpected),aimag(cExpected)
+                nfail = nfail+1
+              end if
+            end do
+          end do
+        end do
+      end do
+
+!--------------------------------------------------------------------
+!     Use unequal numbers of spaces on axes 1 and 2.  This checks that
+!     the permuted block is indexed with the destination layout rather
+!     than the source layout; equal partitions cannot expose that error.
+!--------------------------------------------------------------------
+!
+      allocate(asymRowMapA(1),asymColMapA(2),asymRowMapB(2),asymColMapB(1))
+      call asymRowMapA(1)%init(0,0)
+      call asymRowMapA(1)%push(1,'alpha')
+      call asymRowMapA(1)%push(2,'alpha')
+      call asymColMapB(1)%init(0,0)
+      call asymColMapB(1)%push(1,'alpha')
+      call asymColMapB(1)%push(2,'alpha')
+      do P = 1, 2
+        call asymColMapA(P)%init(0,0)
+        call asymColMapA(P)%push(P,'alpha')
+        call asymRowMapB(P)%init(0,0)
+        call asymRowMapB(P)%push(P,'alpha')
+      end do
+      call asymMatA%init(asymRowMapA,initial_map_matrix_col=asymColMapA)
+      call asymMatA%imp(flatA)
+      call asymMatB%init(asymRowMapB,initial_map_matrix_col=asymColMapB)
+      call asymMatB%imp(flatB)
+      asymR4 = asymMatA%outer2R4(asymMatB)
+      swappedR4 = asymR4%swap(1,2)
+      do P = 1, 2
+        do Q = 1, 2
+          do R = 1, 2
+            do S = 1, 2
+              set1 = [1,P,1,1]
+              set2 = [2,1,Q,1]
+              set3 = [3,R,1,1]
+              set4 = [4,1,S,1]
+              sc = swappedR4%at(set1,set2,set3,set4); cGot = sc
+              set1 = [1,1,Q,1]
+              set2 = [2,P,1,1]
+              sc = asymR4%at(set1,set2,set3,set4); cExpected = sc
+              write(testLabel,'(a,i0,a,i0,a,i0,a,i0,a)') &
+                'asymmetric-space swap(1,2): index(',P,',',Q,',',R,',',S,')'
+              if(abs(cGot-cExpected).le.tol) then
+                write(*,1000) trim(testLabel)
+              else
+                write(*,1010) trim(testLabel),real(cGot),aimag(cGot),&
+                  real(cExpected),aimag(cExpected)
+                nfail = nfail+1
+              end if
+            end do
+          end do
+        end do
+      end do
+!
+!--------------------------------------------------------------------
+!     A space/doublebar source transformed with spin coefficients must
+!     remain spin/doublebar.  Compare the combined transform with the
+!     sum of the separately transformed Coulomb and exchange pieces for
+!     all six blocks permitted by full spin/doublebar storage.
+!--------------------------------------------------------------------
+!
+      coulombR4 = matA%outer2R4(matB)
+      exchangeR4 = matA%crossouter2R4(matB)
+      antisymmetrizedR4 = coulombR4-coulombR4%swap(2,4)
+      do P = 1, 2
+        do Q = 1, 2
+          do R = 1, 2
+            do S = 1, 2
+              set1 = [1,P,1,1]
+              set2 = [2,Q,1,1]
+              set3 = [3,R,1,1]
+              set4 = [4,S,1,1]
+              sc = antisymmetrizedR4%at(set1,set2,set3,set4); cGot = sc
+              sc = coulombR4%at(set1,set2,set3,set4); cExpected = sc
+              set2 = [2,S,1,1]
+              set4 = [4,Q,1,1]
+              sc = coulombR4%at(set1,set2,set3,set4)
+              cExpected = cExpected-sc%cval()
+              write(testLabel,'(a,i0,a,i0,a,i0,a,i0,a)') &
+                'rank-four antisymmetrization(2,4): space(',P,',',Q,',',R,',',S,')'
+              if(abs(cGot-cExpected).le.tol) then
+                write(*,1000) trim(testLabel)
+              else
+                write(*,1010) trim(testLabel),real(cGot),aimag(cGot),&
+                  real(cExpected),aimag(cExpected)
+                nfail = nfail+1
+              end if
+            end do
+          end do
+        end do
+      end do
+      doublebarR4 = coulombR4 + exchangeR4
+      doublebarTransform = doublebarR4%transform(&
+        NEFCoeff_1,NEFCoeff_2,NEFCoeff_3,NEFCoeff_4)
+      doublebarReference = coulombR4%transform(&
+        NEFCoeff_1,NEFCoeff_2,NEFCoeff_3,NEFCoeff_4) + &
+        exchangeR4%transform(NEFCoeff_1,NEFCoeff_2,NEFCoeff_3,NEFCoeff_4)
+!
+      do P = 1, 2
+        do Q = 1, 2
+          do R = 1, 2
+            do S = 1, 2
+              do spinIdx = 1, 6
+                select case(spinIdx)
+                case(1)
+                  spinCombo = [1,1,1,1]; spinName = 'aaaa'
+                case(2)
+                  spinCombo = [-1,-1,-1,-1]; spinName = 'bbbb'
+                case(3)
+                  spinCombo = [1,1,-1,-1]; spinName = 'aabb'
+                case(4)
+                  spinCombo = [-1,-1,1,1]; spinName = 'bbaa'
+                case(5)
+                  spinCombo = [1,-1,-1,1]; spinName = 'abba'
+                case default
+                  spinCombo = [-1,1,1,-1]; spinName = 'baab'
+                end select
+                set1 = [1,P,1,spinCombo(1)]
+                set2 = [2,Q,1,spinCombo(2)]
+                set3 = [3,R,1,spinCombo(3)]
+                set4 = [4,S,1,spinCombo(4)]
+                sc = doublebarTransform%at(set1,set2,set3,set4); cGot = sc
+                sc = doublebarReference%at(set1,set2,set3,set4); cExpected = sc
+                write(testLabel,'(a,i0,a,i0,a,i0,a,i0,a,a)') &
+                  'spin/doublebar transform: space(',P,',',Q,',',R,',',S,') ',&
+                  trim(spinName)
+                if(abs(cGot-cExpected).le.tol) then
+                  write(*,1000) trim(testLabel)
+                else
+                  write(*,1010) trim(testLabel),real(cGot),aimag(cGot),&
+                    real(cExpected),aimag(cExpected)
                   nfail = nfail+1
                 end if
               end do

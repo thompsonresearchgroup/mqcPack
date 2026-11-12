@@ -412,7 +412,7 @@
         Procedure, Public::init => mqc_twoERIs_initialize
 !>      \brief <b> Return the spin block dimention of the MQC_TwoERIs object</b>
         procedure, public::blockSize => mqc_eris_dimension
-        procedure, private::hasSpinBlock => mqc_eris_has_spinBlock
+        procedure, public::hasSpinBlock => mqc_eris_has_spinBlock
         procedure, public::isZeroBlock => mqc_eris_is_zero_block
 !>      \brief <b> Return a spin block of MQC_TwoERIs object as an MQC rank-4 tensor</b>
         procedure, public::getBlock => mqc_2eris_output_block
@@ -1193,19 +1193,19 @@
         short_print = .false.
       EndIf      
       if(trim(twoERIs%integralType).eq.'regular') then
-        if(twoERIs%hasSpinBlock('aaaa')) &
+        if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) &
           call twoERIs%alpha%print(iout,'Regular 2ERIs',short_print_threshold=print_threshold)
       elseIf(trim(twoERIs%integralType).eq.'raffenetti1') then
-        if(twoERIs%hasSpinBlock('aaaa')) &
+        if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) &
           call twoERIs%alpha%print(iout,'Raffenetti 1 2ERIs',short_print_threshold=print_threshold)
       elseIf(trim(twoERIs%integralType).eq.'raffenetti2') then
-        if(twoERIs%hasSpinBlock('aaaa')) &
+        if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) &
           call twoERIs%alpha%print(iout,'Raffenetti 2 2ERIs',short_print_threshold=print_threshold)
       elseIf(trim(twoERIs%integralType).eq.'raffenetti3') then
-        if(twoERIs%hasSpinBlock('aaaa')) &
+        if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) &
           call twoERIs%alpha%print(iout,'Raffenetti 3 2ERIs',short_print_threshold=print_threshold)
       elseIf(trim(twoERIs%integralType).eq.'space') then
-        if(twoERIs%hasSpinBlock('aaaa')) &
+        if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) &
           call twoERIs%alpha%print(iout,'Restricted MO 2ERIs',short_print_threshold=print_threshold)
         if(twoERIs%interactionType.eq.'doublebar') then
           if(twoERIs%hasSpinBlock('aabb')) &
@@ -1215,75 +1215,75 @@
         endIf
       elseIf(trim(twoERIs%integralType).eq.'spin') then
         write(iout,'(A)') 'Unrestricted MO 2ERIs'
-        if(twoERIs%hasSpinBlock('aaaa')) &
+        if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) &
           call twoERIs%alpha%print(iout,'(aa|aa)',short_print_threshold=print_threshold)
-        if(twoERIs%hasSpinBlock('bbbb')) &
+        if(twoERIs%hasSpinBlock('bbbb',interactionIn='stored')) &
           call twoERIs%beta%print(iout,'(bb|bb)',short_print_threshold=print_threshold)
         if((twoERIs%interactionType.eq.'coulomb'.or.twoERIs%interactionType.eq.'doublebar'&
-          .or.twoERIs%interactionType.eq.'ms').and.twoERIs%hasSpinBlock('aabb')) &
+          .or.twoERIs%interactionType.eq.'ms').and.twoERIs%hasSpinBlock('aabb',interactionIn='stored')) &
           call twoERIs%alphaBeta%print(iout,'(aa|bb)',short_print_threshold=print_threshold)
         if((twoERIs%interactionType.eq.'coulomb'.or.twoERIs%interactionType.eq.'doublebar'&
           .or.twoERIs%interactionType.eq.'ms').and.twoERIs%storageType.eq.'full'.and.&
-          twoERIs%hasSpinBlock('bbaa')) &
+          twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) &
           call twoERIs%betaAlpha%print(iout,'(bb|aa)',short_print_threshold=print_threshold)
-        if(twoERIs%interactionType.eq.'exchange'.and.twoERIs%hasSpinBlock('aabb')) then
+        if(twoERIs%interactionType.eq.'exchange'.and.twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
           call twoERIs%alphaBeta%print(iout,'(ab|ba)',short_print_threshold=print_threshold)
         elseif((twoERIs%interactionType.eq.'doublebar'.or.twoERIs%interactionType.eq.'ms').and.&
-          twoERIs%hasSpinBlock('abba')) then
+          twoERIs%hasSpinBlock('abba',interactionIn='stored')) then
           call twoERIs%abba%print(iout,'(ab|ba)',short_print_threshold=print_threshold)
         endIf
         if(twoERIs%interactionType.eq.'exchange'.and.twoERIs%storageType.eq.'full'.and.&
-          twoERIs%hasSpinBlock('bbaa')) then
+          twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) then
           call twoERIs%betaAlpha%print(iout,'(ba|ab)',short_print_threshold=print_threshold)
         elseif((twoERIs%interactionType.eq.'doublebar'.or.twoERIs%interactionType.eq.'ms').and.&
-          twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baab')) then
+          twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baab',interactionIn='stored')) then
           call twoERIs%abba%print(iout,'(ba|ab)',short_print_threshold=print_threshold)
         endIf
-        if(twoERIs%interactionType.eq.'inverted'.and.twoERIs%hasSpinBlock('aabb')) then 
+        if(twoERIs%interactionType.eq.'inverted'.and.twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
           call twoERIs%alphaBeta%print(iout,'(ab|ab)',short_print_threshold=print_threshold)
-        elseif(twoERIs%interactionType.eq.'ms'.and.twoERIs%hasSpinBlock('abab')) then
+        elseif(twoERIs%interactionType.eq.'ms'.and.twoERIs%hasSpinBlock('abab',interactionIn='stored')) then
           call twoERIs%abab%print(iout,'(ab|ab)',short_print_threshold=print_threshold)
         endIf
         if(twoERIs%interactionType.eq.'inverted'.and.twoERIs%storageType.eq.'full'.and.&
-          twoERIs%hasSpinBlock('bbaa')) then
+          twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) then
           call twoERIs%betaAlpha%print(iout,'(ba|ba)',short_print_threshold=print_threshold)
         elseif(twoERIs%interactionType.eq.'ms'.and.twoERIs%storageType.eq.'full'.and.&
-          twoERIs%hasSpinBlock('baba')) then
+          twoERIs%hasSpinBlock('baba',interactionIn='stored')) then
           call twoERIs%baba%print(iout,'(ba|ba)',short_print_threshold=print_threshold)
         endIf
       elseIf(trim(twoERIs%integralType).eq.'general') then
         write(iout,'(A)') 'General MO 2ERIs'
-        if(twoERIs%hasSpinBlock('aaaa')) &
+        if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) &
           call twoERIs%alpha%print(iout,'(aa|aa)',short_print_threshold=print_threshold)
-        if(twoERIs%hasSpinBlock('bbbb')) &
+        if(twoERIs%hasSpinBlock('bbbb',interactionIn='stored')) &
           call twoERIs%beta%print(iout,'(bb|bb)',short_print_threshold=print_threshold)
-        if(twoERIs%hasSpinBlock('aabb')) &
+        if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) &
           call twoERIs%alphaBeta%print(iout,'(aa|bb)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbaa')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) &
           call twoERIs%betaAlpha%print(iout,'(bb|aa)',short_print_threshold=print_threshold)
-        if(twoERIs%hasSpinBlock('abab')) &
+        if(twoERIs%hasSpinBlock('abab',interactionIn='stored')) &
           call twoERIs%abab%print(iout,'(ab|ab)',short_print_threshold=print_threshold)
-        if(twoERIs%hasSpinBlock('abba')) &
+        if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) &
           call twoERIs%abba%print(iout,'(ab|ba)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baab')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baab',interactionIn='stored')) &
           call twoERIs%baab%print(iout,'(ba|ab)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baba')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baba',interactionIn='stored')) &
           call twoERIs%baba%print(iout,'(ba|ba)',short_print_threshold=print_threshold)
-        if(twoERIs%hasSpinBlock('aaab')) &
+        if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) &
           call twoERIs%aaab%print(iout,'(aa|ab)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('aaba')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('aaba',interactionIn='stored')) &
           call twoERIs%aaba%print(iout,'(aa|ba)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('abaa')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('abaa',interactionIn='stored')) &
           call twoERIs%abaa%print(iout,'(ab|aa)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baaa')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('baaa',interactionIn='stored')) &
           call twoERIs%baaa%print(iout,'(ba|aa)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbba')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbba',interactionIn='stored')) &
           call twoERIs%bbba%print(iout,'(bb|ba)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbab')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('bbab',interactionIn='stored')) &
           call twoERIs%bbab%print(iout,'(bb|ab)',short_print_threshold=print_threshold)
-        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('babb')) &
+        if(twoERIs%storageType.eq.'full'.and.twoERIs%hasSpinBlock('babb',interactionIn='stored')) &
           call twoERIs%babb%print(iout,'(ba|bb)',short_print_threshold=print_threshold)
-        if(twoERIs%hasSpinBlock('abbb')) &
+        if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) &
           call twoERIs%abbb%print(iout,'(ab|bb)',short_print_threshold=print_threshold)
       else
         call mqc_error_A('Integral type unrecogised in mqc_print_twoERIs', 6, &
@@ -1872,22 +1872,43 @@
 !>        = 'babb':        tests the (ba|bb) spin block. 
 !>        = 'abbb':        tests the (ab|bb) spin block. 
 !>    \endverbatim
+!>
+!>    \param[in] InteractionIn
+!>    \verbatim
+!>        InteractionIn is character(len=*),optional.  If omitted, Label is
+!>        interpreted using ERIs%intType().  'stored' tests the literal stored
+!>        member named by Label.  An explicitly requested alternate interaction
+!>        is reconstructed only when the stored Coulomb information is sufficient.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
 !>    \date 2019
 !
-      function mqc_eris_has_spinBlock(eris,label) result(hasBlock)
+      function mqc_eris_has_spinBlock(eris,label,interactionIn) result(hasBlock)
 !
       implicit none
       class(mqc_twoeris),intent(in)::eris
       character(len=*),intent(in)::label
+      character(len=*),intent(in),optional::interactionIn
       character(len=12)::mylabel
+      character(len=64)::interaction
       logical::hasBlock
+      type(mqc_twoeris)::physicalERIs
 !
       call string_change_case(label,'L',myLabel)
-      
+      if(present(interactionIn)) then
+        call string_change_case(interactionIn,'L',interaction)
+      else
+        interaction = eris%intType()
+      endIf
+      if(interaction.ne.'stored'.and.interaction.ne.'coulomb'.and.interaction.ne.'exchange'.and.&
+        interaction.ne.'doublebar'.and.interaction.ne.'inverted'.and.interaction.ne.'ms') &
+        call mqc_error_a('Interaction type requested not recognized in mqc_eris_has_spinblock',&
+          6,'interaction',interaction)
+
+      if(interaction.eq.'stored') then
       hasBlock = .false.
       if(mylabel.eq.'aaaa'.or.mylabel.eq.'alpha'.or.mylabel.eq.'alpha-alpha') then
         if(MQC_R4Tensor_isAllocated(eris%alpha)) hasBlock = .true. 
@@ -1924,6 +1945,16 @@
       else
         call mqc_error_a('Unrecognized block requested in mqc_eris_has_spinblock',6,'myLabel',myLabel)
       endIf
+      elseIf(interaction.eq.eris%intType()) then
+        hasBlock = .not.eris%isZeroBlock(myLabel)
+      elseIf(eris%intType().eq.'coulomb'.or.eris%intType().eq.'ms') then
+        physicalERIs = eris
+        physicalERIs%interactionType = interaction
+        hasBlock = .not.physicalERIs%isZeroBlock(myLabel)
+      else
+        call mqc_error_a('Cannot reinterpret a non-Coulomb MQC_TwoERIs object in mqc_eris_has_spinblock',&
+          6,'stored interaction',eris%intType(),'requested interaction',interaction)
+      endIf
 !
       end function mqc_eris_has_spinBlock
 !
@@ -1943,23 +1974,23 @@
 !
       select case (myLabel)
       case('alpha','aaaa','alpha-alpha')
-        isZero = .not.eris%hasSpinBlock('aaaa')
+        isZero = .not.eris%hasSpinBlock('aaaa',interactionIn='stored')
       case('beta','bbbb','beta-beta')
         if (flatType) then
-          isZero = .not.eris%hasSpinBlock('aaaa')
+          isZero = .not.eris%hasSpinBlock('aaaa',interactionIn='stored')
         else
-          isZero = .not.eris%hasSpinBlock('bbbb')
+          isZero = .not.eris%hasSpinBlock('bbbb',interactionIn='stored')
         endIf
       case('alpha-beta','alphabeta','aabb')
         if (notGeneral.and.(eris%intType().eq.'exchange'.or.eris%intType().eq.'inverted')) then
           isZero = .true.
         elseIf (eris%type().eq.'spin'.or.eris%type().eq.'general'.or.&
             (eris%type().eq.'space'.and.eris%intType().eq.'doublebar')) then
-          isZero = .not.eris%hasSpinBlock('aabb')
+          isZero = .not.eris%hasSpinBlock('aabb',interactionIn='stored')
         elseIf (flatType) then
-          isZero = .not.eris%hasSpinBlock('aaaa')
+          isZero = .not.eris%hasSpinBlock('aaaa',interactionIn='stored')
         else
-          isZero = .not.eris%hasSpinBlock('aabb')
+          isZero = .not.eris%hasSpinBlock('aabb',interactionIn='stored')
         endIf
       case('beta-alpha','betaalpha','bbaa')
         if (notGeneral.and.(eris%intType().eq.'exchange'.or.eris%intType().eq.'inverted')) then
@@ -1969,26 +2000,26 @@
           if (eris%storType().eq.'symm'.or.eris%type().eq.'space') then
             isZero = .not.eris%hasSpinBlock('aabb')
           elseIf (eris%storType().eq.'full') then
-            isZero = .not.eris%hasSpinBlock('bbaa')
+            isZero = .not.eris%hasSpinBlock('bbaa',interactionIn='stored')
           else
             isZero = .true.
           endIf
         elseIf (flatType) then
-          isZero = .not.eris%hasSpinBlock('aaaa')
+          isZero = .not.eris%hasSpinBlock('aaaa',interactionIn='stored')
         else
-          isZero = .not.eris%hasSpinBlock('bbaa')
+          isZero = .not.eris%hasSpinBlock('bbaa',interactionIn='stored')
         endIf
       case('abab')
         if (notGeneral.and.(eris%intType().eq.'coulomb'.or.eris%intType().eq.'exchange'.or.&
             eris%intType().eq.'doublebar')) then
           isZero = .true.
         elseIf (flatType) then
-          isZero = .not.eris%hasSpinBlock('aaaa')
+          isZero = .not.eris%hasSpinBlock('aaaa',interactionIn='stored')
         elseIf (eris%type().eq.'spin') then
-          isZero = .not.((eris%intType().eq.'ms'.and.eris%hasSpinBlock('abab')).or.&
-                         eris%hasSpinBlock('aabb'))
+          isZero = .not.((eris%intType().eq.'ms'.and.eris%hasSpinBlock('abab',interactionIn='stored')).or.&
+                         eris%hasSpinBlock('aabb',interactionIn='stored'))
         else
-          isZero = .not.eris%hasSpinBlock('abab')
+          isZero = .not.eris%hasSpinBlock('abab',interactionIn='stored')
         endIf
       case('abba')
         if (notGeneral.and.(eris%intType().eq.'coulomb'.or.eris%intType().eq.'inverted')) then
@@ -1996,11 +2027,11 @@
         elseIf (eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or. &
             eris%type().eq.'raffenetti2'.or.eris%type().eq.'raffenetti3'.or. &
             (eris%type().eq.'space'.and.eris%intType().ne.'doublebar')) then
-          isZero = .not.eris%hasSpinBlock('aaaa')
+          isZero = .not.eris%hasSpinBlock('aaaa',interactionIn='stored')
         elseIf (eris%type().eq.'spin'.and.eris%intType().eq.'exchange') then
-          isZero = .not.eris%hasSpinBlock('aabb')
+          isZero = .not.eris%hasSpinBlock('aabb',interactionIn='stored')
         else
-          isZero = .not.eris%hasSpinBlock('abba')
+          isZero = .not.eris%hasSpinBlock('abba',interactionIn='stored')
         endIf
       case('baab')
         if (notGeneral.and.(eris%intType().eq.'coulomb'.or.eris%intType().eq.'inverted')) then
@@ -2008,63 +2039,63 @@
         elseIf (eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or. &
             eris%type().eq.'raffenetti2'.or.eris%type().eq.'raffenetti3'.or. &
             (eris%type().eq.'space'.and.eris%intType().ne.'doublebar')) then
-          isZero = .not.eris%hasSpinBlock('aaaa')
+          isZero = .not.eris%hasSpinBlock('aaaa',interactionIn='stored')
         elseIf (eris%type().eq.'spin'.and.eris%intType().eq.'exchange') then
           if (eris%storType().eq.'full') then
-            isZero = .not.eris%hasSpinBlock('bbaa')
+            isZero = .not.eris%hasSpinBlock('bbaa',interactionIn='stored')
           elseIf (eris%storType().eq.'symm') then
-            isZero = .not.eris%hasSpinBlock('aabb')
+            isZero = .not.eris%hasSpinBlock('aabb',interactionIn='stored')
           else
             isZero = .true.
           endIf
         elseIf (eris%storType().eq.'symm'.or.(eris%type().eq.'space'.and.&
             eris%intType().eq.'doublebar')) then
-          isZero = .not.eris%hasSpinBlock('abba')
+          isZero = .not.eris%hasSpinBlock('abba',interactionIn='stored')
         else
-          isZero = .not.eris%hasSpinBlock('baab')
+          isZero = .not.eris%hasSpinBlock('baab',interactionIn='stored')
         endIf
       case('baba')
         if (notGeneral.and.(eris%intType().eq.'coulomb'.or.eris%intType().eq.'exchange'.or.&
             eris%intType().eq.'doublebar')) then
           isZero = .true.
         elseIf (flatType) then
-          isZero = .not.eris%hasSpinBlock('aaaa')
+          isZero = .not.eris%hasSpinBlock('aaaa',interactionIn='stored')
         elseIf (eris%type().eq.'spin'.and.eris%intType().eq.'inverted') then
           if (eris%storType().eq.'full') then
-            isZero = .not.eris%hasSpinBlock('bbaa')
+            isZero = .not.eris%hasSpinBlock('bbaa',interactionIn='stored')
           elseIf (eris%storType().eq.'symm') then
-            isZero = .not.eris%hasSpinBlock('aabb')
+            isZero = .not.eris%hasSpinBlock('aabb',interactionIn='stored')
           else
             isZero = .true.
           endIf
         elseIf (eris%type().eq.'spin'.and.eris%intType().eq.'ms') then
           if (eris%storType().eq.'symm') then
-            isZero = .not.eris%hasSpinBlock('abab')
+            isZero = .not.eris%hasSpinBlock('abab',interactionIn='stored')
           else
-            isZero = .not.eris%hasSpinBlock('baba')
+            isZero = .not.eris%hasSpinBlock('baba',interactionIn='stored')
           endIf
         elseIf (eris%storType().eq.'symm') then
-          isZero = .not.eris%hasSpinBlock('abab')
+          isZero = .not.eris%hasSpinBlock('abab',interactionIn='stored')
         else
-          isZero = .not.eris%hasSpinBlock('baba')
+          isZero = .not.eris%hasSpinBlock('baba',interactionIn='stored')
         endIf
       case('aaab')
-        isZero = .not.(eris%type().eq.'general'.and.eris%hasSpinBlock('aaab'))
+        isZero = .not.(eris%type().eq.'general'.and.eris%hasSpinBlock('aaab',interactionIn='stored'))
       case('aaba','abaa','baaa')
-        if (eris%type().eq.'general'.and.eris%hasSpinBlock(myLabel)) then
+        if (eris%type().eq.'general'.and.eris%hasSpinBlock(myLabel,interactionIn='stored')) then
           isZero = .false.
         elseIf (eris%type().eq.'general'.and.eris%storageType.eq.'symm') then
-          isZero = .not.eris%hasSpinBlock('aaab')
+          isZero = .not.eris%hasSpinBlock('aaab',interactionIn='stored')
         else
           isZero = .true.
         endIf
       case('abbb')
-        isZero = .not.(eris%type().eq.'general'.and.eris%hasSpinBlock('abbb'))
+        isZero = .not.(eris%type().eq.'general'.and.eris%hasSpinBlock('abbb',interactionIn='stored'))
       case('bbba','bbab','babb')
-        if (eris%type().eq.'general'.and.eris%hasSpinBlock(myLabel)) then
+        if (eris%type().eq.'general'.and.eris%hasSpinBlock(myLabel,interactionIn='stored')) then
           isZero = .false.
         elseIf (eris%type().eq.'general'.and.eris%storageType.eq.'symm') then
-          isZero = .not.eris%hasSpinBlock('abbb')
+          isZero = .not.eris%hasSpinBlock('abbb',interactionIn='stored')
         else
           isZero = .true.
         endIf
@@ -4530,6 +4561,14 @@
 
       call string_change_case(integralType,'l',my_integralType)
       if(present(transform)) transform = .true.
+
+      if((twoERIs%type().eq.'regular'.or.twoERIs%type().eq.'raffenetti1').and.&
+        my_integralType.ne.twoERIs%type().and.&
+        (my_integralType.eq.'raffenetti1'.or.my_integralType.eq.'raffenetti2'.or.&
+         my_integralType.eq.'raffenetti3'.or.my_integralType.eq.'molecular').and.&
+        twoERIs%intType().ne.'coulomb') &
+        call mqc_error_a('mqc_twoeris_transform requires Coulomb-type input integrals',&
+          6,'twoERIs%intType()',twoERIs%intType(),'my_integralType',my_integralType)
 
       select case (twoERIs%type())
       case ('regular')
@@ -7131,22 +7170,31 @@
 !>        = 'babb':        outputs the (ba|bb) spin block. 
 !>        = 'abbb':        outputs the (ab|bb) spin block. 
 !>    \endverbatim
+!>
+!>    \param[in] InteractionIn
+!>    \verbatim
+!>        InteractionIn is character(len=*),optional.  If omitted, BlockName is
+!>        interpreted using ERIs%intType().  'stored' returns the literal stored
+!>        member named by BlockName.  Coulomb, exchange, doublebar, inverted, or
+!>        ms may be requested explicitly when reconstructible from the input.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
 !>    \date 2019
 !
-      function mqc_2ERIs_output_block(eris,blockName) result(r4tOut)
+      function mqc_2ERIs_output_block(eris,blockName,interactionIn) result(r4tOut)
 !
       implicit none
-      class(mqc_twoeris)::eris
-      character(len=*),optional::blockName
-      character(len=64)::myBlockName
+      class(mqc_twoeris),intent(in)::eris
+      character(len=*),intent(in),optional::blockName,interactionIn
+      character(len=64)::myBlockName,interaction
+      character(len=4)::spinLabel
       type(mqc_r4Tensor)::r4tOut
       integer(kind=int64)::nDimAlpha1=0,nDimBeta1=0,nDimTotal1=0,nDimAlpha2=0,nDimBeta2=0, &
         nDimTotal2=0,nDimAlpha3=0,nDimBeta3=0,nDimTotal3=0,nDimAlpha4=0,nDimBeta4=0, &
-        nDimTotal4=0,zeroI
+        nDimTotal4=0,zeroI,i,j,k,l,nDim1,nDim2,nDim3,nDim4
       real(kind=real64)::zeroR
       complex(kind=real64)::zeroC
       parameter(zeroI=0,zeroR=0.0,zeroC=(0.0,0.0))
@@ -7156,6 +7204,21 @@
       else
         myBlockName = 'full'
       endIf
+
+      if(present(interactionIn)) then
+        call string_change_case(interactionIn,'L',interaction)
+      else
+        interaction = eris%intType()
+      endIf
+      if(interaction.ne.'stored'.and.interaction.ne.eris%intType().and.&
+        eris%intType().ne.'coulomb'.and.eris%intType().ne.'ms') &
+        call mqc_error_a('Cannot reinterpret a non-Coulomb MQC_TwoERIs object in mqc_2ERIs_output_block',&
+          6,'stored interaction',eris%intType(),'requested interaction',interaction)
+      if(interaction.ne.'stored'.and.interaction.ne.eris%intType().and.&
+        interaction.ne.'coulomb'.and.interaction.ne.'exchange'.and.interaction.ne.'doublebar'.and.&
+        interaction.ne.'inverted'.and.interaction.ne.'ms') &
+        call mqc_error_a('Requested interaction is not available from a Coulomb MQC_TwoERIs object',&
+          6,'requested interaction',interaction)
 
       nDimAlpha1 = eris%blockSize('Alpha',1) 
       nDimBeta1 = eris%blockSize('Beta',1)
@@ -7170,27 +7233,112 @@
       nDimBeta4 = eris%blockSize('Beta',4)
       nDimTotal4 = nDimAlpha4 + nDimBeta4
 
+      if(interaction.eq.'stored') then
+        select case(myBlockName)
+        case('alpha','aaaa','alpha-alpha')
+          if(eris%hasSpinBlock('aaaa',interactionIn='stored')) r4tOut=eris%alpha
+        case('beta','bbbb','beta-beta')
+          if(eris%hasSpinBlock('bbbb',interactionIn='stored')) r4tOut=eris%beta
+        case('alpha-beta','alphabeta','aabb')
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) r4tOut=eris%alphaBeta
+        case('beta-alpha','betaalpha','bbaa')
+          if(eris%hasSpinBlock('bbaa',interactionIn='stored')) r4tOut=eris%betaAlpha
+        case('abab')
+          if(eris%hasSpinBlock('abab',interactionIn='stored')) r4tOut=eris%abab
+        case('abba')
+          if(eris%hasSpinBlock('abba',interactionIn='stored')) r4tOut=eris%abba
+        case('baab')
+          if(eris%hasSpinBlock('baab',interactionIn='stored')) r4tOut=eris%baab
+        case('baba')
+          if(eris%hasSpinBlock('baba',interactionIn='stored')) r4tOut=eris%baba
+        case('aaab')
+          if(eris%hasSpinBlock('aaab',interactionIn='stored')) r4tOut=eris%aaab
+        case('aaba')
+          if(eris%hasSpinBlock('aaba',interactionIn='stored')) r4tOut=eris%aaba
+        case('abaa')
+          if(eris%hasSpinBlock('abaa',interactionIn='stored')) r4tOut=eris%abaa
+        case('baaa')
+          if(eris%hasSpinBlock('baaa',interactionIn='stored')) r4tOut=eris%baaa
+        case('bbba')
+          if(eris%hasSpinBlock('bbba',interactionIn='stored')) r4tOut=eris%bbba
+        case('bbab')
+          if(eris%hasSpinBlock('bbab',interactionIn='stored')) r4tOut=eris%bbab
+        case('babb')
+          if(eris%hasSpinBlock('babb',interactionIn='stored')) r4tOut=eris%babb
+        case('abbb')
+          if(eris%hasSpinBlock('abbb',interactionIn='stored')) r4tOut=eris%abbb
+        case default
+          call mqc_error_a('Literal stored access requires an individual spin-block label',&
+            6,'myBlockName',myBlockName)
+        end select
+        if(.not.eris%hasSpinBlock(myBlockName,interactionIn='stored')) then
+          select case(myBlockName)
+          case('alpha','aaaa','alpha-alpha'); spinLabel='aaaa'
+          case('beta','bbbb','beta-beta'); spinLabel='bbbb'
+          case('alpha-beta','alphabeta','aabb'); spinLabel='aabb'
+          case('beta-alpha','betaalpha','bbaa'); spinLabel='bbaa'
+          case default; spinLabel=myBlockName(1:4)
+          end select
+          if(spinLabel(1:1).eq.'a') nDim1=nDimAlpha1
+          if(spinLabel(1:1).eq.'b') nDim1=nDimBeta1
+          if(spinLabel(2:2).eq.'a') nDim2=nDimAlpha2
+          if(spinLabel(2:2).eq.'b') nDim2=nDimBeta2
+          if(spinLabel(3:3).eq.'a') nDim3=nDimAlpha3
+          if(spinLabel(3:3).eq.'b') nDim3=nDimBeta3
+          if(spinLabel(4:4).eq.'a') nDim4=nDimAlpha4
+          if(spinLabel(4:4).eq.'b') nDim4=nDimBeta4
+          call r4tOut%init(nDim1,nDim2,nDim3,nDim4,zeroR)
+        endIf
+      elseIf(interaction.ne.eris%intType()) then
+        if(myBlockName.eq.'full') then
+          call r4tOut%init(nDimTotal1,nDimTotal2,nDimTotal3,nDimTotal4,zeroR)
+          do i=1,nDimTotal1; do j=1,nDimTotal2; do k=1,nDimTotal3; do l=1,nDimTotal4
+            call r4tOut%put(eris%at(i,j,k,l,interactionIn=interaction),i,j,k,l)
+          endDo; endDo; endDo; endDo
+        else
+          select case(myBlockName)
+          case('alpha','aaaa','alpha-alpha'); spinLabel='aaaa'
+          case('beta','bbbb','beta-beta'); spinLabel='bbbb'
+          case('alpha-beta','alphabeta','aabb'); spinLabel='aabb'
+          case('beta-alpha','betaalpha','bbaa'); spinLabel='bbaa'
+          case default; spinLabel=myBlockName(1:4)
+          end select
+          if(spinLabel(1:1).eq.'a') nDim1=nDimAlpha1
+          if(spinLabel(1:1).eq.'b') nDim1=nDimBeta1
+          if(spinLabel(2:2).eq.'a') nDim2=nDimAlpha2
+          if(spinLabel(2:2).eq.'b') nDim2=nDimBeta2
+          if(spinLabel(3:3).eq.'a') nDim3=nDimAlpha3
+          if(spinLabel(3:3).eq.'b') nDim3=nDimBeta3
+          if(spinLabel(4:4).eq.'a') nDim4=nDimAlpha4
+          if(spinLabel(4:4).eq.'b') nDim4=nDimBeta4
+          call r4tOut%init(nDim1,nDim2,nDim3,nDim4,zeroR)
+          do i=1,nDim1; do j=1,nDim2; do k=1,nDim3; do l=1,nDim4
+            call r4tOut%put(eris%at(i,j,k,l,spinBlockIn=spinLabel,&
+              interactionIn=interaction),i,j,k,l)
+          endDo; endDo; endDo; endDo
+        endIf
+      else
       select case (myBlockName)
       case('full')
         if (eris%intType().ne.'doublebar'.and.(eris%type().eq.'regular'.or.&
           eris%type().eq.'raffenetti1'.or.eris%type().eq.'raffenetti2'.or.&
           eris%type().eq.'raffenetti3'.or.eris%type().eq.'space')) then
           call r4tOut%init(nDimAlpha1,nDimAlpha2,nDimAlpha3,nDimAlpha4)
-          if(eris%hasSpinBlock('aaaa')) call r4tOut%tput(eris%alpha,[1,nDimAlpha1],[1,nDimAlpha2], &
+          if(eris%hasSpinBlock('aaaa',interactionIn='stored')) call r4tOut%tput(eris%alpha,[1,nDimAlpha1],[1,nDimAlpha2], &
             [1,nDimAlpha3],[1,nDimAlpha4]) 
         elseIf (eris%type().eq.'spin'.or.(eris%type().eq.'space'.and.&
           eris%intType().eq.'doublebar')) then
           call r4tOut%init(nDimTotal1,nDimTotal2,nDimTotal3,nDimTotal4)
-          if(eris%hasSpinBlock('aaaa')) call r4tOut%tput(eris%alpha,[1,nDimAlpha1],[1,nDimAlpha2], &
+          if(eris%hasSpinBlock('aaaa',interactionIn='stored')) call r4tOut%tput(eris%alpha,[1,nDimAlpha1],[1,nDimAlpha2], &
             [1,nDimAlpha3],[1,nDimAlpha4]) 
           if(eris%type().eq.'space') then
-            if(eris%hasSpinBlock('aaaa')) call r4tOut%tput(eris%alpha,[nDimAlpha1+1,nDimTotal1],&
+            if(eris%hasSpinBlock('aaaa',interactionIn='stored')) call r4tOut%tput(eris%alpha,[nDimAlpha1+1,nDimTotal1],&
             [nDimAlpha2+1,nDimTotal2],[nDimAlpha3+1,nDimTotal3],[nDimAlpha4+1,nDimTotal4]) 
           else
-            if(eris%hasSpinBlock('bbbb')) call r4tOut%tput(eris%beta,[nDimAlpha1+1,nDimTotal1],&
+            if(eris%hasSpinBlock('bbbb',interactionIn='stored')) call r4tOut%tput(eris%beta,[nDimAlpha1+1,nDimTotal1],&
             [nDimAlpha2+1,nDimTotal2],[nDimAlpha3+1,nDimTotal3],[nDimAlpha4+1,nDimTotal4]) 
           endIf
-          if(eris%hasSpinBlock('aabb')) then
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) then
             select case (eris%intType())
             case('coulomb','doublebar','ms')
               call r4tOut%tput(eris%alphaBeta,[1,nDimAlpha1],[1,nDimAlpha2], &
@@ -7229,7 +7377,7 @@
             endIf
           endIf
           if(eris%storageType.eq.'full'.and..not.eris%type().eq.'space'.and.&
-            eris%hasSpinBlock('bbaa')) then
+            eris%hasSpinBlock('bbaa',interactionIn='stored')) then
             select case (eris%intType())
             case('coulomb','doublebar','ms')
               call r4tOut%tput(eris%betaAlpha,[nDimAlpha1+1,nDimTotal1],&
@@ -7246,7 +7394,7 @@
             end select
           endIf
           if((eris%inttype().eq.'doublebar'.or.(eris%inttype().eq.'ms'.and..not.&
-            eris%type().eq.'space')).and.eris%hasSpinBlock('abba')) then
+            eris%type().eq.'space')).and.eris%hasSpinBlock('abba',interactionIn='stored')) then
             call r4tOut%tput(eris%abba,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
               [nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
             if(eris%type().eq.'space') then
@@ -7260,11 +7408,11 @@
           endIf
           if(eris%storageType.eq.'full'.and..not.eris%type().eq.'space'.and.&
             (eris%inttype().eq.'doublebar'.or.eris%inttype().eq.'ms').and.&
-            eris%hasSpinBlock('baab')) then
+            eris%hasSpinBlock('baab',interactionIn='stored')) then
             call r4tOut%tput(eris%baab,[nDimAlpha1+1,nDimTotal1],&
               [1,nDimAlpha2],[1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
           endIf
-          if(eris%inttype().eq.'ms'.and.eris%hasSpinBlock('abab')) then
+          if(eris%inttype().eq.'ms'.and.eris%hasSpinBlock('abab',interactionIn='stored')) then
             call r4tOut%tput(eris%abab,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
               [1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
             if(eris%storageType.eq.'symm') then
@@ -7273,108 +7421,116 @@
             endIf
           endIf
           if((eris%storageType.eq.'full'.and.eris%inttype().eq.'ms').and.&
-            eris%hasSpinBlock('baba')) then
+            eris%hasSpinBlock('baba',interactionIn='stored')) then
             call r4tOut%tput(eris%baba,[nDimAlpha1+1,nDimTotal1],&
               [1,nDimAlpha2],[nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
           endIf
 
         elseIf (eris%type().eq.'general') then
           call r4tOut%init(nDimTotal1,nDimTotal2,nDimTotal3,nDimTotal4)
-          if(eris%hasSpinBlock('aaaa')) call r4tOut%tput(eris%alpha,[1,nDimAlpha1],[1,nDimAlpha2],&
+          if(eris%hasSpinBlock('aaaa',interactionIn='stored')) call r4tOut%tput(eris%alpha,[1,nDimAlpha1],[1,nDimAlpha2],&
             [1,nDimAlpha3],[1,nDimAlpha4]) 
-          if(eris%hasSpinBlock('bbbb')) call r4tOut%tput(eris%beta,[nDimAlpha1+1,nDimTotal1],&
+          if(eris%hasSpinBlock('bbbb',interactionIn='stored')) call r4tOut%tput(eris%beta,[nDimAlpha1+1,nDimTotal1],&
             [nDimAlpha2+1,nDimTotal2],[nDimAlpha3+1,nDimTotal3],[nDimAlpha4+1,nDimTotal4]) 
-          if(eris%hasSpinBlock('aabb')) call r4tOut%tput(eris%alphaBeta,[1,nDimAlpha1],[1,nDimAlpha2], &
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) call r4tOut%tput(eris%alphaBeta,[1,nDimAlpha1],[1,nDimAlpha2], &
             [nDimAlpha3+1,nDimTotal3],[nDimAlpha4+1,nDimTotal4]) 
           if(eris%storageType.eq.'full') then
-            if(eris%hasSpinBlock('bbaa')) call r4tOut%tput(eris%betaAlpha,[nDimAlpha1+1,nDimTotal1], &
+            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) call r4tOut%tput(eris%betaAlpha,[nDimAlpha1+1,nDimTotal1], &
               [nDimAlpha2+1,nDimTotal2],[1,nDimAlpha3],[1,nDimAlpha4]) 
           else
-            if(eris%hasSpinBlock('aabb')) call r4tOut%tput( &
+            if(eris%hasSpinBlock('aabb',interactionIn='stored')) call r4tOut%tput( &
               eris%alphaBeta%permute([3,4,1,2],.false.),[nDimAlpha1+1,nDimTotal1], &
               [nDimAlpha2+1,nDimTotal2],[1,nDimAlpha3],[1,nDimAlpha4]) 
           endIf
-          if(eris%hasSpinBlock('abab')) call r4tOut%tput(eris%abab,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
+          if(eris%hasSpinBlock('abab',interactionIn='stored')) &
+            call r4tOut%tput(eris%abab,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
               [1,nDimAlpha3], [nDimAlpha4+1,nDimTotal4])
-          if(eris%hasSpinBlock('abba')) call r4tOut%tput(eris%abba,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
+          if(eris%hasSpinBlock('abba',interactionIn='stored')) &
+            call r4tOut%tput(eris%abba,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
               [nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
           if(eris%storageType.eq.'full') then
-            if(eris%hasSpinBlock('baab')) call r4tOut%tput(eris%baab,[nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
+            if(eris%hasSpinBlock('baab',interactionIn='stored')) &
+              call r4tOut%tput(eris%baab,[nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
               [1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
           else
-            if(eris%hasSpinBlock('abba')) call r4tOut%tput(&
+            if(eris%hasSpinBlock('abba',interactionIn='stored')) call r4tOut%tput(&
               eris%abba%permute([3,4,1,2],.false.),&
               [nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
               [1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
           endIf
           if(eris%storageType.eq.'full') then
-            if(eris%hasSpinBlock('baba')) call r4tOut%tput(eris%baba,[nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
+            if(eris%hasSpinBlock('baba',interactionIn='stored')) &
+              call r4tOut%tput(eris%baba,[nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
               [nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
           else
-            if(eris%hasSpinBlock('abab')) call r4tOut%tput(&
+            if(eris%hasSpinBlock('abab',interactionIn='stored')) call r4tOut%tput(&
               eris%abab%permute([2,1,4,3],.true.),&
               [nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
               [nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
           endIf
 
-          if(eris%hasSpinBlock('aaab')) call r4tOut%tput(eris%aaab,[1,nDimAlpha1],[1,nDimAlpha2], &
+          if(eris%hasSpinBlock('aaab',interactionIn='stored')) call r4tOut%tput(eris%aaab,[1,nDimAlpha1],[1,nDimAlpha2], &
               [1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
           if(eris%storageType.eq.'full') then
-            if(eris%hasSpinBlock('aaba')) call r4tOut%tput(eris%aaba,[1,nDimAlpha1],[1,nDimAlpha2], &
+            if(eris%hasSpinBlock('aaba',interactionIn='stored')) call r4tOut%tput(eris%aaba,[1,nDimAlpha1],[1,nDimAlpha2], &
               [nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
           else
-            if(eris%hasSpinBlock('aaab')) call r4tOut%tput(&
+            if(eris%hasSpinBlock('aaab',interactionIn='stored')) call r4tOut%tput(&
               eris%aaab%permute([2,1,4,3],.true.),&
               [1,nDimAlpha1],[1,nDimAlpha2], &
               [nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
           endIf
           if(eris%storageType.eq.'full') then
-            if(eris%hasSpinBlock('abaa')) call r4tOut%tput(eris%abaa,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
+            if(eris%hasSpinBlock('abaa',interactionIn='stored')) &
+              call r4tOut%tput(eris%abaa,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
               [1,nDimAlpha3],[1,nDimAlpha4])
           else
-            if(eris%hasSpinBlock('aaab')) call r4tOut%tput(&
+            if(eris%hasSpinBlock('aaab',interactionIn='stored')) call r4tOut%tput(&
               eris%aaab%permute([3,4,1,2],.false.),&
               [1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
               [1,nDimAlpha3],[1,nDimAlpha4])
           endIf
           if(eris%storageType.eq.'full') then
-            if(eris%hasSpinBlock('baaa')) call r4tOut%tput(eris%baaa,[nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
+            if(eris%hasSpinBlock('baaa',interactionIn='stored')) &
+              call r4tOut%tput(eris%baaa,[nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
               [1,nDimAlpha3],[1,nDimAlpha4])
           else
-            if(eris%hasSpinBlock('aaab')) call r4tOut%tput(dagger(eris%aaab),&
+            if(eris%hasSpinBlock('aaab',interactionIn='stored')) call r4tOut%tput(dagger(eris%aaab),&
               [nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
               [1,nDimAlpha3],[1,nDimAlpha4])
           endIf
           if(eris%storageType.eq.'full') then
-            if(eris%hasSpinBlock('bbba')) call r4tOut%tput(eris%bbba,[nDimAlpha1+1,nDimTotal1], &
+            if(eris%hasSpinBlock('bbba',interactionIn='stored')) call r4tOut%tput(eris%bbba,[nDimAlpha1+1,nDimTotal1], &
               [nDimAlpha2+1,nDimTotal2],[nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
           else
-            if(eris%hasSpinBlock('abbb')) call r4tOut%tput(dagger(eris%abbb),[nDimAlpha1+1,nDimTotal1], &
+            if(eris%hasSpinBlock('abbb',interactionIn='stored')) call r4tOut%tput(dagger(eris%abbb),[nDimAlpha1+1,nDimTotal1], &
               [nDimAlpha2+1,nDimTotal2],[nDimAlpha3+1,nDimTotal3],[1,nDimAlpha4])
           endIf
           if(eris%storageType.eq.'full') then
-            if(eris%hasSpinBlock('bbab')) call r4tOut%tput(eris%bbab,[nDimAlpha1+1,nDimTotal1], &
+            if(eris%hasSpinBlock('bbab',interactionIn='stored')) call r4tOut%tput(eris%bbab,[nDimAlpha1+1,nDimTotal1], &
               [nDimAlpha2+1,nDimTotal2],[1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
           else
-            if(eris%hasSpinBlock('abbb')) call r4tOut%tput(&
+            if(eris%hasSpinBlock('abbb',interactionIn='stored')) call r4tOut%tput(&
               eris%abbb%permute([3,4,1,2],.false.),&
               [nDimAlpha1+1,nDimTotal1], &
               [nDimAlpha2+1,nDimTotal2],[1,nDimAlpha3],[nDimAlpha4+1,nDimTotal4])
           endIf
           if(eris%storageType.eq.'full') then
-            if(eris%hasSpinBlock('babb')) call r4tOut%tput(eris%babb,[nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
+            if(eris%hasSpinBlock('babb',interactionIn='stored')) &
+              call r4tOut%tput(eris%babb,[nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
               [nDimAlpha3+1,nDimTotal3],[nDimAlpha4+1,nDimTotal4])
           else
-            if(eris%hasSpinBlock('abbb')) call r4tOut%tput(&
+            if(eris%hasSpinBlock('abbb',interactionIn='stored')) call r4tOut%tput(&
               eris%abbb%permute([2,1,4,3],.true.),&
               [nDimAlpha1+1,nDimTotal1],[1,nDimAlpha2], &
               [nDimAlpha3+1,nDimTotal3],[nDimAlpha4+1,nDimTotal4])
           endIf
-          if(eris%hasSpinBlock('abbb')) call r4tOut%tput(eris%abbb,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
+          if(eris%hasSpinBlock('abbb',interactionIn='stored')) &
+            call r4tOut%tput(eris%abbb,[1,nDimAlpha1],[nDimAlpha2+1,nDimTotal2], &
             [nDimAlpha3+1,nDimTotal3],[nDimAlpha4+1,nDimTotal4])
         endIf
       case('alpha','aaaa','alpha-alpha')
-        if (eris%hasSpinBlock('aaaa')) then
+        if (eris%hasSpinBlock('aaaa',interactionIn='stored')) then
           r4tOut = eris%alpha
         else
           call r4tOut%init(NDimAlpha1,NDimAlpha2,NDimAlpha3,NDimAlpha4,zeroR)
@@ -7383,12 +7539,12 @@
         if (eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or. &
           eris%type().eq.'raffenetti2'.or.eris%type().eq.'raffenetti3'.or. &
           eris%type().eq.'space') then
-          if (eris%hasSpinBlock('aaaa')) then
+          if (eris%hasSpinBlock('aaaa',interactionIn='stored')) then
             r4tOut = eris%alpha
           else
             call r4tOut%init(NDimAlpha1,NDimAlpha2,NDimAlpha3,NDimAlpha4,zeroR)
           endIf
-        elseIf (eris%hasSpinBlock('bbbb')) then
+        elseIf (eris%hasSpinBlock('bbbb',interactionIn='stored')) then
           r4tOut = eris%beta
         else
           call r4tOut%init(NDimBeta1,NDimBeta2,NDimBeta3,NDimBeta4,zeroR)
@@ -7399,7 +7555,7 @@
           call r4tOut%init(NDimAlpha1,NDimAlpha2,NDimBeta3,NDimBeta4,zeroR)
         elseIf (eris%type().eq.'spin'.or.eris%type().eq.'general'.or.&
             (eris%type().eq.'space'.and.eris%inttype().eq.'doublebar')) then
-          if (eris%hasSpinBlock('aabb')) then
+          if (eris%hasSpinBlock('aabb',interactionIn='stored')) then
             r4tOut = eris%alphaBeta
           else
             call r4tOut%init(NDimAlpha1,NDimAlpha2,NDimBeta3,NDimBeta4,zeroR)
@@ -7407,12 +7563,12 @@
         elseIf (eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or. &
           eris%type().eq.'raffenetti2'.or.eris%type().eq.'raffenetti3'.or. &
           eris%type().eq.'space') then
-          if (eris%hasSpinBlock('aaaa')) then
+          if (eris%hasSpinBlock('aaaa',interactionIn='stored')) then
             r4tOut = eris%alpha
           else
             call r4tOut%init(NDimAlpha1,NDimAlpha2,NDimBeta3,NDimBeta4,zeroR)
           endIf
-        else if (eris%hasSpinBlock('aabb')) then
+        else if (eris%hasSpinBlock('aabb',interactionIn='stored')) then
           r4tOut = eris%alphaBeta
         else
           call r4tOut%init(NDimAlpha1,NDimAlpha2,NDimBeta3,NDimBeta4,zeroR)
@@ -7437,7 +7593,7 @@
               call r4tOut%init(NDimBeta1,NDimBeta2,NDimAlpha3,NDimAlpha4,zeroR)
             endIf
           elseif(eris%stortype().eq.'full') then
-            if (eris%hasSpinBlock('bbaa')) then
+            if (eris%hasSpinBlock('bbaa',interactionIn='stored')) then
               r4tOut = eris%betaAlpha
             else
               call r4tOut%init(NDimBeta1,NDimBeta2,NDimAlpha3,NDimAlpha4,zeroR)
@@ -7446,12 +7602,12 @@
         elseIf (eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or. &
           eris%type().eq.'raffenetti2'.or.eris%type().eq.'raffenetti3'.or. &
           eris%type().eq.'space') then
-          If (eris%hasSpinBlock('aaaa')) then
+          If (eris%hasSpinBlock('aaaa',interactionIn='stored')) then
             r4tOut = eris%alpha
           else
             call r4tOut%init(NDimAlpha1,NDimAlpha2,NDimBeta3,NDimBeta4,zeroR)
           endIf
-        else if (eris%hasSpinBlock('bbaa')) then
+        else if (eris%hasSpinBlock('bbaa',interactionIn='stored')) then
           r4tOut = eris%betaAlpha
         else
           call r4tOut%init(NDimBeta1,NDimBeta2,NDimAlpha3,NDimAlpha4,zeroR)
@@ -7463,20 +7619,20 @@
         elseIf (eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or. &
           eris%type().eq.'raffenetti2'.or.eris%type().eq.'raffenetti3'.or. &
           eris%type().eq.'space') then
-          If (eris%hasSpinBlock('aaaa')) then
+          If (eris%hasSpinBlock('aaaa',interactionIn='stored')) then
             r4tOut = eris%alpha
           else
             call r4tOut%init(NDimAlpha1,NDimBeta2,NDimAlpha3,NDimBeta4,zeroR)
           endIf
         elseIf (eris%type().eq.'spin') then
-          If (eris%intType().eq.'ms'.and.eris%hasSpinBlock('abab')) then
+          If (eris%intType().eq.'ms'.and.eris%hasSpinBlock('abab',interactionIn='stored')) then
             r4tOut = eris%abab
-          elseIf (eris%hasSpinBlock('aabb')) then
+          elseIf (eris%hasSpinBlock('aabb',interactionIn='stored')) then
             r4tOut = eris%alphaBeta
           else
             call r4tOut%init(NDimAlpha1,NDimBeta2,NDimAlpha3,NDimBeta4,zeroR)
           endIf
-        elseIf (eris%hasSpinBlock('abab')) then
+        elseIf (eris%hasSpinBlock('abab',interactionIn='stored')) then
           r4tOut = eris%abab
         else
           call r4tOut%init(NDimAlpha1,NDimBeta2,NDimAlpha3,NDimBeta4,zeroR)
@@ -7488,19 +7644,19 @@
         elseIf (eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or. &
           eris%type().eq.'raffenetti2'.or.eris%type().eq.'raffenetti3'.or. &
           (eris%type().eq.'space'.and.eris%inttype().ne.'doublebar')) then
-          If (eris%hasSpinBlock('aaaa')) then
+          If (eris%hasSpinBlock('aaaa',interactionIn='stored')) then
             r4tOut = eris%alpha
           else
             call r4tOut%init(NDimAlpha1,NDimBeta2,NDimBeta3,NDimAlpha4,zeroR)
           endIf
         elseIf (eris%type().eq.'spin'.and.eris%inttype().eq.'exchange') then
-          If (eris%hasSpinBlock('aabb')) then
+          If (eris%hasSpinBlock('aabb',interactionIn='stored')) then
             r4tOut = eris%alphaBeta
           else
             call r4tOut%init(NDimAlpha1,NDimBeta2,NDimBeta3,NDimAlpha4,zeroR)
           endIf
         else
-          If (eris%hasSpinBlock('abba')) then
+          If (eris%hasSpinBlock('abba',interactionIn='stored')) then
             r4tOut = eris%abba
           else
             call r4tOut%init(NDimAlpha1,NDimBeta2,NDimBeta3,NDimAlpha4,zeroR)
@@ -7513,20 +7669,20 @@
         elseIf (eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or. &
           eris%type().eq.'raffenetti2'.or.eris%type().eq.'raffenetti3'.or. &
           (eris%type().eq.'space'.and.eris%inttype().ne.'doublebar')) then
-          If (eris%hasSpinBlock('aaaa')) then
+          If (eris%hasSpinBlock('aaaa',interactionIn='stored')) then
             r4tOut = eris%alpha
           else
             call r4tOut%init(NDimBeta1,NDimAlpha2,NDimAlpha3,NDimBeta4,zeroR)
           endIf
         elseIf (eris%type().eq.'spin'.and.eris%inttype().eq.'exchange') then
           If(eris%storType().eq.'full') then
-            If (eris%hasSpinBlock('bbaa')) then
+            If (eris%hasSpinBlock('bbaa',interactionIn='stored')) then
               r4tOut = eris%betaAlpha
             else
               call r4tOut%init(NDimBeta1,NDimAlpha2,NDimAlpha3,NDimBeta4,zeroR)
             endIf
           elseIf(eris%storType().eq.'symm') then
-            If (eris%hasSpinBlock('aabb')) then
+            If (eris%hasSpinBlock('aabb',interactionIn='stored')) then
               r4tOut = eris%alphaBeta%permute([3,4,1,2],.false.)
             else
               call r4tOut%init(NDimBeta1,NDimAlpha2,NDimAlpha3,NDimBeta4,zeroR)
@@ -7545,7 +7701,7 @@
           else
             call r4tOut%init(NDimBeta1,NDimAlpha2,NDimAlpha3,NDimBeta4,zeroR)
           endIf
-        elseIf (eris%hasSpinBlock('baab')) then
+        elseIf (eris%hasSpinBlock('baab',interactionIn='stored')) then
           r4tOut = eris%baab
         else
           call r4tOut%init(NDimBeta1,NDimAlpha2,NDimAlpha3,NDimBeta4,zeroR)
@@ -7557,20 +7713,20 @@
         elseIf (eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or. &
           eris%type().eq.'raffenetti2'.or.eris%type().eq.'raffenetti3'.or. &
           eris%type().eq.'space') then
-          If (eris%hasSpinBlock('aaaa')) then
+          If (eris%hasSpinBlock('aaaa',interactionIn='stored')) then
             r4tOut = eris%alpha
           else
             call r4tOut%init(NDimBeta1,NDimAlpha2,NDimBeta3,NDimAlpha4,zeroR)
           endIf
         elseIf (eris%type().eq.'spin'.and.eris%intType().eq.'inverted') then
           If(eris%storType().eq.'full') then
-            If (eris%hasSpinBlock('bbaa')) then
+            If (eris%hasSpinBlock('bbaa',interactionIn='stored')) then
               r4tOut = eris%betaAlpha
             else
               call r4tOut%init(NDimBeta1,NDimAlpha2,NDimBeta3,NDimAlpha4,zeroR)
             endIf
           elseIf(eris%storType().eq.'symm') then
-            If (eris%hasSpinBlock('aabb')) then
+            If (eris%hasSpinBlock('aabb',interactionIn='stored')) then
               r4tOut = eris%alphaBeta%permute([2,1,4,3],.true.)
             else
               call r4tOut%init(NDimBeta1,NDimAlpha2,NDimBeta3,NDimAlpha4,zeroR)
@@ -7578,43 +7734,43 @@
           endIf
         elseIf (eris%type().eq.'spin'.and.eris%intType().eq.'ms') then
           If (eris%storType().eq.'symm') then
-            If (eris%hasSpinBlock('abab')) then
+            If (eris%hasSpinBlock('abab',interactionIn='stored')) then
               r4tOut = eris%abab%permute([2,1,4,3],.true.)
             else
               call r4tOut%init(NDimBeta1,NDimAlpha2,NDimBeta3,NDimAlpha4,zeroR)
             endIf
           else
-            If (eris%hasSpinBlock('baba')) then
+            If (eris%hasSpinBlock('baba',interactionIn='stored')) then
               r4tOut = eris%baba
             else
               call r4tOut%init(NDimBeta1,NDimAlpha2,NDimBeta3,NDimAlpha4,zeroR)
             endIf
           endIf
         elseIf(eris%storType().eq.'symm') then
-          If (eris%hasSpinBlock('abab')) then
+          If (eris%hasSpinBlock('abab',interactionIn='stored')) then
             r4tOut = eris%abab%permute([2,1,4,3],.true.)
           else
             call r4tOut%init(NDimBeta1,NDimAlpha2,NDimBeta3,NDimAlpha4,zeroR)
           endIf
         else
-          If (eris%hasSpinBlock('baba')) then
+          If (eris%hasSpinBlock('baba',interactionIn='stored')) then
             r4tOut = eris%baba
           else
             call r4tOut%init(NDimBeta1,NDimAlpha2,NDimBeta3,NDimAlpha4,zeroR)
           endIf
         endIf
       case('aaab')
-        if (eris%type().eq.'general'.and.eris%hasSpinBlock('aaab')) then
+        if (eris%type().eq.'general'.and.eris%hasSpinBlock('aaab',interactionIn='stored')) then
           r4tOut = eris%aaab
         else
           call r4tOut%init(NDimAlpha1,NDimAlpha2,NDimAlpha3,NDimBeta4,zeroR)
         endIf
       case('aaba')
-        if (eris%type().eq.'general'.and.eris%hasSpinBlock('aaba')) then
+        if (eris%type().eq.'general'.and.eris%hasSpinBlock('aaba',interactionIn='stored')) then
           r4tOut = eris%aaba
         else
           if(eris%type().eq.'general'.and.eris%storageType.eq.'symm') then
-            if (eris%hasSpinBlock('aaab')) then
+            if (eris%hasSpinBlock('aaab',interactionIn='stored')) then
               r4tOut = eris%aaab%permute([2,1,4,3],.true.)
             else
               call r4tOut%init(NDimAlpha1,NDimAlpha2,NDimBeta3,NDimAlpha4,zeroR)
@@ -7624,11 +7780,11 @@
           endIf
         endIf
       case('abaa')
-        if (eris%type().eq.'general'.and.eris%hasSpinBlock('abaa')) then
+        if (eris%type().eq.'general'.and.eris%hasSpinBlock('abaa',interactionIn='stored')) then
           r4tOut = eris%abaa
         else
           if(eris%type().eq.'general'.and.eris%storageType.eq.'symm') then
-            if (eris%hasSpinBlock('aaab')) then
+            if (eris%hasSpinBlock('aaab',interactionIn='stored')) then
               r4tOut = eris%aaab%permute([3,4,1,2],.false.)
             else
               call r4tOut%init(NDimAlpha1,NDimBeta2,NDimAlpha3,NDimAlpha4,zeroR)
@@ -7638,11 +7794,11 @@
           endIf
         endIf
       case('baaa')
-        if (eris%type().eq.'general'.and.eris%hasSpinBlock('baaa')) then
+        if (eris%type().eq.'general'.and.eris%hasSpinBlock('baaa',interactionIn='stored')) then
           r4tOut = eris%baaa
         else
           if(eris%type().eq.'general'.and.eris%storageType.eq.'symm') then
-            if (eris%hasSpinBlock('aaab')) then
+            if (eris%hasSpinBlock('aaab',interactionIn='stored')) then
               r4tOut = dagger(eris%aaab)
             else
               call r4tOut%init(NDimBeta1,NDimAlpha2,NDimAlpha3,NDimAlpha4,zeroR)
@@ -7652,11 +7808,11 @@
           endIf
         endIf
       case('bbba')
-        if (eris%type().eq.'general'.and.eris%hasSpinBlock('bbba')) then
+        if (eris%type().eq.'general'.and.eris%hasSpinBlock('bbba',interactionIn='stored')) then
           r4tOut = eris%bbba
         else
           if(eris%type().eq.'general'.and.eris%storageType.eq.'symm') then
-            if (eris%hasSpinBlock('abbb')) then
+            if (eris%hasSpinBlock('abbb',interactionIn='stored')) then
               r4tOut = dagger(eris%abbb)
             else
               call r4tOut%init(NDimBeta1,NDimBeta2,NDimBeta3,NDimAlpha4,zeroR)
@@ -7666,11 +7822,11 @@
           endIf
         endIf
       case('bbab')
-        if (eris%type().eq.'general'.and.eris%hasSpinBlock('bbab')) then
+        if (eris%type().eq.'general'.and.eris%hasSpinBlock('bbab',interactionIn='stored')) then
           r4tOut = eris%bbab
         else
           if(eris%type().eq.'general'.and.eris%storageType.eq.'symm') then
-            if (eris%hasSpinBlock('abbb')) then
+            if (eris%hasSpinBlock('abbb',interactionIn='stored')) then
               r4tOut = eris%abbb%permute([3,4,1,2],.false.)
             else
               call r4tOut%init(NDimBeta1,NDimBeta2,NDimAlpha3,NDimBeta4,zeroR)
@@ -7680,11 +7836,11 @@
           endIf
         endIf
       case('babb')
-        if (eris%type().eq.'general'.and.eris%hasSpinBlock('babb')) then
+        if (eris%type().eq.'general'.and.eris%hasSpinBlock('babb',interactionIn='stored')) then
           r4tOut = eris%babb
         else
           if(eris%type().eq.'general'.and.eris%storageType.eq.'symm') then
-            if (eris%hasSpinBlock('abbb')) then
+            if (eris%hasSpinBlock('abbb',interactionIn='stored')) then
               r4tOut = eris%abbb%permute([2,1,4,3],.true.)
             else
               call r4tOut%init(NDimBeta1,NDimAlpha2,NDimBeta3,NDimBeta4,zeroR)
@@ -7694,7 +7850,7 @@
           endIf
         endIf
       case('abbb')
-        if (eris%type().eq.'general'.and.eris%hasSpinBlock('abbb')) then
+        if (eris%type().eq.'general'.and.eris%hasSpinBlock('abbb',interactionIn='stored')) then
           r4tOut = eris%abbb
         else
           call r4tOut%init(NDimAlpha1,NDimBeta2,NDimBeta3,NDimBeta4,zeroR)
@@ -7703,6 +7859,7 @@
         call mqc_error_A('unrecognised block name in mqc_2eris_output_block', 6, &
              'myBlockName', myBlockName )
       end select
+      endIf
 !
       end function mqc_2ERIs_output_block  
 
@@ -7911,6 +8068,13 @@
 
       do i = 1, eriSet%nERIs
         temp_twoERIs = eriSet%twoERIs(i)
+        if((temp_twoERIs%type().eq.'regular'.or.temp_twoERIs%type().eq.'raffenetti1').and.&
+          myERIType.ne.temp_twoERIs%type().and.&
+          (myERIType.eq.'raffenetti1'.or.myERIType.eq.'raffenetti2'.or.&
+           myERIType.eq.'raffenetti3'.or.myERIType.eq.'molecular').and.&
+          temp_twoERIs%intType().ne.'coulomb') &
+          call mqc_error_a('mqc_2ERISet_transform requires Coulomb-type input integrals',&
+            6,'temp_twoERIs%intType()',temp_twoERIs%intType(),'myERIType',myERIType)
         if(present(LmoCoeff).and.present(RmoCoeff)) then
           call mqc_twoeris_transform(temp_twoERIs,myERIType,LmoCoeff,RmoCoeff,tempTrans)
         elseIf(present(LmoCoeff)) then
@@ -16085,12 +16249,12 @@
 
       select case (eris%integralType)
       case('space','regular','raffenetti1','raffenetti2','raffenetti3')
-        if(eris%hasSpinBlock('aaaa')) &
+        if(eris%hasSpinBlock('aaaa',interactionIn='stored')) &
           aaaa = scalar*eris%getBlock('aaaa')
         if (eris%intType().eq.'doublebar') then
-          if(eris%hasSpinBlock('aabb')) &
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) &
             aabb = scalar*eris%getBlock('aabb')
-          if(eris%hasSpinBlock('abba')) &
+          if(eris%hasSpinBlock('abba',interactionIn='stored')) &
             abba = scalar*eris%getBlock('abba')
           call mqc_twoeris_allocate(erisOut,trim(myLabel)//'-'//trim(myInt),'space',aaaa,alphaBeta=aabb,abba=abba)
         elseif(eris%intType().eq.'coulomb'.or.eris%intType().eq.'exchange'.or.&
@@ -16101,33 +16265,42 @@
             6,'ERIS%inttype()',ERIS%inttype())
         endIf
       case('spin')
-        if(eris%hasSpinBlock('aaaa')) &
+        if(eris%hasSpinBlock('aaaa',interactionIn='stored')) &
           aaaa = scalar*eris%getBlock('aaaa')
-        if(eris%hasSpinBlock('bbbb')) &
+        if(eris%hasSpinBlock('bbbb',interactionIn='stored')) &
           bbbb = scalar*eris%getBlock('bbbb')
         if(eris%intType().eq.'exchange') then
-          if(eris%hasSpinBlock('aabb')) &
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) &
             aabb = scalar*eris%getBlock('abba')
         elseIf(eris%intType().eq.'inverted') then
-          if(eris%hasSpinBlock('aabb')) &
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) &
             aabb = scalar*eris%getBlock('abab')
         else
-          if(eris%hasSpinBlock('aabb')) &
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) &
             aabb = scalar*eris%getBlock('aabb')
         endIf
         if((eris%intType().eq.'doublebar'.or.eris%intType().eq.'ms').and.&
-          eris%hasSpinBlock('abba')) &
+          eris%hasSpinBlock('abba',interactionIn='stored')) &
           abba = scalar*eris%getBlock('abba')
-        if((eris%intType().eq.'ms').and.eris%hasSpinBlock('abab')) &
+        if((eris%intType().eq.'ms').and.eris%hasSpinBlock('abab',interactionIn='stored')) &
           abab = scalar*eris%getBlock('abab')
         if(eris%storType().eq.'full') then
-          if(eris%hasSpinBlock('bbaa')) &
-            bbaa = scalar*eris%getBlock('bbaa')
+          if(eris%intType().eq.'coulomb'.or.eris%intType().eq.'doublebar'.or.&
+            eris%intType().eq.'ms') then
+            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) &
+              bbaa = scalar*eris%getBlock('bbaa')
+          elseIf(eris%intType().eq.'exchange') then
+            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) &
+              bbaa = scalar*eris%getBlock('baab')
+          elseIf(eris%intType().eq.'inverted') then
+            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) &
+              bbaa = scalar*eris%getBlock('baba')
+          endIf
           if(eris%intType().eq.'doublebar'.or.eris%intType().eq.'ms') then
-            if(eris%hasSpinBlock('baab')) &
+            if(eris%hasSpinBlock('baab',interactionIn='stored')) &
               baab = scalar*eris%getBlock('baab')
             if(eris%intType().eq.'ms') then
-              if(eris%hasSpinBlock('baba')) &
+              if(eris%hasSpinBlock('baba',interactionIn='stored')) &
                 baba = scalar*eris%getBlock('baba')
               call mqc_twoeris_allocate(erisOut,trim(myLabel)//'-'//trim(myInt),'spin',aaaa,bbbb,&
                 aabb,bbaa,abab,abba,baab,baba)
@@ -16163,38 +16336,38 @@
             'twoeris%storType()',eris%storType())
         endIf
       case('general')
-        if(eris%hasSpinBlock('aaaa')) &
+        if(eris%hasSpinBlock('aaaa',interactionIn='stored')) &
           aaaa = scalar*eris%getBlock('aaaa')
-        if(eris%hasSpinBlock('bbbb')) &
+        if(eris%hasSpinBlock('bbbb',interactionIn='stored')) &
           bbbb = scalar*eris%getBlock('bbbb')
-        if(eris%hasSpinBlock('aabb')) &
+        if(eris%hasSpinBlock('aabb',interactionIn='stored')) &
           aabb = scalar*eris%getBlock('aabb')
-        if(eris%hasSpinBlock('abba')) &
+        if(eris%hasSpinBlock('abba',interactionIn='stored')) &
           abba = scalar*eris%getBlock('abba')
-        if(eris%hasSpinBlock('abab')) &
+        if(eris%hasSpinBlock('abab',interactionIn='stored')) &
           abab = scalar*eris%getBlock('abab')
-        if(eris%hasSpinBlock('aaab')) &
+        if(eris%hasSpinBlock('aaab',interactionIn='stored')) &
           aaab = scalar*eris%getBlock('aaab')
-        if(eris%hasSpinBlock('abbb')) &
+        if(eris%hasSpinBlock('abbb',interactionIn='stored')) &
           abbb = scalar*eris%getBlock('abbb')
         if(eris%storType().eq.'full') then
-          if(eris%hasSpinBlock('bbaa')) &
+          if(eris%hasSpinBlock('bbaa',interactionIn='stored')) &
             bbaa = scalar*eris%getBlock('bbaa')
-          if(eris%hasSpinBlock('baba')) &
+          if(eris%hasSpinBlock('baba',interactionIn='stored')) &
             baba = scalar*eris%getBlock('baba')
-          if(eris%hasSpinBlock('baab')) &
+          if(eris%hasSpinBlock('baab',interactionIn='stored')) &
             baab = scalar*eris%getBlock('baab')
-          if(eris%hasSpinBlock('aaba')) &
+          if(eris%hasSpinBlock('aaba',interactionIn='stored')) &
             aaba = scalar*eris%getBlock('aaba')
-          if(eris%hasSpinBlock('abaa')) &
+          if(eris%hasSpinBlock('abaa',interactionIn='stored')) &
             abaa = scalar*eris%getBlock('abaa')
-          if(eris%hasSpinBlock('baaa')) &
+          if(eris%hasSpinBlock('baaa',interactionIn='stored')) &
             baaa = scalar*eris%getBlock('baaa')
-          if(eris%hasSpinBlock('bbba')) &
+          if(eris%hasSpinBlock('bbba',interactionIn='stored')) &
             bbba = scalar*eris%getBlock('bbba')
-          if(eris%hasSpinBlock('bbab')) &
+          if(eris%hasSpinBlock('bbab',interactionIn='stored')) &
             bbab = scalar*eris%getBlock('bbab')
-          if(eris%hasSpinBlock('babb')) &
+          if(eris%hasSpinBlock('babb',interactionIn='stored')) &
             babb = scalar*eris%getBlock('babb')
           call mqc_twoeris_allocate(erisOut,trim(myLabel)//'-'//trim(myInt),'general',aaaa,bbbb,aabb,bbaa,&
             abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb)
@@ -18536,6 +18709,19 @@
         call mqc_error('Regular or Raffenetti integrals are required in &
         &mqc_eriset_integral_contraction')
 
+      do i=1,eris%nERIs
+        if(eris%twoERIs(i)%type().eq.'regular'.or.&
+          eris%twoERIs(i)%type().eq.'raffenetti1'.or.&
+          eris%twoERIs(i)%type().eq.'raffenetti2'.or.&
+          eris%twoERIs(i)%type().eq.'raffenetti3') then
+          if(eris%twoERIs(i)%intType().ne.'coulomb') &
+            call mqc_error_a('mqc_eriSet_integral_contraction requires Coulomb-type '//&
+              'regular and Raffenetti integrals',6,&
+              'ERIs type',eris%twoERIs(i)%type(),&
+              'ERIs interaction',eris%twoERIs(i)%intType())
+        endIf
+      endDo
+
       nBasis = integral%blockSize('alpha')
       ntt = (nBasis*(nBasis+1))/2
       call alpha%init(nBasis,nBasis)
@@ -19141,8 +19327,8 @@
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,cmplx((-1)*abAHRfoc,abAHCfoc),'antihermitian')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat2,cmplx(abHARfoc,(-1)*abHACfoc),'hermitian')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat3,cmplx((-1)*abAARfoc,abAACfoc),'antihermitian')
-                betaAlpha = alphaBeta - tmpMat - tmpMat2 + tmpMat3 
-                alphaBeta = alphaBeta + tmpMat + tmpMat2 + tmpMat3 
+                betaAlpha = alphaBeta - tmpMat - tmpMat2 + tmpMat3
+                alphaBeta = alphaBeta + tmpMat + tmpMat2 + tmpMat3
                 alphaBeta = transpose(alphaBeta)
                 betaAlpha = transpose(betaAlpha)
               endIf
@@ -19195,7 +19381,7 @@
               if(mod(flag,10).eq.2) then
                 call MQC_Matrix_SymmMatrix_Put(alphaBeta,cmplx(abHARfoc,abHACfoc),'hermitian')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,cmplx(abAARfoc,abAACfoc),'antihermitian')
-                betaAlpha = tmpMat - alphaBeta 
+                betaAlpha = tmpMat - alphaBeta
                 alphaBeta = alphaBeta + tmpMat
               endIf
             endIf
@@ -19228,38 +19414,38 @@
 !                  abs(eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)).le.zero) cycle
                 ! AA Block
                 if(myLabel.eq.'coulomb'.or.myLabel.eq.'doublebar') then
-                  call alphaLoc%put(alphaLoc%at(k,l)+&
-                    eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m,n),k,l)
-                  call alphaLoc%put(alphaLoc%at(k,l)+&
-                    eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m+nBasis,n+nBasis),k,l)
+                  call alphaLoc%put(alphaLoc%at(l,k)+&
+                    eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m,n),l,k)
+                  call alphaLoc%put(alphaLoc%at(l,k)+&
+                    eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m+nBasis,n+nBasis),l,k)
                 endIf
                 if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
-                  call alphaLoc%put(alphaLoc%at(k,l)-&
-                    eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n),k,l)
+                  call alphaLoc%put(alphaLoc%at(l,k)-&
+                    eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n),l,k)
                 endIf
                 !BB Block
                 if(integral%array_type.eq.'spin'.or.integral%array_type.eq.'general') then
                   if(myLabel.eq.'coulomb'.or.myLabel.eq.'doublebar') then
-                    call betaLoc%put(betaLoc%at(k,l)+&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m+nBasis,n+nBasis),k,l)
-                    call betaLoc%put(betaLoc%at(k,l)+&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m,n),k,l)
+                    call betaLoc%put(betaLoc%at(l,k)+&
+                      eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m+nBasis,n+nBasis),l,k)
+                    call betaLoc%put(betaLoc%at(l,k)+&
+                      eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n)*integral%at(m,n),l,k)
                   endIf
                   if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
-                    call betaLoc%put(betaLoc%at(k,l)-&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n+nBasis),k,l)
+                    call betaLoc%put(betaLoc%at(l,k)-&
+                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n+nBasis),l,k)
                   endIf
                 endIf
                 !AB Block
                 if(integral%array_type.eq.'general') then
                   if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
                     call alphaBetaLoc%put(alphaBetaLoc%at(l,k)-&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n+nBasis),l,k)
+                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n),l,k)
                   endIf
                 !BA Block
                   if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
                     call betaAlphaLoc%put(betaAlphaLoc%at(l,k)-&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n),l,k)
+                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n+nBasis),l,k)
                   endIf
                 endIf
               end do
@@ -19277,10 +19463,8 @@
         endIf
         !$OMP END CRITICAL
         !$OMP END PARALLEL
-        alpha = transpose(alpha)
-        if(integral%array_type.eq.'spin'.or.integral%array_type.eq.'general') &
-          beta = transpose(beta)
       endIf
+
 !
 !     expected symmetry: the real AO integrals give G[D]^dagger = G[D^dagger], so a hermitian
 !     (antihermitian) density gives a hermitian (antihermitian) result; from the density
@@ -21251,6 +21435,16 @@
       type(mqc_r4tensor)::temp,temp2
       type(mqc_twoERIs)::tempERI
 !     
+      if(present(label)) then
+        call string_change_case(label,'L',myLabel)
+      else
+        myLabel = 'doublebar'
+      endIf
+      if(myLabel.ne.eris%intType().and.eris%intType().ne.'coulomb') &
+        call mqc_error_a('mqc_eri_r4tensor_contraction can derive an alternate '//&
+          'interaction only from Coulomb-type input integrals',6,&
+          'eris%intType()',eris%intType(),'myLabel',myLabel)
+!
       allZero = .true.
       do iBlock = 1, 16
         if(.not.eris%isZeroBlock(blockLabels(iBlock))) allZero = .false.
@@ -21258,11 +21452,6 @@
       if(allZero) then
         output = 0.0
         return
-      endIf
-      if(present(label)) then
-        call string_change_case(label,'L',myLabel)
-      else
-        myLabel = 'doublebar'
       endIf
 !
       r4t1 = size(r4tensor,1)
@@ -22534,6 +22723,7 @@
       integer(kind=int64)::r4t1,r4t2,r4t3,r4t4,nB1,nB2,nB3,nB4
       type(mqc_twoERIs)::temp
       Integer(kind=int64)::ia,ja,ka,la,ib,jb,kb,lb,i,j,k,l
+      Integer(kind=int64),dimension(4)::inverseIndex1,inverseIndex2
       Integer(kind=int64)::dimAi,dimAj,dimAk,dimAl,dimBi,dimBj,dimBk,dimBl
       character(len=4)::str1,str2,active_conf
       character(len=4),dimension(4)::allowed_spin,a_bbb_array,aaa_b_array
@@ -22596,6 +22786,11 @@
           la.gt.4.or.la.le.0.or.lb.gt.4.or.lb.le.0.) Call MQC_Error(&
            'Index out of range in MQC_ERI_ERI_Partial_Contraction', 6)
 
+!     active_conf follows contraction/output order.  Invert each index order
+!     before using it to select a spin block in the original tensor.
+      inverseIndex1([ia,ja,ka,la])=[1_int64,2_int64,3_int64,4_int64]
+      inverseIndex2([ib,jb,kb,lb])=[1_int64,2_int64,3_int64,4_int64]
+
        if (eris1%blockSize('alpha',ia).ne.eris2%blockSize('alpha',ib).or.&
            eris1%blockSize('alpha',ja).ne.eris2%blockSize('alpha',jb).or.&
            eris1%blockSize('alpha',ka).ne.eris2%blockSize('alpha',kb).or.&
@@ -22626,8 +22821,8 @@
               eris1%getBlock('aaaa'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
                 if (active_conf(3:4).eq.'aa') then
@@ -22659,8 +22854,8 @@
               eris1%getBlock('aaaa'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if (active_conf(3:4).eq.'aa') then
                 if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
@@ -22696,8 +22891,8 @@
               eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
                 if (active_conf(3:4).eq.'aa') then
@@ -22729,8 +22924,8 @@
               eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if (active_conf(3:4).eq.'aa') then
                 if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
@@ -22766,8 +22961,8 @@
               eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
               if (active_conf(3:4).eq.'aa') then
                 if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
@@ -22797,8 +22992,8 @@
               eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
           do i=1,6
             active_conf=aa_bb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if (active_conf(3:4).eq.'aa') then
               if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
                 aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
@@ -22821,8 +23016,8 @@
           end do
           do i=1,4
             active_conf=a_bbb_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if (active_conf(3:4) == 'aa') then
               if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
                 aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
@@ -22845,8 +23040,8 @@
           end do
           do i=1,4
             active_conf=aaa_b_array(i)
-            str1=mqc_index_to_string([ia,ja,ka,la],active_conf)
-            str2=mqc_index_to_string([ib,jb,kb,lb],active_conf)
+            str1=mqc_index_to_string(inverseIndex1,active_conf)
+            str2=mqc_index_to_string(inverseIndex2,active_conf)
             if (active_conf(3:4) == 'aa') then
               if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
                 aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
@@ -23984,82 +24179,82 @@
           allocVec(i)=.false.
           finalAllocVec(i)=.false.
         end do
-        if(eris%hasSpinBlock('aaaa')) then
+        if(eris%hasSpinBlock('aaaa',interactionIn='stored')) then
           nz_taaaa = .not.eris%isZeroBlock('alpha')
           if(nz_taaaa) taaaa = eris%getBlock('alpha')
           allocVec(1)=.true.
         end if
-        if(eris%hasSpinBlock('bbbb')) then
+        if(eris%hasSpinBlock('bbbb',interactionIn='stored')) then
           nz_tbbbb = .not.eris%isZeroBlock('beta')
           if(nz_tbbbb) tbbbb = eris%getBlock('beta')
           allocVec(2)=.true.
         end if
-        if(eris%hasSpinBlock('AlphaBeta')) then
+        if(eris%hasSpinBlock('AlphaBeta',interactionIn='stored')) then
           nz_taabb = .not.eris%isZeroBlock('AlphaBeta')
           if(nz_taabb) taabb = eris%getBlock('AlphaBeta')
           allocVec(3)=.true.
         end if
-        if(eris%hasSpinBlock('BetaAlpha')) then
+        if(eris%hasSpinBlock('BetaAlpha',interactionIn='stored')) then
           nz_tbbaa = .not.eris%isZeroBlock('BetaAlpha')
           if(nz_tbbaa) tbbaa = eris%getBlock('BetaAlpha')
           allocVec(4)=.true.
         end if
-        if(eris%hasSpinBlock('abab')) then
+        if(eris%hasSpinBlock('abab',interactionIn='stored')) then
           nz_tabab = .not.eris%isZeroBlock('abab')
           if(nz_tabab) tabab = eris%getBlock('abab')
           allocVec(5)=.true.
         end if
-        if(eris%hasSpinBlock('abba')) then
+        if(eris%hasSpinBlock('abba',interactionIn='stored')) then
           nz_tabba = .not.eris%isZeroBlock('abba')
           if(nz_tabba) tabba = eris%getBlock('abba')
           allocVec(6)=.true.
         end if
-        if(eris%hasSpinBlock('baab')) then
+        if(eris%hasSpinBlock('baab',interactionIn='stored')) then
           nz_tbaab = .not.eris%isZeroBlock('baab')
           if(nz_tbaab) tbaab = eris%getBlock('baab')
           allocVec(7)=.true.
         end if
-        if(eris%hasSpinBlock('baba')) then
+        if(eris%hasSpinBlock('baba',interactionIn='stored')) then
           nz_tbaba = .not.eris%isZeroBlock('baba')
           if(nz_tbaba) tbaba = eris%getBlock('baba')
           allocVec(8)=.true.
         end if
-        if(eris%hasSpinBlock('aaab')) then
+        if(eris%hasSpinBlock('aaab',interactionIn='stored')) then
           nz_taaab = .not.eris%isZeroBlock('aaab')
           if(nz_taaab) taaab = eris%getBlock('aaab')
           allocVec(9)=.true.
         end if
-        if(eris%hasSpinBlock('aaba')) then
+        if(eris%hasSpinBlock('aaba',interactionIn='stored')) then
           nz_taaba = .not.eris%isZeroBlock('aaba')
           if(nz_taaba) taaba = eris%getBlock('aaba')
           allocVec(10)=.true.
         end if
-        if(eris%hasSpinBlock('abaa')) then
+        if(eris%hasSpinBlock('abaa',interactionIn='stored')) then
           nz_tabaa = .not.eris%isZeroBlock('abaa')
           if(nz_tabaa) tabaa = eris%getBlock('abaa')
           allocVec(11)=.true.
         end if
-        if(eris%hasSpinBlock('baaa')) then
+        if(eris%hasSpinBlock('baaa',interactionIn='stored')) then
           nz_tbaaa = .not.eris%isZeroBlock('baaa')
           if(nz_tbaaa) tbaaa = eris%getBlock('baaa')
           allocVec(12)=.true.
         end if
-        if(eris%hasSpinBlock('bbba')) then
+        if(eris%hasSpinBlock('bbba',interactionIn='stored')) then
           nz_tbbba = .not.eris%isZeroBlock('bbba')
           if(nz_tbbba) tbbba = eris%getBlock('bbba')
           allocVec(13)=.true.
         end if
-        if(eris%hasSpinBlock('bbab')) then
+        if(eris%hasSpinBlock('bbab',interactionIn='stored')) then
           nz_tbbab = .not.eris%isZeroBlock('bbab')
           if(nz_tbbab) tbbab = eris%getBlock('bbab')
           allocVec(14)=.true.
         end if
-        if(eris%hasSpinBlock('babb')) then
+        if(eris%hasSpinBlock('babb',interactionIn='stored')) then
           nz_tbabb = .not.eris%isZeroBlock('babb')
           if(nz_tbabb) tbabb = eris%getBlock('babb')
           allocVec(15)=.true.
         end if
-        if(eris%hasSpinBlock('abbb')) then
+        if(eris%hasSpinBlock('abbb',interactionIn='stored')) then
           nz_tabbb = .not.eris%isZeroBlock('abbb')
           if(nz_tabbb) tabbb = eris%getBlock('abbb')
           allocVec(16)=.true.
@@ -27773,7 +27968,7 @@
       select case (fullMat%getSymm())
       case('hermitian','antihermitian','symmetric','antisymmetric','diagonal')
         call MQC_Matrix_Packed_Block_Split(fullMat,nA,nB,alpha,alphaBeta,beta)
-      case('unknown')
+      case('unknown','asymmetric')
         if(nA.gt.0) alpha = fullMat%mat([1,nA],[1,nA])
         if(nB.gt.0) beta = fullMat%mat([nA+1,nA+nB],[nA+1,nA+nB])
         if(nA.gt.0.and.nB.gt.0) then
@@ -27888,9 +28083,13 @@
 !>    \param[in] InteractionIn
 !>    \verbatim
 !>        InteractionIn is character(len=*),optional
+!>        If omitted, the stored interaction type is used.
+!>        = 'stored':    reads the literal stored member named by SpinBlockIn
 !>        = 'coulomb':   returns (ij|kl)
 !>        = 'exchange':  returns (il|kj)
 !>        = 'doublebar': returns (ij|kl) - (il|kj).
+!>        = 'inverted':  returns the stored/derived inverted interaction.
+!>        = 'ms':        returns the stored/derived mixed-spin interaction.
 !>    \endverbatim
 !
 !     Authors:
@@ -27905,6 +28104,7 @@
       class(*),intent(in)::i,j,k,l
       integer(kind=int64)::myI,myJ,myK,myL
       type(mqc_scalar)::element
+      type(mqc_r4tensor)::requestedBlock
       character(len=*),optional,intent(in)::spinBlockIn,interactionIn
       character(len=64)::spinBlock,interaction
       real(kind=real64)::zero=0.0d0
@@ -27959,19 +28159,34 @@
       if(present(interactionIn)) then
         call string_change_case(interactionIn,'L',interaction)
       else
-        interaction = 'coulomb'
+        interaction = twoERIs%intType()
       endIf
-      if(interaction.ne.'coulomb'.and.interaction.ne.'exchange'.and.interaction.ne.'doublebar') &
+      if(interaction.ne.'stored'.and.interaction.ne.'coulomb'.and.interaction.ne.'exchange'.and.&
+        interaction.ne.'doublebar'.and.interaction.ne.'inverted'.and.interaction.ne.'ms') &
         call mqc_error_a('Interaction type requested not recognized in mqc_twoERIs_at',6,&
         'interaction',interaction)
 
+      if(interaction.eq.'stored'.or.interaction.eq.twoERIs%intType()) then
+        if(present(spinBlockIn)) then
+          requestedBlock=twoERIs%getBlock(spinBlockIn,interactionIn=interaction)
+          element=requestedBlock%at(myI,myJ,myK,myL)
+        elseIf(interaction.eq.'stored') then
+          call mqc_error('Literal stored access in MQC_twoERIs_at requires spinBlockIn')
+        else
+          requestedBlock=twoERIs%getBlock('full')
+          element=requestedBlock%at(myI,myJ,myK,myL)
+        endIf
+      else
+      if(twoERIs%intType().ne.'coulomb'.and.twoERIs%intType().ne.'ms') &
+        call mqc_error_a('Cannot reinterpret a non-Coulomb MQC_TwoERIs object in mqc_twoERIs_at',&
+          6,'stored interaction',twoERIs%intType(),'requested interaction',interaction)
       if(present(spinBlockIn)) then
 !       SPACE
         call string_change_case(spinBlockIn,'L',spinBlock)
         if(twoERIs%integralType.eq.'space') then
           if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa'.or.&
             spinBlock.eq.'beta'.or.spinBlock.eq.'bbbb') then
-            if(twoERIs%hasSpinBlock('aaaa')) then
+            if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%alpha%at(myI,myJ,myK,myL)
               elseIf(interaction.eq.'exchange') then
@@ -28014,7 +28229,7 @@
 !       SPIN
         elseIf(twoERIs%integralType.eq.'spin') then
           if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
-            if(twoERIs%hasSpinBlock('aaaa')) then
+            if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%alpha%at(myI,myJ,myK,myL)
               elseIf(interaction.eq.'exchange') then
@@ -28024,7 +28239,7 @@
               endIf
             endIf
           elseif(spinblock.eq.'beta'.or.spinBlock.eq.'bbbb') then
-            if(twoERIs%hasSpinBlock('bbbb')) then
+            if(twoERIs%hasSpinBlock('bbbb',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoeris%beta%at(myI,myJ,myK,myL)
               elseIf(interaction.eq.'exchange') then
@@ -28034,28 +28249,28 @@
               endIf
             endIf
           elseif(spinblock.eq.'alphabeta'.or.spinBlock.eq.'aabb') then
-            if(twoERIs%hasSpinBlock('aabb')) then
+            if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
               if(interaction.eq.'coulomb'.or.interaction.eq.'doublebar') then
                 element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
               endIf
             endIf
           elseif(spinblock.eq.'betaalpha'.or.spinBlock.eq.'bbaa') then
             if(twoERIs%storageType.eq.'symm') then
-              if(twoERIs%hasSpinBlock('aabb')) then
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
                 if(interaction.eq.'coulomb'.or.interaction.eq.'doublebar') then
 !                  element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
                   element = twoeris%alphaBeta%at(myK,myL,myI,myJ)
                 endIf
               endIf
             else
-              if(twoERIs%hasSpinBlock('bbaa')) then
+              if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) then
                 if(interaction.eq.'coulomb'.or.interaction.eq.'doublebar') then
                   element = twoeris%betaAlpha%at(myI,myJ,myK,myL)
                 endIf
               endIf
             endIf
           elseif(spinBlock.eq.'abba') then
-            if(twoERIs%hasSpinBlock('aabb')) then
+            if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
               if(interaction.eq.'exchange') then
                 element = twoeris%alphaBeta%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
@@ -28064,7 +28279,7 @@
             endIf
           elseif(spinBlock.eq.'baab') then
             if(twoERIs%storageType.eq.'symm') then
-              if(twoERIs%hasSpinBlock('aabb')) then
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
                 if(interaction.eq.'exchange') then
 !                  element = twoeris%alphaBeta%at(myI,myL,myK,myJ)
                   element = twoeris%alphaBeta%at(myK,myJ,myI,myL)
@@ -28074,7 +28289,7 @@
                 endIf
               endIf
             else
-              if(twoERIs%hasSpinBlock('bbaa')) then
+              if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) then
                 if(interaction.eq.'exchange') then
                   element = twoeris%betaAlpha%at(myI,myL,myK,myJ)
                 elseif(interaction.eq.'doublebar') then
@@ -28083,7 +28298,7 @@
               endIf
             endIf
           elseif(spinBlock.eq.'abab') then
-            if(twoERIs%hasSpinBlock('abab')) then
+            if(twoERIs%hasSpinBlock('abab',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoeris%abab%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28091,9 +28306,8 @@
               elseif(interaction.eq.'doublebar') then
                 element = twoERIs%abab%at(myI,myJ,myK,myL) - twoERIs%abab%at(myI,myL,myK,myJ)
               endIf
-!           Only inverted storage keeps abab in the aabb block (table above); for
-!           coulomb/exchange/doublebar the abab block is zero, as in getBlock.
-            elseif(twoERIs%interactionType.eq.'inverted'.and.twoERIs%hasSpinBlock('aabb')) then
+            elseif(twoERIs%interactionType.eq.'inverted'.and.&
+                   twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28104,7 +28318,7 @@
             endIf
           elseif(spinBlock.eq.'baba') then
             if(twoERIs%storageType.eq.'symm') then
-              if(twoERIs%hasSpinBlock('abab')) then
+              if(twoERIs%hasSpinBlock('abab',interactionIn='stored')) then
                 if(interaction.eq.'coulomb') then
                   element = conjg(twoeris%abab%at(myJ,myI,myL,myK))
                 elseif(interaction.eq.'exchange') then
@@ -28112,8 +28326,8 @@
                 elseif(interaction.eq.'doublebar') then
                   element = conjg(twoERIs%abab%at(myJ,myI,myL,myK)) - conjg(twoERIs%abab%at(myL,myI,myJ,myK))
                 endIf
-!             Only inverted storage keeps baba in the aabb block (see abab above).
-              elseif(twoERIs%interactionType.eq.'inverted'.and.twoERIs%hasSpinBlock('aabb')) then
+              elseif(twoERIs%interactionType.eq.'inverted'.and.&
+               twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
                 if(interaction.eq.'coulomb') then
                   element = twoeris%alphaBeta%at(myK,myL,myI,myJ)
                 elseif(interaction.eq.'exchange') then
@@ -28123,7 +28337,7 @@
                 endIf
               endIf
             else
-              if(twoERIs%hasSpinBlock('baba')) then
+              if(twoERIs%hasSpinBlock('baba',interactionIn='stored')) then
                 if(interaction.eq.'coulomb') then
                   element = twoeris%baba%at(myI,myJ,myK,myL)
                 elseif(interaction.eq.'exchange') then
@@ -28137,7 +28351,7 @@
 !       GENERAL
         elseIf(twoERIs%integralType.eq.'general') then
           if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
-            if(twoERIs%hasSpinBlock('aaaa')) then
+            if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%alpha%at(myI,myJ,myK,myL)
               elseIf(interaction.eq.'exchange') then
@@ -28147,7 +28361,7 @@
               endIf
             endIf
           elseif(spinblock.eq.'beta'.or.spinBlock.eq.'bbbb') then
-            if(twoERIs%hasSpinBlock('bbbb')) then
+            if(twoERIs%hasSpinBlock('bbbb',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoeris%beta%at(myI,myJ,myK,myL)
               elseIf(interaction.eq.'exchange') then
@@ -28158,39 +28372,39 @@
             endIf
           elseif(spinblock.eq.'alphabeta'.or.spinBlock.eq.'aabb') then
             if(interaction.eq.'coulomb') then
-              if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
             elseif(interaction.eq.'exchange') then
-              if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myI,myL,myK,myJ)
+              if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myI,myL,myK,myJ)
             elseif(interaction.eq.'doublebar') then
-              if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
-              if(twoERIs%hasSpinBlock('abba')) element = element - twoeris%abba%at(myI,myL,myK,myJ)
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = element - twoeris%abba%at(myI,myL,myK,myJ)
             endIf
           elseif(spinblock.eq.'betaalpha'.or.spinBlock.eq.'bbaa') then
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-!                if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myK,myL,myI,myJ)
+!                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myK,myL,myI,myJ)
               elseif(interaction.eq.'exchange') then
-!                if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myI,myL,myK,myJ)
-                if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myK,myJ,myI,myL)
+!                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myK,myJ,myI,myL)
               elseif(interaction.eq.'doublebar') then
-!                if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
-!                if(twoERIs%hasSpinBlock('abba')) element = element - twoeris%abba%at(myI,myL,myK,myJ)
-                if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myK,myL,myI,myJ)
-                if(twoERIs%hasSpinBlock('abba')) element = element - twoeris%abba%at(myK,myJ,myI,myL)
+!                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
+!                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = element - twoeris%abba%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myK,myL,myI,myJ)
+                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = element - twoeris%abba%at(myK,myJ,myI,myL)
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('bbaa')) element = twoeris%betaAlpha%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) element = twoeris%betaAlpha%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('baab')) element = twoeris%baab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('baab',interactionIn='stored')) element = twoeris%baab%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('bbaa')) element = twoeris%betaAlpha%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('baab')) element = element - twoeris%baab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) element = twoeris%betaAlpha%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('baab',interactionIn='stored')) element = element - twoeris%baab%at(myI,myL,myK,myJ)
               endIf
             endIf
           elseif(spinBlock.eq.'abab') then
-            if(twoERIs%hasSpinBlock('abab')) then
+            if(twoERIs%hasSpinBlock('abab',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoeris%abab%at(myI,myJ,myK,myL)
               elseIf(interaction.eq.'exchange') then
@@ -28201,40 +28415,40 @@
             endIf
           elseif(spinBlock.eq.'abba') then
             if(interaction.eq.'coulomb') then
-              if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myI,myJ,myK,myL)
             elseif(interaction.eq.'exchange') then
-              if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myI,myL,myK,myJ)
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myI,myL,myK,myJ)
             elseif(interaction.eq.'doublebar') then
-              if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myI,myJ,myK,myL)
-              if(twoERIs%hasSpinBlock('aabb')) element = element - twoeris%alphaBeta%at(myI,myL,myK,myJ)
+              if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = element - twoeris%alphaBeta%at(myI,myL,myK,myJ)
             endIf
           elseif(spinBlock.eq.'baab') then
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-!                if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myK,myL,myI,myJ)
+!                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myK,myL,myI,myJ)
               elseif(interaction.eq.'exchange') then
-!                if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myI,myL,myK,myJ)
-                if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myK,myJ,myI,myL)
+!                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myK,myJ,myI,myL)
               elseif(interaction.eq.'doublebar') then
-!                if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myI,myJ,myK,myL)
-!                if(twoERIs%hasSpinBlock('aabb')) element = element - twoeris%alphaBeta%at(myI,myL,myK,myJ)
-                if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myK,myL,myI,myJ)
-                if(twoERIs%hasSpinBlock('aabb')) element = element - twoeris%alphaBeta%at(myK,myJ,myI,myL)
+!                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myI,myJ,myK,myL)
+!                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = element - twoeris%alphaBeta%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myK,myL,myI,myJ)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = element - twoeris%alphaBeta%at(myK,myJ,myI,myL)
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('baab')) element = twoeris%baab%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('baab',interactionIn='stored')) element = twoeris%baab%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('bbaa')) element = twoeris%betaAlpha%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) element = twoeris%betaAlpha%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('baab')) element = twoeris%baab%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('bbaa')) element = element - twoeris%betaAlpha%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('baab',interactionIn='stored')) element = twoeris%baab%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) element = element - twoeris%betaAlpha%at(myI,myL,myK,myJ)
               endIf
             endIf
           elseif(spinBlock.eq.'baba') then
             if(twoERIs%storageType.eq.'symm') then
-              if(twoERIs%hasSpinBlock('abab')) then
+              if(twoERIs%hasSpinBlock('abab',interactionIn='stored')) then
                 if(interaction.eq.'coulomb') then
 !                  element = conjg(twoeris%abab%at(myI,myJ,myK,myL))
                   element = conjg(twoeris%abab%at(myJ,myI,myL,myK))
@@ -28247,7 +28461,7 @@
                 endIf
               endIf
             else
-              if(twoERIs%hasSpinBlock('baba')) then
+              if(twoERIs%hasSpinBlock('baba',interactionIn='stored')) then
                 if(interaction.eq.'coulomb') then
                   element = twoeris%baba%at(myI,myJ,myK,myL)
                 elseIf(interaction.eq.'exchange') then
@@ -28259,157 +28473,157 @@
             endIf
           elseif(spinBlock.eq.'aaab') then
             if(interaction.eq.'coulomb') then
-              if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myI,myJ,myK,myL)
             elseif(interaction.eq.'exchange') then
               if(twoERIs%storageType.eq.'symm') then
-!                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myI,myL,myK,myJ)
-                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myK,myJ,myI,myL)
+!                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myK,myJ,myI,myL)
               else
-                if(twoERIs%hasSpinBlock('abaa')) element = twoeris%abaa%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('abaa',interactionIn='stored')) element = twoeris%abaa%at(myI,myL,myK,myJ)
               endIf
             elseif(interaction.eq.'doublebar') then
-              if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myI,myJ,myK,myL)
               if(twoERIs%storageType.eq.'symm') then
-!                if(twoERIs%hasSpinBlock('aaab')) element = element - twoeris%aaab%at(myI,myL,myK,myJ)
-                if(twoERIs%hasSpinBlock('aaab')) element = element - twoeris%aaab%at(myK,myJ,myI,myL)
+!                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = element - twoeris%aaab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = element - twoeris%aaab%at(myK,myJ,myI,myL)
               else
-                if(twoERIs%hasSpinBlock('abaa')) element = element - twoeris%abaa%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('abaa',interactionIn='stored')) element = element - twoeris%abaa%at(myI,myL,myK,myJ)
               endIf
             endIf
           elseif(spinBlock.eq.'aaba') then
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoeris%aaab%at(myJ,myI,myL,myK))
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoeris%aaab%at(myJ,myI,myL,myK))
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoeris%aaab%at(myL,myI,myJ,myK))
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoeris%aaab%at(myL,myI,myJ,myK))
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoeris%aaab%at(myJ,myI,myL,myK)) - &
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoeris%aaab%at(myJ,myI,myL,myK)) - &
                   conjg(twoeris%aaab%at(myL,myI,myJ,myK))
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('aaba')) element = twoeris%aaba%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('aaba',interactionIn='stored')) element = twoeris%aaba%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aaba')) element = twoeris%aaba%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('aaba',interactionIn='stored')) element = twoeris%aaba%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('aaba')) element = twoeris%aaba%at(myI,myJ,myK,myL) - &
+                if(twoERIs%hasSpinBlock('aaba',interactionIn='stored')) element = twoeris%aaba%at(myI,myJ,myK,myL) - &
                   twoeris%aaba%at(myI,myL,myK,myJ)
               endIf
             endIf
           elseif(spinBlock.eq.'abaa') then
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-!                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myK,myL,myI,myJ)
+!                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myK,myL,myI,myJ)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-!                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myI,myJ,myK,myL) - &
+!                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myI,myJ,myK,myL) - &
 !                  twoeris%aaab%at(myI,myL,myK,myJ)
-                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myK,myL,myI,myJ) - &
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myK,myL,myI,myJ) - &
                   twoeris%aaab%at(myI,myL,myK,myJ)
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('abaa')) element = twoeris%abaa%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('abaa',interactionIn='stored')) element = twoeris%abaa%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('abaa')) element = twoeris%abaa%at(myI,myJ,myK,myL) 
-                if(twoERIs%hasSpinBlock('aaab')) element = element - twoeris%aaab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('abaa',interactionIn='stored')) element = twoeris%abaa%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = element - twoeris%aaab%at(myI,myL,myK,myJ)
               endIf
             endIf
           elseif(spinBlock.eq.'baaa') then
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoeris%aaab%at(myL,myK,myJ,myI))
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoeris%aaab%at(myL,myK,myJ,myI))
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoeris%aaab%at(myJ,myK,myL,myI))
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoeris%aaab%at(myJ,myK,myL,myI))
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoeris%aaab%at(myL,myK,myJ,myI)) - &
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoeris%aaab%at(myL,myK,myJ,myI)) - &
                   conjg(twoeris%aaab%at(myJ,myK,myL,myI))
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('baaa')) element = twoeris%baaa%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('baaa',interactionIn='stored')) element = twoeris%baaa%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('baaa')) element = twoeris%baaa%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('baaa',interactionIn='stored')) element = twoeris%baaa%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('baaa')) element = twoeris%baaa%at(myI,myJ,myK,myL) - &
+                if(twoERIs%hasSpinBlock('baaa',interactionIn='stored')) element = twoeris%baaa%at(myI,myJ,myK,myL) - &
                   twoeris%baaa%at(myI,myL,myK,myJ)
               endIf
             endIf
           elseif(spinBlock.eq.'bbba') then
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoeris%abbb%at(myL,myK,myJ,myI))
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoeris%abbb%at(myL,myK,myJ,myI))
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoeris%abbb%at(myL,myI,myJ,myK))
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoeris%abbb%at(myL,myI,myJ,myK))
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoeris%abbb%at(myL,myK,myJ,myI)) - &
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoeris%abbb%at(myL,myK,myJ,myI)) - &
                   conjg(twoeris%abbb%at(myL,myI,myJ,myK))
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('bbba')) element = twoeris%bbba%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('bbba',interactionIn='stored')) element = twoeris%bbba%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('babb')) element = twoeris%babb%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('babb',interactionIn='stored')) element = twoeris%babb%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('bbba')) element = twoeris%bbba%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('babb')) element = element - twoeris%babb%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbba',interactionIn='stored')) element = twoeris%bbba%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('babb',interactionIn='stored')) element = element - twoeris%babb%at(myI,myL,myK,myJ)
               endIf
             endIf
           elseif(spinBlock.eq.'bbab') then
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-!                if(twoERIs%hasSpinBlock('abbb')) element = twoeris%abbb%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('abbb')) element = twoeris%abbb%at(myK,myL,myI,myJ)
+!                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoeris%abbb%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoeris%abbb%at(myK,myL,myI,myJ)
               elseif(interaction.eq.'exchange') then
-!                if(twoERIs%hasSpinBlock('abbb')) element = twoeris%abbb%at(myI,myL,myK,myJ)
-                if(twoERIs%hasSpinBlock('abbb')) element = twoeris%abbb%at(myK,myJ,myI,myL)
+!                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoeris%abbb%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoeris%abbb%at(myK,myJ,myI,myL)
               elseif(interaction.eq.'doublebar') then
-!                if(twoERIs%hasSpinBlock('abbb')) element = twoeris%abbb%at(myI,myJ,myK,myL) - &
+!                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoeris%abbb%at(myI,myJ,myK,myL) - &
 !                  twoeris%abbb%at(myI,myL,myK,myJ)
-                if(twoERIs%hasSpinBlock('abbb')) element = twoeris%abbb%at(myK,myL,myI,myJ) - &
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoeris%abbb%at(myK,myL,myI,myJ) - &
                   twoeris%abbb%at(myK,myJ,myI,myL)
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('bbab')) element = twoeris%bbab%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('bbab',interactionIn='stored')) element = twoeris%bbab%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('bbab')) element = twoeris%bbab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbab',interactionIn='stored')) element = twoeris%bbab%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('bbab')) element = twoeris%bbab%at(myI,myJ,myK,myL) - &
+                if(twoERIs%hasSpinBlock('bbab',interactionIn='stored')) element = twoeris%bbab%at(myI,myJ,myK,myL) - &
                   twoeris%bbab%at(myI,myL,myK,myJ)
               endIf
             endIf
           elseif(spinBlock.eq.'babb') then
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoeris%abbb%at(myJ,myI,myL,myK))
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoeris%abbb%at(myJ,myI,myL,myK))
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoeris%abbb%at(myJ,myK,myL,myI))
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoeris%abbb%at(myJ,myK,myL,myI))
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoeris%abbb%at(myJ,myI,myL,myK)) - &
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoeris%abbb%at(myJ,myI,myL,myK)) - &
                   conjg(twoeris%abbb%at(myJ,myK,myL,myI))
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('babb')) element = twoeris%babb%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('babb',interactionIn='stored')) element = twoeris%babb%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('bbba')) element = twoeris%bbba%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbba',interactionIn='stored')) element = twoeris%bbba%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('babb')) element = twoeris%babb%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('bbba')) element = element - twoeris%bbba%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('babb',interactionIn='stored')) element = twoeris%babb%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('bbba',interactionIn='stored')) element = element - twoeris%bbba%at(myI,myL,myK,myJ)
               endIf
             endIf
           elseif(spinBlock.eq.'abbb') then
             if(interaction.eq.'coulomb') then
-              if(twoERIs%hasSpinBlock('abbb')) element = twoeris%abbb%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoeris%abbb%at(myI,myJ,myK,myL)
             elseif(interaction.eq.'exchange') then
-              if(twoERIs%hasSpinBlock('abbb')) element = twoeris%abbb%at(myI,myL,myK,myJ)
+              if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoeris%abbb%at(myI,myL,myK,myJ)
             elseif(interaction.eq.'doublebar') then
-              if(twoERIs%hasSpinBlock('abbb')) element = twoeris%abbb%at(myI,myJ,myK,myL) - &
+              if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoeris%abbb%at(myI,myJ,myK,myL) - &
                 twoeris%abbb%at(myI,myL,myK,myJ)
             endIf
           else
@@ -28424,7 +28638,7 @@
           if(myJ.gt.twoERIs%blockSize('alpha',2)) myJ = myJ - twoERIs%blockSize('alpha',2) 
           if(myK.gt.twoERIs%blockSize('alpha',3)) myK = myK - twoERIs%blockSize('alpha',3) 
           if(myL.gt.twoERIs%blockSize('alpha',4)) myL = myL - twoERIs%blockSize('alpha',4) 
-          if(twoERIs%hasSpinBlock('aaaa')) then
+          if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) then
             if(interaction.eq.'coulomb') then
               element = twoERIs%alpha%at(myI,myJ,myK,myL)
             elseif(interaction.eq.'exchange') then
@@ -28437,21 +28651,21 @@
           if(myI.gt.twoERIs%blockSize('alpha',1).or.myJ.gt.twoERIs%blockSize('alpha',2).or. &
             myK.gt.twoERIs%blockSize('alpha',3).or.myL.gt.twoERIs%blockSize('alpha',4)) &
             call mqc_error('Requested position is out of bounds in Raffenetti 1 ERIs')
-          if(twoERIs%hasSpinBlock('aaaa')) element = twoERIs%alpha%at(myI,myJ,myK,myL)
+          if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) element = twoERIs%alpha%at(myI,myJ,myK,myL)
         elseIf(twoERIs%integralType.eq.'raffenetti2') then
           if(myI.gt.twoERIs%blockSize('alpha',1).or.myJ.gt.twoERIs%blockSize('alpha',2).or. &
             myK.gt.twoERIs%blockSize('alpha',3).or.myL.gt.twoERIs%blockSize('alpha',4)) &
             call mqc_error('Requested position is out of bounds in Raffenetti 2 ERIs')
-          if(twoERIs%hasSpinBlock('aaaa')) element = twoERIs%alpha%at(myI,myJ,myK,myL)
+          if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) element = twoERIs%alpha%at(myI,myJ,myK,myL)
         elseIf(twoERIs%integralType.eq.'raffenetti3') then
           if(myI.gt.twoERIs%blockSize('alpha',1).or.myJ.gt.twoERIs%blockSize('alpha',2).or. &
             myK.gt.twoERIs%blockSize('alpha',3).or.myL.gt.twoERIs%blockSize('alpha',4)) &
             call mqc_error('Requested position is out of bounds in Raffenetti 3 ERIs')
-          if(twoERIs%hasSpinBlock('aaaa')) element = twoERIs%alpha%at(myI,myJ,myK,myL)
+          if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) element = twoERIs%alpha%at(myI,myJ,myK,myL)
         elseIf(twoERIs%integralType.eq.'space') then
           if(myI.le.twoERIs%blockSize('alpha',1).and.myJ.le.twoERIs%blockSize('alpha',2).and. &
             myK.le.twoERIs%blockSize('alpha',3).and.myL.le.twoERIs%blockSize('alpha',4)) then
-            if(twoERIs%hasSpinBlock('aaaa')) then
+            if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%alpha%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28466,7 +28680,7 @@
             myJ = myJ - twoERIs%blockSize('alpha',2)
             myK = myK - twoERIs%blockSize('alpha',3)
             myL = myL - twoERIs%blockSize('alpha',4)
-            if(twoERIs%hasSpinBlock('aaaa')) then
+            if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%alpha%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28536,7 +28750,7 @@
           !AAAA
           if(myI.le.twoERIs%blockSize('alpha',1).and.myJ.le.twoERIs%blockSize('alpha',2).and. &
             myK.le.twoERIs%blockSize('alpha',3).and.myL.le.twoERIs%blockSize('alpha',4)) then
-            if(twoERIs%hasSpinBlock('aaaa')) then
+            if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%alpha%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28552,7 +28766,7 @@
             myJ = myJ - twoERIs%blockSize('alpha',2)
             myK = myK - twoERIs%blockSize('alpha',3)
             myL = myL - twoERIs%blockSize('alpha',4)
-            if(twoERIs%hasSpinBlock('bbbb')) then
+            if(twoERIs%hasSpinBlock('bbbb',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%beta%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28567,7 +28781,7 @@
             myK = myK - twoERIs%blockSize('alpha',3)
             myL = myL - twoERIs%blockSize('alpha',4)
             if(interaction.eq.'coulomb'.or.interaction.eq.'doublebar') then
-              if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myI,myJ,myK,myL)
             endIf
           !BBAA
           elseIf(myI.gt.twoERIs%blockSize('alpha',1).and.myJ.gt.twoERIs%blockSize('alpha',2).and. &
@@ -28576,11 +28790,11 @@
             myJ = myJ - twoERIs%blockSize('alpha',2)
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb'.or.interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myK,myL,myI,myJ)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myK,myL,myI,myJ)
               endIf
             else
               if(interaction.eq.'coulomb'.or.interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('bbaa')) element = twoERIs%betaAlpha%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) element = twoERIs%betaAlpha%at(myI,myJ,myK,myL)
               endIf
             endIf
           !ABBA
@@ -28589,9 +28803,9 @@
             myJ = myJ - twoERIs%blockSize('alpha',2)
             myK = myK - twoERIs%blockSize('alpha',3)
             if(interaction.eq.'exchange') then
-              if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myI,myL,myK,myJ)
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myI,myL,myK,myJ)
             elseif(interaction.eq.'doublebar') then
-              if(twoERIs%hasSpinBlock('aabb')) element = (-1)*twoERIs%alphaBeta%at(myI,myL,myK,myJ)
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = (-1)*twoERIs%alphaBeta%at(myI,myL,myK,myJ)
             endIf
           !BAAB
           elseIf(myI.gt.twoERIs%blockSize('alpha',1).and.myJ.le.twoERIs%blockSize('alpha',2).and. &
@@ -28600,15 +28814,15 @@
             myL = myL - twoERIs%blockSize('alpha',4)
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myK,myJ,myI,myL)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myK,myJ,myI,myL)
               elseIf(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('aabb')) element = (-1)*twoERIs%alphaBeta%at(myK,myJ,myI,myL)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = (-1)*twoERIs%alphaBeta%at(myK,myJ,myI,myL)
               endIf
             else
               if(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('bbaa')) element = twoERIs%betaAlpha%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) element = twoERIs%betaAlpha%at(myI,myL,myK,myJ)
               elseIf(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('bbaa')) element = (-1)*twoERIs%betaAlpha%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) element = (-1)*twoERIs%betaAlpha%at(myI,myL,myK,myJ)
               endIf
             endIf
           !ABAB
@@ -28616,7 +28830,7 @@
             myK.le.twoERIs%blockSize('alpha',3).and.myL.gt.twoERIs%blockSize('alpha',4)) then
             myJ = myJ - twoERIs%blockSize('alpha',2)
             myL = myL - twoERIs%blockSize('alpha',4)
-            if(twoERIs%hasSpinBlock('abab')) then
+            if(twoERIs%hasSpinBlock('abab',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%abab%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28626,11 +28840,11 @@
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myI,myJ,myK,myL) - &
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myI,myJ,myK,myL) - &
                   twoERIs%alphaBeta%at(myI,myL,myK,myJ)
               endIf
             endIf
@@ -28640,7 +28854,7 @@
             myI = myI - twoERIs%blockSize('alpha',1)
             myK = myK - twoERIs%blockSize('alpha',3)
             if(twoERIs%storageType.eq.'symm') then
-              if(twoERIs%hasSpinBlock('abab')) then
+              if(twoERIs%hasSpinBlock('abab',interactionIn='stored')) then
                 if(interaction.eq.'coulomb') then
                   element = conjg(twoERIs%abab%at(myJ,myI,myL,myK))
                 elseif(interaction.eq.'exchange') then
@@ -28650,11 +28864,11 @@
                 endIf
               else
                 if(interaction.eq.'coulomb') then
-                  if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myK,myL,myI,myJ)
+                  if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myK,myL,myI,myJ)
                 elseif(interaction.eq.'exchange') then
-                  if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myK,myJ,myI,myL)
+                  if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myK,myJ,myI,myL)
                 elseif(interaction.eq.'doublebar') then
-                  if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myK,myL,myI,myJ) - &
+                  if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myK,myL,myI,myJ) - &
                     twoERIs%alphaBeta%at(myK,myJ,myI,myL)
                 endIf
               endIf
@@ -28664,7 +28878,7 @@
           !AAAA
           if(myI.le.twoERIs%blockSize('alpha',1).and.myJ.le.twoERIs%blockSize('alpha',2).and. &
             myK.le.twoERIs%blockSize('alpha',3).and.myL.le.twoERIs%blockSize('alpha',4)) then
-            if(twoERIs%hasSpinBlock('aaaa')) then
+            if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%alpha%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28680,7 +28894,7 @@
             myJ = myJ - twoERIs%blockSize('alpha',2)
             myK = myK - twoERIs%blockSize('alpha',3)
             myL = myL - twoERIs%blockSize('alpha',4)
-            if(twoERIs%hasSpinBlock('bbbb')) then
+            if(twoERIs%hasSpinBlock('bbbb',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%beta%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28695,12 +28909,12 @@
             myK = myK - twoERIs%blockSize('alpha',3)
             myL = myL - twoERIs%blockSize('alpha',4)
             if(interaction.eq.'coulomb') then
-              if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myI,myJ,myK,myL)
             elseif(interaction.eq.'exchange') then
-              if(twoERIs%hasSpinBlock('abba')) element = twoERIs%abba%at(myI,myL,myK,myJ)
+              if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoERIs%abba%at(myI,myL,myK,myJ)
             elseif(interaction.eq.'doublebar') then
-              if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
-              if(twoERIs%hasSpinBlock('abba')) element = element - twoeris%abba%at(myI,myL,myK,myJ)
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = element - twoeris%abba%at(myI,myL,myK,myJ)
             endIf
           !BBAA
           elseIf(myI.gt.twoERIs%blockSize('alpha',1).and.myJ.gt.twoERIs%blockSize('alpha',2).and. &
@@ -28709,21 +28923,21 @@
             myJ = myJ - twoERIs%blockSize('alpha',2)
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('aabb')) element = twoERIs%alphaBeta%at(myK,myL,myI,myJ)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoERIs%alphaBeta%at(myK,myL,myI,myJ)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myK,myJ,myI,myL)
+                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myK,myJ,myI,myL)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myK,myL,myI,myJ)
-                if(twoERIs%hasSpinBlock('abba')) element = element - twoeris%abba%at(myK,myJ,myI,myL)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myK,myL,myI,myJ)
+                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = element - twoeris%abba%at(myK,myJ,myI,myL)
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('bbaa')) element = twoERIs%betaAlpha%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) element = twoERIs%betaAlpha%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('baab')) element = twoeris%baab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('baab',interactionIn='stored')) element = twoeris%baab%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('bbaa')) element = twoeris%betaAlpha%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('baab')) element = element - twoeris%baab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) element = twoeris%betaAlpha%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('baab',interactionIn='stored')) element = element - twoeris%baab%at(myI,myL,myK,myJ)
               endIf
             endIf
           !ABBA
@@ -28732,12 +28946,12 @@
             myJ = myJ - twoERIs%blockSize('alpha',2)
             myK = myK - twoERIs%blockSize('alpha',3)
             if(interaction.eq.'coulomb') then
-              if(twoERIs%hasSpinBlock('abba')) element = twoERIs%abba%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoERIs%abba%at(myI,myJ,myK,myL)
             elseif(interaction.eq.'exchange') then
-              if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myI,myL,myK,myJ)
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myI,myL,myK,myJ)
             elseif(interaction.eq.'doublebar') then
-              if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myI,myJ,myK,myL)
-              if(twoERIs%hasSpinBlock('aabb')) element = element - twoeris%alphaBeta%at(myI,myL,myK,myJ)
+              if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = element - twoeris%alphaBeta%at(myI,myL,myK,myJ)
             endIf
           !BAAB
           elseIf(myI.gt.twoERIs%blockSize('alpha',1).and.myJ.le.twoERIs%blockSize('alpha',2).and. &
@@ -28746,21 +28960,21 @@
             myL = myL - twoERIs%blockSize('alpha',4)
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('abba')) element = twoERIs%abba%at(myK,myL,myI,myJ)
+                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoERIs%abba%at(myK,myL,myI,myJ)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aabb')) element = twoeris%alphaBeta%at(myK,myJ,myI,myL)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = twoeris%alphaBeta%at(myK,myJ,myI,myL)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('abba')) element = twoeris%abba%at(myK,myL,myI,myJ)
-                if(twoERIs%hasSpinBlock('aabb')) element = element - twoeris%alphaBeta%at(myK,myJ,myI,myL)
+                if(twoERIs%hasSpinBlock('abba',interactionIn='stored')) element = twoeris%abba%at(myK,myL,myI,myJ)
+                if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) element = element - twoeris%alphaBeta%at(myK,myJ,myI,myL)
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('baab')) element = twoERIs%baab%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('baab',interactionIn='stored')) element = twoERIs%baab%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('bbaa')) element = twoeris%betaAlpha%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) element = twoeris%betaAlpha%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('baab')) element = twoeris%baab%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('bbaa')) element = element - twoeris%betaAlpha%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('baab',interactionIn='stored')) element = twoeris%baab%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('bbaa',interactionIn='stored')) element = element - twoeris%betaAlpha%at(myI,myL,myK,myJ)
               endIf
             endIf
           !ABAB
@@ -28768,7 +28982,7 @@
             myK.le.twoERIs%blockSize('alpha',3).and.myL.gt.twoERIs%blockSize('alpha',4)) then
             myJ = myJ - twoERIs%blockSize('alpha',2)
             myL = myL - twoERIs%blockSize('alpha',4)
-            if(twoERIs%hasSpinBlock('abab')) then
+            if(twoERIs%hasSpinBlock('abab',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%abab%at(myI,myJ,myK,myL)
               elseIf(interaction.eq.'exchange') then
@@ -28783,7 +28997,7 @@
             myI = myI - twoERIs%blockSize('alpha',1)
             myK = myK - twoERIs%blockSize('alpha',3)
             if(twoERIs%storageType.eq.'symm') then
-              if(twoERIs%hasSpinBlock('abab')) then
+              if(twoERIs%hasSpinBlock('abab',interactionIn='stored')) then
                 if(interaction.eq.'coulomb') then
                   element = conjg(twoERIs%abab%at(myJ,myI,myL,myK))
                 elseIf(interaction.eq.'exchange') then
@@ -28793,7 +29007,7 @@
                 endIf
               endIf
             else
-              if(twoERIs%hasSpinBlock('baba')) then
+              if(twoERIs%hasSpinBlock('baba',interactionIn='stored')) then
                 if(interaction.eq.'coulomb') then
                   element = twoERIs%baba%at(myI,myJ,myK,myL)
                 elseIf(interaction.eq.'exchange') then
@@ -28808,19 +29022,19 @@
             myK.le.twoERIs%blockSize('alpha',3).and.myL.gt.twoERIs%blockSize('alpha',4)) then
             myL = myL - twoERIs%blockSize('alpha',4)
             if(interaction.eq.'coulomb') then
-              if(twoERIs%hasSpinBlock('aaab')) element = twoERIs%aaab%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoERIs%aaab%at(myI,myJ,myK,myL)
             elseif(interaction.eq.'exchange') then
               if(twoERIs%storageType.eq.'symm') then
-                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myK,myJ,myI,myL)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myK,myJ,myI,myL)
               else
-                if(twoERIs%hasSpinBlock('abaa')) element = twoeris%abaa%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('abaa',interactionIn='stored')) element = twoeris%abaa%at(myI,myL,myK,myJ)
               endIf
             elseif(interaction.eq.'doublebar') then
-              if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myI,myJ,myK,myL)
+              if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myI,myJ,myK,myL)
               if(twoERIs%storageType.eq.'symm') then
-                if(twoERIs%hasSpinBlock('aaab')) element = element - twoeris%aaab%at(myK,myJ,myI,myL)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = element - twoeris%aaab%at(myK,myJ,myI,myL)
               else
-                if(twoERIs%hasSpinBlock('abaa')) element = element - twoeris%abaa%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('abaa',interactionIn='stored')) element = element - twoeris%abaa%at(myI,myL,myK,myJ)
               endIf
             endIf
           !AABA
@@ -28829,20 +29043,20 @@
             myK = myK - twoERIs%blockSize('alpha',3)
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoERIs%aaab%at(myJ,myI,myL,myK))
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoERIs%aaab%at(myJ,myI,myL,myK))
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoeris%aaab%at(myL,myI,myJ,myK))
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoeris%aaab%at(myL,myI,myJ,myK))
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoeris%aaab%at(myJ,myI,myL,myK)) - &
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoeris%aaab%at(myJ,myI,myL,myK)) - &
                   conjg(twoeris%aaab%at(myL,myI,myJ,myK))
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('aaba')) element = twoERIs%aaba%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('aaba',interactionIn='stored')) element = twoERIs%aaba%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aaba')) element = twoeris%aaba%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('aaba',interactionIn='stored')) element = twoeris%aaba%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('aaba')) element = twoeris%aaba%at(myI,myJ,myK,myL) - &
+                if(twoERIs%hasSpinBlock('aaba',interactionIn='stored')) element = twoeris%aaba%at(myI,myJ,myK,myL) - &
                   twoeris%aaba%at(myI,myL,myK,myJ)
               endIf
             endIf
@@ -28852,21 +29066,21 @@
             myJ = myJ - twoERIs%blockSize('alpha',2)
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('aaab')) element = twoERIs%aaab%at(myK,myL,myI,myJ)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoERIs%aaab%at(myK,myL,myI,myJ)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myK,myL,myI,myJ) - &
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myK,myL,myI,myJ) - &
                   twoeris%aaab%at(myI,myL,myK,myJ)
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('abaa')) element = twoERIs%abaa%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('abaa',interactionIn='stored')) element = twoERIs%abaa%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aaab')) element = twoeris%aaab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = twoeris%aaab%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('abaa')) element = twoeris%abaa%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('aaab')) element = element - twoeris%aaab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('abaa',interactionIn='stored')) element = twoeris%abaa%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = element - twoeris%aaab%at(myI,myL,myK,myJ)
               endIf
             endIf
           !BAAA
@@ -28875,20 +29089,20 @@
             myI = myI - twoERIs%blockSize('alpha',1)
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoERIs%aaab%at(myL,myK,myJ,myI))
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoERIs%aaab%at(myL,myK,myJ,myI))
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoeris%aaab%at(myJ,myK,myL,myI))
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoeris%aaab%at(myJ,myK,myL,myI))
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('aaab')) element = conjg(twoeris%aaab%at(myL,myK,myJ,myI)) - &
+                if(twoERIs%hasSpinBlock('aaab',interactionIn='stored')) element = conjg(twoeris%aaab%at(myL,myK,myJ,myI)) - &
                   conjg(twoeris%aaab%at(myJ,myK,myL,myI))
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('baaa')) element = twoERIs%baaa%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('baaa',interactionIn='stored')) element = twoERIs%baaa%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('baaa')) element = twoeris%baaa%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('baaa',interactionIn='stored')) element = twoeris%baaa%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('baaa')) element = twoeris%baaa%at(myI,myJ,myK,myL) - &
+                if(twoERIs%hasSpinBlock('baaa',interactionIn='stored')) element = twoeris%baaa%at(myI,myJ,myK,myL) - &
                   twoeris%baaa%at(myI,myL,myK,myJ)
               endIf
             endIf
@@ -28900,21 +29114,21 @@
             myK = myK - twoERIs%blockSize('alpha',3)
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoERIs%abbb%at(myL,myK,myJ,myI))
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoERIs%abbb%at(myL,myK,myJ,myI))
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoeris%abbb%at(myL,myI,myJ,myK))
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoeris%abbb%at(myL,myI,myJ,myK))
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoeris%abbb%at(myL,myK,myJ,myI)) - &
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoeris%abbb%at(myL,myK,myJ,myI)) - &
                   conjg(twoeris%abbb%at(myL,myI,myJ,myK))
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('bbba')) element = twoERIs%bbba%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('bbba',interactionIn='stored')) element = twoERIs%bbba%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('babb')) element = twoeris%babb%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('babb',interactionIn='stored')) element = twoeris%babb%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('bbba')) element = twoeris%bbba%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('babb')) element = element - twoeris%babb%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbba',interactionIn='stored')) element = twoeris%bbba%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('babb',interactionIn='stored')) element = element - twoeris%babb%at(myI,myL,myK,myJ)
               endIf
             endIf
           !BBAB
@@ -28925,20 +29139,20 @@
             myL = myL - twoERIs%blockSize('alpha',4)
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('abbb')) element = twoERIs%abbb%at(myK,myL,myI,myJ)
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoERIs%abbb%at(myK,myL,myI,myJ)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('abbb')) element = twoeris%abbb%at(myK,myJ,myI,myL)
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoeris%abbb%at(myK,myJ,myI,myL)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('abbb')) element = twoeris%abbb%at(myK,myL,myI,myJ) - &
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = twoeris%abbb%at(myK,myL,myI,myJ) - &
                   twoeris%abbb%at(myK,myJ,myI,myL)
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('bbab')) element = twoERIs%bbab%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('bbab',interactionIn='stored')) element = twoERIs%bbab%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('bbab')) element = twoeris%bbab%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbab',interactionIn='stored')) element = twoeris%bbab%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('bbab')) element = twoeris%bbab%at(myI,myJ,myK,myL) - &
+                if(twoERIs%hasSpinBlock('bbab',interactionIn='stored')) element = twoeris%bbab%at(myI,myJ,myK,myL) - &
                   twoeris%bbab%at(myI,myL,myK,myJ)
               endIf
             endIf
@@ -28950,21 +29164,21 @@
             myL = myL - twoERIs%blockSize('alpha',4)
             if(twoERIs%storageType.eq.'symm') then
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoERIs%abbb%at(myJ,myI,myL,myK))
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoERIs%abbb%at(myJ,myI,myL,myK))
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoeris%abbb%at(myJ,myK,myL,myI))
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoeris%abbb%at(myJ,myK,myL,myI))
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('abbb')) element = conjg(twoeris%abbb%at(myJ,myI,myL,myK)) - &
+                if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) element = conjg(twoeris%abbb%at(myJ,myI,myL,myK)) - &
                   conjg(twoeris%abbb%at(myJ,myK,myL,myI))
               endIf
             else
               if(interaction.eq.'coulomb') then
-                if(twoERIs%hasSpinBlock('babb')) element = twoERIs%babb%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('babb',interactionIn='stored')) element = twoERIs%babb%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
-                if(twoERIs%hasSpinBlock('bbba')) element = twoeris%bbba%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('bbba',interactionIn='stored')) element = twoeris%bbba%at(myI,myL,myK,myJ)
               elseif(interaction.eq.'doublebar') then
-                if(twoERIs%hasSpinBlock('babb')) element = twoeris%babb%at(myI,myJ,myK,myL)
-                if(twoERIs%hasSpinBlock('bbba')) element = element - twoeris%bbba%at(myI,myL,myK,myJ)
+                if(twoERIs%hasSpinBlock('babb',interactionIn='stored')) element = twoeris%babb%at(myI,myJ,myK,myL)
+                if(twoERIs%hasSpinBlock('bbba',interactionIn='stored')) element = element - twoeris%bbba%at(myI,myL,myK,myJ)
               endIf
             endIf
           !ABBB
@@ -28973,7 +29187,7 @@
             myJ = myJ - twoERIs%blockSize('alpha',2)
             myK = myK - twoERIs%blockSize('alpha',3)
             myL = myL - twoERIs%blockSize('alpha',4)
-            if(twoERIs%hasSpinBlock('abbb')) then
+            if(twoERIs%hasSpinBlock('abbb',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoERIs%abbb%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28986,6 +29200,7 @@
         else
           call mqc_error_A('Integral type not valid in MQC_TwoERIs_At',6,'integralType',twoERIs%integralType)
         endIf
+      endIf
       endIf
 
       end function mqc_twoERIs_At
@@ -29173,7 +29388,7 @@
 !     SPACE
       if(twoERIs%integralType.eq.'space') then
         if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
-          if(twoERIs%hasSpinBlock('aaaa')) then
+          if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) then
             call twoERIs%alpha%put(element,myI,myJ,myK,myL)
           else
             call twoERIs%alpha%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
@@ -29278,7 +29493,7 @@
 !     SPIN
       elseIf(twoERIs%integralType.eq.'spin') then
         if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
-          if(twoERIs%hasSpinBlock('aaaa')) then
+          if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) then
             call twoERIs%alpha%put(element,myI,myJ,myK,myL)
           else
             call twoERIs%alpha%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
@@ -29286,7 +29501,7 @@
             call twoERIs%alpha%put(element,myI,myJ,myK,myL)
           end if
         elseif(spinblock.eq.'beta'.or.spinBlock.eq.'bbbb') then
-          if(twoERIs%hasSpinBlock('bbbb')) then
+          if(twoERIs%hasSpinBlock('bbbb',interactionIn='stored')) then
             call twoERIs%beta%put(element,myI,myJ,myK,myL)
           else
             call twoERIs%beta%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
@@ -29294,7 +29509,7 @@
             call twoERIs%beta%put(element,myI,myJ,myK,myL)
           end if
         elseif(spinblock.eq.'alphabeta'.or.spinBlock.eq.'aabb') then
-          if(twoERIs%hasSpinBlock('aabb')) then
+          if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
             call twoERIs%alphaBeta%put(element,myI,myJ,myK,myL)
           else
             call twoERIs%alphaBeta%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
@@ -29402,7 +29617,7 @@
           end select
         end if
         if(spinBlock.eq.'alpha'.or.spinBlock.eq.'aaaa') then
-          if(twoERIs%hasSpinBlock('aaaa')) then
+          if(twoERIs%hasSpinBlock('aaaa',interactionIn='stored')) then
             call twoERIs%alpha%put(element,myI,myJ,myK,myL)
           else
             call twoERIs%alpha%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
@@ -29410,7 +29625,7 @@
             call twoERIs%alpha%put(element,myI,myJ,myK,myL)
           end if
         elseif(spinblock.eq.'beta'.or.spinBlock.eq.'bbbb') then
-          if(twoERIs%hasSpinBlock('bbbb')) then
+          if(twoERIs%hasSpinBlock('bbbb',interactionIn='stored')) then
             call twoERIs%beta%put(element,myI,myJ,myK,myL)
           else
             call twoERIs%beta%init(size(twoERIs,'beta',1),size(twoERIs,'beta',2),&
@@ -29418,7 +29633,7 @@
             call twoERIs%beta%put(element,myI,myJ,myK,myL)
           end if
         elseif(spinblock.eq.'alphabeta'.or.spinBlock.eq.'aabb') then
-          if(twoERIs%hasSpinBlock('aabb')) then
+          if(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
             call twoERIs%alphaBeta%put(element,myI,myJ,myK,myL)
           else
             call twoERIs%alphaBeta%init(size(twoERIs,'alpha',1),size(twoERIs,'alpha',2),&
@@ -30282,10 +30497,10 @@
             if(integral%hasAlpha()) element = integral%alpha%at(myI,myJ)
           elseIf(myI.le.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myJ = myJ - integral%blockSize('alpha',2)
-            if(integral%hasAlphaBeta()) element = integral%alphaBeta%at(myI,myJ)
+            if(integral%hasBetaAlpha()) element = integral%baElement(myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.le.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
-            if(integral%hasBetaAlpha()) element = integral%baElement(myI,myJ)
+            if(integral%hasAlphaBeta()) element = integral%alphaBeta%at(myI,myJ)
           elseIf(myI.gt.integral%blockSize('alpha',1).and.myJ.gt.integral%blockSize('alpha',2)) then
             myI = myI - integral%blockSize('alpha',1)
             myJ = myJ - integral%blockSize('alpha',2)

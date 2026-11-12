@@ -19296,8 +19296,8 @@
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,(-1)*abAHRfoc,'antisymmetric')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat2,abHARfoc,'symmetric')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat3,(-1)*abAARfoc,'antisymmetric')
-                betaAlpha = alphaBeta + tmpMat + tmpMat2 + tmpMat3
-                alphaBeta = alphaBeta - tmpMat - tmpMat2 + tmpMat3
+                betaAlpha = alphaBeta - tmpMat - tmpMat2 + tmpMat3
+                alphaBeta = alphaBeta + tmpMat + tmpMat2 + tmpMat3
                 alphaBeta = transpose(alphaBeta)
                 betaAlpha = transpose(betaAlpha)
               endIf
@@ -19317,8 +19317,8 @@
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,cmplx((-1)*abAHRfoc,abAHCfoc),'antihermitian')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat2,cmplx(abHARfoc,(-1)*abHACfoc),'hermitian')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat3,cmplx((-1)*abAARfoc,abAACfoc),'antihermitian')
-                betaAlpha = alphaBeta + tmpMat + tmpMat2 + tmpMat3
-                alphaBeta = alphaBeta - tmpMat - tmpMat2 + tmpMat3
+                betaAlpha = alphaBeta - tmpMat - tmpMat2 + tmpMat3
+                alphaBeta = alphaBeta + tmpMat + tmpMat2 + tmpMat3
                 alphaBeta = transpose(alphaBeta)
                 betaAlpha = transpose(betaAlpha)
               endIf
@@ -19332,8 +19332,8 @@
               if(mod(flag,10).eq.2) then
                 call MQC_Matrix_SymmMatrix_Put(alphaBeta,abHHRfoc,'symmetric')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,abAHRfoc,'antisymmetric')
-                betaAlpha = alphaBeta - tmpMat
-                alphaBeta = alphaBeta + tmpMat
+                betaAlpha = alphaBeta + tmpMat
+                alphaBeta = alphaBeta - tmpMat
                 alphaBeta = transpose(alphaBeta)
                 betaAlpha = transpose(betaAlpha)
               endIf
@@ -19347,8 +19347,8 @@
               if(mod(flag,10).eq.2) then
                 call MQC_Matrix_SymmMatrix_Put(alphaBeta,cmplx(abHHRfoc,abHHCfoc),'hermitian')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,cmplx((-1)*abAHRfoc,(-1)*abAHCfoc),'antihermitian')
-                betaAlpha = alphaBeta - tmpMat
-                alphaBeta = alphaBeta + tmpMat
+                betaAlpha = alphaBeta + tmpMat
+                alphaBeta = alphaBeta - tmpMat
               endIf
             endIf
           endIf
@@ -19360,8 +19360,8 @@
               if(mod(flag,10).eq.2) then
                 call MQC_Matrix_SymmMatrix_Put(alphaBeta,abHARfoc,'symmetric')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,abAARfoc,'antisymmetric')
-                betaAlpha = alphaBeta + tmpMat
-                alphaBeta = tmpMat - alphaBeta
+                betaAlpha = tmpMat - alphaBeta
+                alphaBeta = alphaBeta + tmpMat
               endIf
             endIf
           elseIf(mod(flag,100)/10.eq.1) then
@@ -19371,8 +19371,8 @@
               if(mod(flag,10).eq.2) then
                 call MQC_Matrix_SymmMatrix_Put(alphaBeta,cmplx(abHARfoc,abHACfoc),'hermitian')
                 call MQC_Matrix_SymmMatrix_Put(tmpMat,cmplx(abAARfoc,abAACfoc),'antihermitian')
-                betaAlpha = alphaBeta + tmpMat
-                alphaBeta = tmpMat - alphaBeta
+                betaAlpha = tmpMat - alphaBeta
+                alphaBeta = alphaBeta + tmpMat
               endIf
             endIf
           endIf
@@ -19430,12 +19430,12 @@
                 if(integral%array_type.eq.'general') then
                   if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
                     call alphaBetaLoc%put(alphaBetaLoc%at(l,k)-&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n+nBasis),l,k)
+                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n),l,k)
                   endIf
                 !BA Block
                   if(myLabel.eq.'exchange'.or.myLabel.eq.'doublebar') then
                     call betaAlphaLoc%put(betaAlphaLoc%at(l,k)-&
-                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m+nBasis,n),l,k)
+                      eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l)*integral%at(m,n+nBasis),l,k)
                   endIf
                 endIf
               end do

@@ -3678,9 +3678,9 @@
       end if
 
 !     Form G[D] independently in the complete spin-orbital basis.  The
-!     energy contracts G[D] with transpose(D), so the Fock expression uses
-!     D(s tau,r sigma); an off-diagonal output spin block therefore contracts
-!     the opposite input block in the exchange term.
+!     energy contracts G[D] with transpose(D).  The exchange contribution to
+!     output spin block (sigma,tau) uses density block (sigma,tau); the matrix
+!     transpose required by the scalar energy contraction is applied separately.
       call mA%init(2*n,2*n,(0.0_real64,0.0_real64))
       do p=1,2*n
         mu=mod(p-1,n)+1
@@ -3705,7 +3705,7 @@
             do s=1,n
               sc=tA%at(mu,s,r,nu)
               partialValue=sc%cval()
-              sc=moFull%at(s+spin2*n,r+spin1*n)
+              sc=moFull%at(s+spin1*n,r+spin2*n)
               directValue=directValue-partialValue*sc%cval()
             end do
           end do

@@ -73,6 +73,7 @@
       real(kind=real64),public,parameter::pi = 4.0d0 * ATan(1.0)                                                         ! Pi
       real(kind=real64),public,parameter::MQC_small = 1.0d-6                                                             ! 10^-6, used as a threshold for near zero.
       real(kind=real64),public,protected::MQC_very_small = 1.0d-12                                                       ! 10^-12, threshold for near zero; set with mqc_set_very_small.
+      character(len=8),public,protected::MQC_pinv_eigensolver = 'qr'                                                     ! eigensolver used by MQC_Matrix_MPInv: 'qr' (xSPEV/xHPEV) or 'dc' (divide and conquer); set with mqc_set_pinv_eigensolver.
 #ifdef MQC_BLAS_ILP64
       integer,public,parameter::MQC_BlasInt = int64                                                                     ! integer kind of BLAS/LAPACK arguments (ILP64 library)
 #else
@@ -360,6 +361,31 @@
       MQC_very_small = thresh
 !
       end subroutine mqc_set_very_small
+!
+!
+!PROCEDURE mqc_set_pinv_eigensolver
+      subroutine mqc_set_pinv_eigensolver(solver)
+!
+!     This subroutine sets MQC_pinv_eigensolver, the eigensolver that
+!     MQC_Matrix_MPInv passes to MQC_Matrix_Diagonalize for Hermitian and
+!     anti-Hermitian matrices: 'qr' (packed xSPEV/xHPEV, the default) or 'dc'
+!     (divide and conquer: xSYEVD/xHEEVD for full storage, xSPEVD/xHPEVD for packed
+!     storage). Other diagonalizations are not affected. Call it once, before any
+!     OpenMP parallel region.
+!
+      implicit none
+      character(len=*),intent(in)::solver
+      character(len=8)::mySolver
+!
+      call string_change_case(solver,'l',mySolver)
+      select case(trim(mySolver))
+      case('qr','dc')
+        MQC_pinv_eigensolver = mySolver
+      case default
+        call mqc_error_A('mqc_set_pinv_eigensolver: unknown eigensolver (qr or dc)',6,'solver',solver)
+      end select
+!
+      end subroutine mqc_set_pinv_eigensolver
 !
       Subroutine mqc_error(Message,IOut)
 !

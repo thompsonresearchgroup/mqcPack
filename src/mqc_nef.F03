@@ -1924,6 +1924,8 @@
       integer(kind=int64)::rowA,colA
       type(mqc_scf_integral)::blockA
       type(mqc_scf_eigenvalues)::acc
+      type(mqc_vector)::padAlpha,padBeta
+      integer(kind=int64)::nRowAlpha,nRowBeta
       logical::started
 !
       if(NEFMatrixA%NumSpace_col.ne.NEFVectorB%NumSpace) &
@@ -1960,7 +1962,25 @@
             acc = acc + (blockA.dot.NEFVectorB%iref(colA))
           end if
         end do
-        if (started) call NEFVectorOut%iput(acc,rowA)
+        if (started) then
+!         a spin part missing from every term is zero: give it the row-space size
+          nRowAlpha = NEFMatrixA%Size_vector_alpha_row(rowA)
+          nRowBeta = NEFMatrixA%Size_vector_beta_row(rowA)
+          if (size(acc,'alpha').ne.nRowAlpha.or.size(acc,'beta').ne.nRowBeta) then
+            if (size(acc,'alpha').eq.nRowAlpha) then
+              padAlpha = acc%getBlock('alpha')
+            else
+              call padAlpha%init(nRowAlpha)
+            end if
+            if (size(acc,'beta').eq.nRowBeta) then
+              padBeta = acc%getBlock('beta')
+            else
+              call padBeta%init(nRowBeta)
+            end if
+            call mqc_eigenvalues_allocate(acc,'','spin',padAlpha,padBeta)
+          end if
+          call NEFVectorOut%iput(acc,rowA)
+        end if
       end do
 !
       end function mqc_nefmatrix_nefvector_multiply
@@ -9869,13 +9889,23 @@
 !>        spaceDim is Integer,Optional
 !>        The number of linear-independent vectors.
 !>    \endverbatim
+!>
+!>    \param[in] wholeMatrix
+!>    \verbatim
+!>        wholeMatrix is Logical,Optional (default .false.)
+!>        .false.: pseudo-invert each diagonal space block of the merged matrix
+!>                 (off-diagonal space blocks are ignored).
+!>        .true. : pseudo-invert the whole merged matrix, off-diagonal space blocks
+!>                 included (mqc_nef_matrix_whole_pinv); exact when the space
+!>                 partition does not block-diagonalize the matrix.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      function mqc_nef_set_block_diagonal_pinv(NEFSet,spinType,Order,thresh,spaceDim) result(NEFMatOut)
+      function mqc_nef_set_block_diagonal_pinv(NEFSet,spinType,Order,thresh,spaceDim,wholeMatrix) result(NEFMatOut)
 !
       implicit none
       class(mqc_nef_set),intent(in)::NEFSet
@@ -9883,16 +9913,20 @@
       integer(kind=int64),dimension(4),intent(in),optional::Order
       real(kind=real64),intent(in),optional::thresh
       Integer(kind=int64),optional::spaceDim
+      logical,intent(in),optional::wholeMatrix
       type(mqc_nef_matrix)::TmpMat
       type(mqc_nef_set)::CollapsedMat,NEFMatOut
       real(kind=real64)::myThresh
       Integer(kind=int64)::mySpaceDim
+      logical::myWhole
 !
       if(present(thresh)) then
         myThresh = thresh
       else
         myThresh = 1.0d-8
       end if
+      myWhole = .false.
+      if(present(wholeMatrix)) myWhole = wholeMatrix
 !
       if(.not.NEFset%isR4()) &
         call mqc_error_A('mqc_nef_set_block_diagonal_pinv: NEFSet is not R4-type ',6,&
@@ -9914,8 +9948,13 @@
                        sameBraKet=CollapsedMat%isSameBraKetSpace())
 !
       mySpaceDim=0
-      if (.not.CollapsedMat%Zero_Flag(1,1)) &
-        TmpMat = CollapsedMat%Set_Matrix(1,1)%pinv(myThresh,mySpaceDim)
+      if (.not.CollapsedMat%Zero_Flag(1,1)) then
+        if (myWhole) then
+          TmpMat = mqc_nef_matrix_whole_pinv(CollapsedMat%Set_Matrix(1,1),myThresh,mySpaceDim)
+        else
+          TmpMat = CollapsedMat%Set_Matrix(1,1)%pinv(myThresh,mySpaceDim)
+        end if
+      end if
       if (mySpaceDim.ne.0) then
         call NEFMatOut%putMatrix(TmpMat,1,1)
       else
@@ -9925,6 +9964,102 @@
       if (present(spaceDim)) spaceDim = mySpaceDim
 ! 
       end function mqc_nef_set_block_diagonal_pinv
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Whole_PInv
+!
+!>    \brief <b> MQC_NEF_Matrix_Whole_PInv (private) returns the pseudo-inverse of
+!>    the whole NEF Matrix, all space blocks coupled. </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The space blocks are assembled into one full matrix (per space: alpha then
+!>    beta rows / columns, the layout of getBlock('full')), pseudo-inverted with
+!>    the singular-value threshold thresh, and split back into 'general' space
+!>    blocks (alphaBeta = beta rows x alpha columns, as mqc_integral_split_full).
+!>    The output rows follow the input columns and vice versa; it keeps the
+!>    operator label and the bra-ket flag of the input (a Mirrored output gets
+!>    only its lower blocks). Empty spaces are skipped; a space holding only
+!>    alpha or only beta functions is not supported (error).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_matrix_whole_pinv(NEFMat,thresh,spaceDim) result(NEFMatOut)
+!
+      implicit none
+      type(mqc_nef_matrix),intent(in)::NEFMat
+      real(kind=real64),intent(in)::thresh
+      integer(kind=int64),intent(out)::spaceDim
+      type(mqc_nef_matrix)::NEFMatOut
+      type(mqc_scf_integral)::blk,outInt
+      type(mqc_matrix)::blkFull,wholeMat,wholePinv,sub,pa,pb,pab,pba
+      integer(kind=int64),dimension(:),allocatable::naR,nbR,offR,naC,nbC,offC
+      integer(kind=int64)::r,c,i,j,nT,mT,nRow,nCol
+!
+      allocate(naR(NEFMat%NumSpace_row),nbR(NEFMat%NumSpace_row),offR(NEFMat%NumSpace_row))
+      allocate(naC(NEFMat%NumSpace_col),nbC(NEFMat%NumSpace_col),offC(NEFMat%NumSpace_col))
+      nT = 0
+      do r = 1, NEFMat%NumSpace_row
+        naR(r) = NEFMat%Size_vector_alpha_row(r)
+        nbR(r) = NEFMat%Size_vector_beta_row(r)
+        offR(r) = nT
+        nT = nT + naR(r) + nbR(r)
+      end do
+      mT = 0
+      do c = 1, NEFMat%NumSpace_col
+        naC(c) = NEFMat%Size_vector_alpha_col(c)
+        nbC(c) = NEFMat%Size_vector_beta_col(c)
+        offC(c) = mT
+        mT = mT + naC(c) + nbC(c)
+      end do
+!     assemble
+      call wholeMat%init(nT,mT,(0.0,0.0))
+      do r = 1, NEFMat%NumSpace_row
+        do c = 1, NEFMat%NumSpace_col
+          if (naR(r)+nbR(r).eq.0.or.naC(c)+nbC(c).eq.0) cycle
+          if (NEFMat%isBlockZero(r,c)) cycle
+          blk = NEFMat%iat(r,c)
+          blkFull = blk%getBlock('full')
+          do i = 1, naR(r)+nbR(r)
+            do j = 1, naC(c)+nbC(c)
+              call wholeMat%put(blkFull%at(i,j),offR(r)+i,offC(c)+j)
+            end do
+          end do
+        end do
+      end do
+      wholePinv = wholeMat%pinv(thresh,spaceDim=spaceDim)
+!     split back: output space (r,c) = rows of input column space r, columns of input row space c
+      call NEFMatOut%init(NEFMat%Map_Matrix_Col,initial_map_matrix_col=NEFMat%Map_Matrix_Row,&
+           symmetry=NEFMat%Symmetry,sameBraKet=NEFMat%sameBraKet)
+      do r = 1, NEFMat%NumSpace_col
+        do c = 1, NEFMat%NumSpace_row
+          if (NEFMatOut%Mirrored.and.c.gt.r) cycle
+          nRow = naC(r) + nbC(r)
+          nCol = naR(c) + nbR(c)
+          if (nRow.eq.0.or.nCol.eq.0) cycle
+          sub = wholePinv%mat([offC(r)+1,offC(r)+nRow],[offR(c)+1,offR(c)+nCol])
+          if (sub%norm().eq.0.0) cycle
+          if (naC(r).eq.0.or.nbC(r).eq.0.or.naR(c).eq.0.or.nbR(c).eq.0) &
+            call mqc_error_i('mqc_nef_matrix_whole_pinv: a space with only alpha or only beta '//&
+              'functions is not supported',6,'r',r,'c',c)
+          pa = sub%mat([1,naC(r)],[1,naR(c)])
+          pb = sub%mat([naC(r)+1,nRow],[naR(c)+1,nCol])
+          pab = sub%mat([naC(r)+1,nRow],[1,naR(c)])
+          pba = sub%mat([1,naC(r)],[naR(c)+1,nCol])
+          call mqc_integral_allocate(outInt,'','general',pa,pb,pab,pba)
+          call NEFMatOut%iput(outInt,r,c)
+        end do
+      end do
+!
+      end function mqc_nef_matrix_whole_pinv
 !
 !
 !     PROCEDURE MQC_NEF_Matrix_Collapse_Index

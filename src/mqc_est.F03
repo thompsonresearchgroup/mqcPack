@@ -9081,9 +9081,14 @@
       type(mqc_scf_Eigenvalues),intent(in)::EigA,EigB
       type(mqc_scf_Eigenvalues)::EigOut
       type(mqc_vector)::tmpVectorAlpha,tmpVectorBeta
+      logical::betaA,betaB
 !
-      if(size(EigA,'alpha').ne.size(EigB,'alpha').or.&
-         size(EigA,'beta').ne.size(EigA,'beta')) call mqc_error_i('Integral blocks are &
+!     A missing block is zero: sizes are compared only for blocks stored in both
+!     operands ('space' holds its beta data in alpha).
+      betaA = EigA%hasBeta().or.(EigA%type().eq.'space'.and.EigA%hasAlpha())
+      betaB = EigB%hasBeta().or.(EigB%type().eq.'space'.and.EigB%hasAlpha())
+      if((EigA%hasAlpha().and.EigB%hasAlpha().and.size(EigA,'alpha').ne.size(EigB,'alpha')).or.&
+         (betaA.and.betaB.and.size(EigA,'beta').ne.size(EigB,'beta'))) call mqc_error_i('Integral blocks are &
         &not conformable in mqc_Eigenvalues_sum',6,&
         'size(EigA,alpha)',size(EigA,'alpha'),&
         'size(EigB,alpha)',size(EigB,'alpha'),&
@@ -9220,9 +9225,14 @@
       type(mqc_scf_Eigenvalues),intent(in)::EigA,EigB
       type(mqc_scf_Eigenvalues)::EigOut
       type(mqc_vector)::tmpVectorAlpha,tmpVectorBeta
+      logical::betaA,betaB
 !
-      if(size(EigA,'alpha').ne.size(EigB,'alpha').or.&
-         size(EigA,'beta').ne.size(EigA,'beta')) call mqc_error_i('Integral blocks are &
+!     A missing block is zero: sizes are compared only for blocks stored in both
+!     operands ('space' holds its beta data in alpha).
+      betaA = EigA%hasBeta().or.(EigA%type().eq.'space'.and.EigA%hasAlpha())
+      betaB = EigB%hasBeta().or.(EigB%type().eq.'space'.and.EigB%hasAlpha())
+      if((EigA%hasAlpha().and.EigB%hasAlpha().and.size(EigA,'alpha').ne.size(EigB,'alpha')).or.&
+         (betaA.and.betaB.and.size(EigA,'beta').ne.size(EigB,'beta'))) call mqc_error_i('Integral blocks are &
         &not conformable in mqc_Eigenvalues_Difference',6,&
         'size(EigA,alpha)',size(EigA,'alpha'),&
         'size(EigB,alpha)',size(EigB,'alpha'),&

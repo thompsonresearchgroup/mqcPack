@@ -520,6 +520,16 @@
       call check('T12 imp general source classified asymmetric',&
         MF2%getSymm().eq.'asymmetric')
       call timp('T12 imp classified asymmetric',AI,MF2,'general','unknown')
+!     An antisymmetric off-diagonal pair does not make a matrix antisymmetric
+!     when its diagonal is nonzero.
+      call M1%init(2_int64,2_int64,(0.0_real64,0.0_real64))
+      call M1%put((1.0_real64,2.0_real64),1,1)
+      call M1%put((1.0_real64,2.0_real64),2,2)
+      call M1%put((3.0_real64,4.0_real64),2,1)
+      call M1%put((-3.0_real64,-4.0_real64),1,2)
+      call M1%classify()
+      call check('T12 classify antisymmetric off-diagonal with nonzero diagonal',&
+        M1%getSymm().eq.'asymmetric')
       call mqc_integral_allocate(AI,'i','spin',nDimA1=n,nDimA2=n,nDimB1=n,nDimB2=n)
       call timp('T12 imp spin promoted to general',AI,MF2,'general','unknown')
       call mqc_integral_allocate(A,'a','spin',Ha,Hb)

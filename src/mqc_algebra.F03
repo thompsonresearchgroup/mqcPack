@@ -25413,13 +25413,13 @@
           Matrix%Storage = 'StorNoSym'
         ElseIf(MQC_Matrix_Test_Diagonal(Matrix)) then
           Call MQC_Matrix_Full2Diag(Matrix)
-        ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'symmetric')) then
+        ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'symmetric',.true.)) then
           Call MQC_Matrix_Pack(Matrix,'symmetric')
-        ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'hermitian')) then
+        ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'hermitian',.true.)) then
           Call MQC_Matrix_Pack(Matrix,'hermitian')
-        ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'antisymmetric')) then
+        ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'antisymmetric',.true.)) then
           Call MQC_Matrix_Pack(Matrix,'antisymmetric')
-        ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'antihermitian')) then
+        ElseIf(MQC_Matrix_Test_Symmetric(Matrix,'antihermitian',.true.)) then
           Call MQC_Matrix_Pack(Matrix,'antihermitian')
         Else
           Matrix%Storage = 'StorNoSym'

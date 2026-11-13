@@ -64,6 +64,7 @@
       Private::mqc_nef_set_put_built_vector,mqc_nef_set_put_built_matrix,mqc_nef_set_put_built_r4
       Private::mqc_nef_pair_order_label,mqc_nef_matrix_equal,mqc_nef_plain_matrix_label
       Private::mqc_nef_r4_bref,mqc_nef_r4_bref_pairs
+      Private::mqc_nef_r4_collapse_part,mqc_nef_r4_pair_spins,mqc_nef_r4_collapse_channel
 !
 !----------------------------------------------------------------
 !                                                               |
@@ -1924,6 +1925,8 @@
       integer(kind=int64)::rowA,colA
       type(mqc_scf_integral)::blockA
       type(mqc_scf_eigenvalues)::acc
+      type(mqc_vector)::padAlpha,padBeta
+      integer(kind=int64)::nRowAlpha,nRowBeta
       logical::started
 !
       if(NEFMatrixA%NumSpace_col.ne.NEFVectorB%NumSpace) &
@@ -1960,7 +1963,25 @@
             acc = acc + (blockA.dot.NEFVectorB%iref(colA))
           end if
         end do
-        if (started) call NEFVectorOut%iput(acc,rowA)
+        if (started) then
+!         a spin part missing from every term is zero: give it the row-space size
+          nRowAlpha = NEFMatrixA%Size_vector_alpha_row(rowA)
+          nRowBeta = NEFMatrixA%Size_vector_beta_row(rowA)
+          if (size(acc,'alpha').ne.nRowAlpha.or.size(acc,'beta').ne.nRowBeta) then
+            if (size(acc,'alpha').eq.nRowAlpha) then
+              padAlpha = acc%getBlock('alpha')
+            else
+              call padAlpha%init(nRowAlpha)
+            end if
+            if (size(acc,'beta').eq.nRowBeta) then
+              padBeta = acc%getBlock('beta')
+            else
+              call padBeta%init(nRowBeta)
+            end if
+            call mqc_eigenvalues_allocate(acc,'','spin',padAlpha,padBeta)
+          end if
+          call NEFVectorOut%iput(acc,rowA)
+        end if
       end do
 !
       end function mqc_nefmatrix_nefvector_multiply
@@ -9391,18 +9412,21 @@
       function mqc_nef_r4_dimention_collapse(NEFr4,spinType,spinTypeKet,Order) result(NEFMatOut)
 !
       implicit none
-      class(mqc_nef_r4),intent(in)::NEFr4
+      class(mqc_nef_r4),intent(in),target::NEFr4
       character(len=*),intent(in),optional::spinType,spinTypeKet
       integer(kind=int64),dimension(4),intent(in),optional::Order
       integer(kind=int64),dimension(4)::my_order
       type(mqc_nef_matrix)::NEFMatOut
       character(len=64)::mySpinType,mySpinTypeKet
-      Type(MQC_SCF_Eigenvalues),Dimension(:),Allocatable::New_Map
-      integer(kind=int64),dimension(:),Allocatable::my_row,my_col
-      integer(kind=int64)::row,col,i,j,k,l,id,idij,idlk,fullid
-      type(mqc_scf_integral)::blkM,blkMEmpty
+      integer(kind=int64)::idij,idlk
+      type(mqc_scf_integral)::blkM
       integer(kind=int64)::ia,ja,ka,la
       integer(kind=int64)::dimi,dimj,dimk,diml
+      type(mqc_twoeris),pointer::ERIsP
+      type(mqc_twoeris),target::ERIsMirror
+      type(mqc_matrix)::MatAlpha,MatBeta,MatAlphaBeta,MatBetaAlpha
+      integer(kind=int64),dimension(4)::blk
+      integer(kind=int64),dimension(2)::nIs,nJs,nKs,nLs
 !
       if(present(spinType)) then
         mySpinType = spinType 
@@ -9463,265 +9487,277 @@
          initial_map_matrix_col=NEFr4%collapseMap(mySpinTypeKet,[ka,la]),&
            symmetry=merge(NEFr4%Symmetry,'asymmetric      ',ka.eq.5-ia.and.la.eq.5-ja.and.&
            mySpinType.eq.mySpinTypeKet),sameBraKet=NEFr4%sameBraKet)
+!     Unknown types stop here (collapseMap above already checked the ket type).
       select case(mySpinType)
-      case ('singlet')
-        do dimi = 1, NEFr4%blockSize(ia)
-         do dimj = 1, NEFr4%blockSize(ja)
-          idij = NEFr4%blockSize(ja)*(dimi-1) + dimj
-          do dimk = 1, NEFr4%blockSize(ka)
-           do diml = 1, NEFr4%blockSize(la)
-            idlk = NEFr4%blockSize(la)*(dimk-1) + diml
-            if (NEFr4%isBlockZero([ia,dimi],[ja,dimj],[la,diml],[ka,dimk])) cycle
-            blkM = blkMEmpty
-            call blkM%init(&
-                   NEFMatOut%Size_vector_alpha_row(idij),&
-                   NEFMatOut%Size_vector_beta_row(idij),&
-                   nAlpha2=NEFMatOut%Size_vector_alpha_col(idlk),&
-                   nBeta2=NEFMatOut%Size_vector_beta_col(idlk))
-            do i = 1, NEFr4%blockSize(ia,dimi,'alpha')
-             do j = 1, NEFr4%blockSize(ja,dimj,'alpha')
-              do k = 1, NEFr4%blockSize(ka,dimk,'alpha')
-               do l = 1, NEFr4%blockSize(la,diml,'alpha')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,1],[ja,dimj,j,1],[ka,dimk,k,1],[la,diml,l,1]),&
-                 int(NEFr4%collapseIndex(i,j,'a','a',dimi,dimj,ia,ja,'singlet')),&
-                 int(NEFr4%collapseIndex(k,l,'a','a',dimk,diml,ka,la,'singlet')),&
-                 'alpha')
-               end do
-              end do
-              do k = 1, NEFr4%blockSize(ka,dimk,'beta')
-               do l = 1, NEFr4%blockSize(la,diml,'beta')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,1],[ja,dimj,j,1],[ka,dimk,k,-1],[la,diml,l,-1]),&
-                 int(NEFr4%collapseIndex(i,j,'a','a',dimi,dimj,ia,ja,'singlet')),&
-                 int(NEFr4%collapseIndex(k,l,'b','b',dimk,diml,ka,la,'singlet')),&
-                 'betaalpha')
-               end do
-              end do
-             end do
-            end do
-            do i = 1, NEFr4%blockSize(ia,dimi,'beta')
-             do j = 1, NEFr4%blockSize(ja,dimj,'beta')
-              do k = 1, NEFr4%blockSize(ka,dimk,'alpha')
-               do l = 1, NEFr4%blockSize(la,diml,'alpha')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,-1],[ja,dimj,j,-1],[ka,dimk,k,1],[la,diml,l,1]),&
-                 int(NEFr4%collapseIndex(i,j,'b','b',dimi,dimj,ia,ja,'singlet')),&
-                 int(NEFr4%collapseIndex(k,l,'a','a',dimk,diml,ka,la,'singlet')),&
-                 'alphabeta')
-               end do
-              end do
-              do k = 1, NEFr4%blockSize(ka,dimk,'beta')
-               do l = 1, NEFr4%blockSize(la,diml,'beta')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,-1],[ja,dimj,j,-1],[ka,dimk,k,-1],[la,diml,l,-1]),&
-                 int(NEFr4%collapseIndex(i,j,'b','b',dimi,dimj,ia,ja,'singlet')),&
-                 int(NEFr4%collapseIndex(k,l,'b','b',dimk,diml,ka,la,'singlet')),&
-                 'beta')
-               end do
-              end do
-             end do
-            end do
-!           An all-zero block ('fullsymmetric') stays a zero block.
-            if (blkM%getSymm().ne.'fullsymmetric') call NEFMatOut%iput(blkM,idij,idlk)
-           end do
-          end do
-         end do
-        end do
-      case ('triplet')
-        do dimi = 1, NEFr4%blockSize(ia)
-         do dimj = 1, NEFr4%blockSize(ja)
-          idij = nefr4%blockSize(ja)*(dimi-1) + dimj
-          do dimk = 1, NEFr4%blockSize(ka)
-           do diml = 1, NEFr4%blockSize(la)
-            idlk = nefr4%blockSize(la)*(dimk-1) + diml
-            if (NEFr4%isBlockZero([ia,dimi],[ja,dimj],[la,diml],[ka,dimk])) cycle
-            blkM = blkMEmpty
-            call blkM%init(&
-                   NEFMatOut%Size_vector_alpha_row(idij),&
-                   NEFMatOut%Size_vector_beta_row(idij),&
-                   nAlpha2=NEFMatOut%Size_vector_alpha_col(idlk),&
-                   nBeta2=NEFMatOut%Size_vector_beta_col(idlk))
-            do i = 1, NEFr4%blockSize(ia,dimi,'alpha')
-             do j = 1, NEFr4%blockSize(ja,dimj,'beta')
-              do k = 1, NEFr4%blockSize(ka,dimk,'alpha')
-               do l = 1, NEFr4%blockSize(la,diml,'beta')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,1],[ja,dimj,j,-1],[ka,dimk,k,1],[la,diml,l,-1]),&
-                 int(NEFr4%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'triplet')),&
-                 int(NEFr4%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'triplet')),&
-                 'alpha')
-               end do
-              end do
-              do k = 1, NEFr4%blockSize(ka,dimk,'beta')
-               do l = 1, NEFr4%blockSize(la,diml,'alpha')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,1],[ja,dimj,j,-1],[ka,dimk,k,-1],[la,diml,l,1]),&
-                 int(NEFr4%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'triplet')),&
-                 int(NEFr4%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'triplet')),&
-                 'betaalpha')
-               end do
-              end do
-             end do
-            end do
-            do i = 1, NEFr4%blockSize(ia,dimi,'beta')
-             do j = 1, NEFr4%blockSize(ja,dimj,'alpha')
-              do k = 1, NEFr4%blockSize(ka,dimk,'alpha')
-               do l = 1, NEFr4%blockSize(la,diml,'beta')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,-1],[ja,dimj,j,1],[ka,dimk,k,1],[la,diml,l,-1]),&
-                 int(NEFr4%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'triplet')),&
-                 int(NEFr4%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'triplet')),&
-                 'alphabeta')
-               end do
-              end do
-              do k = 1, NEFr4%blockSize(ka,dimk,'beta')
-               do l = 1, NEFr4%blockSize(la,diml,'alpha')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,-1],[ja,dimj,j,1],[ka,dimk,k,-1],[la,diml,l,1]),&
-                 int(NEFr4%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'triplet')),&
-                 int(NEFr4%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'triplet')),&
-                 'beta')
-               end do
-              end do
-             end do
-            end do
-!           An all-zero block ('fullsymmetric') stays a zero block.
-            if (blkM%getSymm().ne.'fullsymmetric') call NEFMatOut%iput(blkM,idij,idlk)
-           end do
-          end do
-         end do
-        end do
-      case ('all')
-        do dimi = 1, NEFr4%blockSize(ia)
-         do dimj = 1, NEFr4%blockSize(ja)
-          idij = nefr4%blockSize(ja)*(dimi-1) + dimj
-          do dimk = 1, NEFr4%blockSize(ka)
-           do diml = 1, NEFr4%blockSize(la)
-            idlk = nefr4%blockSize(la)*(dimk-1) + diml
-            if (NEFr4%isBlockZero([ia,dimi],[ja,dimj],[la,diml],[ka,dimk])) cycle
-            blkM = blkMEmpty
-            call blkM%init(&
-                   NEFMatOut%Size_vector_alpha_row(idij),&
-                   NEFMatOut%Size_vector_beta_row(idij),&
-                   nAlpha2=NEFMatOut%Size_vector_alpha_col(idlk),&
-                   nBeta2=NEFMatOut%Size_vector_beta_col(idlk))
-            do i = 1, NEFr4%blockSize(ia,dimi,'alpha')
-             do j = 1, NEFr4%blockSize(ja,dimj,'alpha')
-              do k = 1, NEFr4%blockSize(ka,dimk,'alpha')
-               do l = 1, NEFr4%blockSize(la,diml,'alpha')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,1],[ja,dimj,j,1],[ka,dimk,k,1],[la,diml,l,1]),&
-                 int(NEFr4%collapseIndex(i,j,'a','a',dimi,dimj,ia,ja,'all')),&
-                 int(NEFr4%collapseIndex(k,l,'a','a',dimk,diml,ka,la,'all')),&
-                 'alpha')
-               end do
-              end do
-              do k = 1, NEFr4%blockSize(ka,dimk,'beta')
-               do l = 1, NEFr4%blockSize(la,diml,'beta')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,1],[ja,dimj,j,1],[ka,dimk,k,-1],[la,diml,l,-1]),&
-                 int(NEFr4%collapseIndex(i,j,'a','a',dimi,dimj,ia,ja,'all')),&
-                 int(NEFr4%collapseIndex(k,l,'b','b',dimk,diml,ka,la,'all')),&
-                 'betaalpha')
-               end do
-              end do
-             end do
-            end do
-            do i = 1, NEFr4%blockSize(ia,dimi,'beta')
-             do j = 1, NEFr4%blockSize(ja,dimj,'beta')
-              do k = 1, NEFr4%blockSize(ka,dimk,'alpha')
-               do l = 1, NEFr4%blockSize(la,diml,'alpha')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,-1],[ja,dimj,j,-1],[ka,dimk,k,1],[la,diml,l,1]),&
-                 int(NEFr4%collapseIndex(i,j,'b','b',dimi,dimj,ia,ja,'all')),&
-                 int(NEFr4%collapseIndex(k,l,'a','a',dimk,diml,ka,la,'all')),&
-                 'alphabeta')
-               end do
-              end do
-              do k = 1, NEFr4%blockSize(ka,dimk,'beta')
-               do l = 1, NEFr4%blockSize(la,diml,'beta')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,-1],[ja,dimj,j,-1],[ka,dimk,k,-1],[la,diml,l,-1]),&
-                 int(NEFr4%collapseIndex(i,j,'b','b',dimi,dimj,ia,ja,'all')),&
-                 int(NEFr4%collapseIndex(k,l,'b','b',dimk,diml,ka,la,'all')),&
-                 'beta')
-               end do
-              end do
-             end do
-            end do
-            do i = 1, NEFr4%blockSize(ia,dimi,'alpha')
-             do j = 1, NEFr4%blockSize(ja,dimj,'beta')
-              do k = 1, NEFr4%blockSize(ka,dimk,'alpha')
-               do l = 1, NEFr4%blockSize(la,diml,'beta')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,1],[ja,dimj,j,-1],[ka,dimk,k,1],[la,diml,l,-1]),&
-                 int(NEFr4%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'all')),&
-                 int(NEFr4%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'all')),&
-                 'alpha')
-               end do
-              end do
-              do k = 1, NEFr4%blockSize(ka,dimk,'beta')
-               do l = 1, NEFr4%blockSize(la,diml,'alpha')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,1],[ja,dimj,j,-1],[ka,dimk,k,-1],[la,diml,l,1]),&
-                 int(NEFr4%collapseIndex(i,j,'a','b',dimi,dimj,ia,ja,'all')),&
-                 int(NEFr4%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'all')),&
-                 'betaalpha')
-               end do
-              end do
-             end do
-            end do
-            do i = 1, NEFr4%blockSize(ia,dimi,'beta')
-             do j = 1, NEFr4%blockSize(ja,dimj,'alpha')
-              do k = 1, NEFr4%blockSize(ka,dimk,'alpha')
-               do l = 1, NEFr4%blockSize(la,diml,'beta')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,-1],[ja,dimj,j,1],[ka,dimk,k,1],[la,diml,l,-1]),&
-                 int(NEFr4%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'all')),&
-                 int(NEFr4%collapseIndex(k,l,'a','b',dimk,diml,ka,la,'all')),&
-                 'alphabeta')
-               end do
-              end do
-              do k = 1, NEFr4%blockSize(ka,dimk,'beta')
-               do l = 1, NEFr4%blockSize(la,diml,'alpha')
-                call blkM%put(&
-                 NEFR4%at(&
-                     [ia,dimi,i,-1],[ja,dimj,j,1],[ka,dimk,k,-1],[la,diml,l,1]),&
-                 int(NEFr4%collapseIndex(i,j,'b','a',dimi,dimj,ia,ja,'all')),&
-                 int(NEFr4%collapseIndex(k,l,'b','a',dimk,diml,ka,la,'all')),&
-                 'beta')
-               end do
-              end do
-             end do
-            end do
-!           An all-zero block ('fullsymmetric') stays a zero block.
-            if (blkM%getSymm().ne.'fullsymmetric') call NEFMatOut%iput(blkM,idij,idlk)
-           end do
-          end do
-         end do
-        end do
+      case ('singlet','triplet','all')
+        continue
       case default
         call mqc_error_a('mqc_nef_r4_dimention_collapse: Unrecognized excitation type',6,&
-          'spinType',spinType)
-      end select  
+          'mySpinType',mySpinType)
+      end select
+!
+!     Block-wise: each stored space block is read once per spin channel as a dense
+!     array and copied into the collapsed blocks by array index arithmetic. Pair
+!     (i,j) -> row, (k,l) -> column; the row/column spin part is the spin of i/k
+!     (collapseMap), so a channel goes to alpha (a,a), betaalpha (row a, column b),
+!     alphabeta (row b, column a) or beta (b,b). The second index of a pair has
+!     the same spin (singlet), the opposite spin (triplet) or both, beta first
+!     (all), as in collapseIndex. spinType sets the rows, spinTypeKet the columns.
+      do dimi = 1, NEFr4%blockSize(ia)
+       do dimj = 1, NEFr4%blockSize(ja)
+        idij = NEFr4%blockSize(ja)*(dimi-1) + dimj
+        do dimk = 1, NEFr4%blockSize(ka)
+         do diml = 1, NEFr4%blockSize(la)
+          idlk = NEFr4%blockSize(la)*(dimk-1) + diml
+          if (NEFr4%isBlockZero([ia,dimi],[ja,dimj],[la,diml],[ka,dimk])) cycle
+!         whole stored block: pointer for own slots, dagger copy for mirror slots
+          blk(ia) = dimi
+          blk(ja) = dimj
+          blk(ka) = dimk
+          blk(la) = diml
+          if (NEFr4%isMirrorSlot(int(blk(1)),int(blk(2)),int(blk(3)),int(blk(4)))) then
+            ERIsMirror = NEFr4%iat([ia,dimi],[ja,dimj],[ka,dimk],[la,diml])
+            ERIsP => ERIsMirror
+          else
+            ERIsP => NEFr4%iref([ia,dimi],[ja,dimj],[ka,dimk],[la,diml])
+          end if
+          nIs = [NEFr4%blockSize(ia,dimi,'alpha'),NEFr4%blockSize(ia,dimi,'beta')]
+          nJs = [NEFr4%blockSize(ja,dimj,'alpha'),NEFr4%blockSize(ja,dimj,'beta')]
+          nKs = [NEFr4%blockSize(ka,dimk,'alpha'),NEFr4%blockSize(ka,dimk,'beta')]
+          nLs = [NEFr4%blockSize(la,diml,'alpha'),NEFr4%blockSize(la,diml,'beta')]
+          call mqc_nef_r4_collapse_part(ERIsP,my_order,mySpinType,mySpinTypeKet,'a','a',&
+            nIs(1),nJs,nKs(1),nLs,MatAlpha)
+          call mqc_nef_r4_collapse_part(ERIsP,my_order,mySpinType,mySpinTypeKet,'a','b',&
+            nIs(1),nJs,nKs(2),nLs,MatBetaAlpha)
+          call mqc_nef_r4_collapse_part(ERIsP,my_order,mySpinType,mySpinTypeKet,'b','a',&
+            nIs(2),nJs,nKs(1),nLs,MatAlphaBeta)
+          call mqc_nef_r4_collapse_part(ERIsP,my_order,mySpinType,mySpinTypeKet,'b','b',&
+            nIs(2),nJs,nKs(2),nLs,MatBeta)
+          ERIsP => null()
+!         An all-zero block stays a zero block (no matrix allocated).
+          if (MQC_Matrix_isAllocated(MatAlpha).or.MQC_Matrix_isAllocated(MatBeta).or.&
+              MQC_Matrix_isAllocated(MatAlphaBeta).or.MQC_Matrix_isAllocated(MatBetaAlpha)) then
+            call mqc_integral_allocate(blkM,'',&
+              merge('general','spin   ',MQC_Matrix_isAllocated(MatAlphaBeta).or.&
+                                        MQC_Matrix_isAllocated(MatBetaAlpha)),&
+              alpha=MatAlpha,beta=MatBeta,alphaBeta=MatAlphaBeta,betaAlpha=MatBetaAlpha,&
+              nDimA1=int(NEFMatOut%Size_vector_alpha_row(idij),kind=int64),&
+              nDimB1=int(NEFMatOut%Size_vector_beta_row(idij),kind=int64),&
+              nDimA2=int(NEFMatOut%Size_vector_alpha_col(idlk),kind=int64),&
+              nDimB2=int(NEFMatOut%Size_vector_beta_col(idlk),kind=int64))
+            call NEFMatOut%iput(blkM,idij,idlk)
+          end if
+         end do
+        end do
+       end do
+      end do
 !
       end function mqc_nef_r4_dimention_collapse
+!
+!
+!     PROCEDURE MQC_NEF_R4_Collapse_Part
+!
+!>    \brief <b> MQC_NEF_R4_Collapse_Part (private) returns one spin part of a
+!>    collapsed NEF_R4 space block as a dense MQC matrix. </b>
+!>
+!>    Rows are the pairs (i,j) with i of spin RowSpin, columns the pairs (k,l) with
+!>    k of spin ColSpin; i,j,k,l lie on the storage axes Ax = [ia,ja,ka,la]. The
+!>    spins of j (l) follow RowType (ColType): singlet = same, triplet = opposite,
+!>    all = beta then alpha. Element ((i-1)*nJ+jj,(k-1)*nL+ll) = T(i,j,k,l), jj (ll)
+!>    the position of j (l) in its pair, as in collapseIndex. nI, nK are the sizes
+!>    of the i, k spins; nJ, nL = [alpha,beta] sizes of the j, l spaces. As in the
+!>    element-wise put (lazy allocation), entries before the first |T| >
+!>    MQC_very_small in row-major order are zeroed, and MatOut stays unallocated
+!>    when no entry exceeds MQC_very_small. MatOut is not classified (StorFull /
+!>    StorNoSym), as an element-wise put leaves it.
+      subroutine mqc_nef_r4_collapse_part(ERIs,Ax,RowType,ColType,RowSpin,ColSpin,&
+                                          nI,nJ,nK,nL,MatOut)
+!
+      implicit none
+      type(mqc_twoeris),intent(in)::ERIs
+      integer(kind=int64),dimension(4),intent(in)::Ax
+      character(len=*),intent(in)::RowType,ColType
+      character(len=1),intent(in)::RowSpin,ColSpin
+      integer(kind=int64),intent(in)::nI,nK
+      integer(kind=int64),dimension(2),intent(in)::nJ,nL
+      type(mqc_matrix),intent(out)::MatOut
+      character(len=1),dimension(2)::jSpins,lSpins
+      integer(kind=int64),dimension(2)::jOff,lOff,jLen,lLen
+      integer::njs,nls,js,ls
+      integer(kind=int64)::jExt,lExt,NRow,NCol,r,c
+      real(kind=real64),dimension(:,:,:,:),allocatable::DR,QR
+      complex(kind=real64),dimension(:,:,:,:),allocatable::DC,QC
+      real(kind=real64),dimension(:,:),allocatable::MR,AbsM
+      complex(kind=real64),dimension(:,:),allocatable::MC
+      logical::IsCmplx,QIsCmplx,HasData
+!
+      call mqc_nef_r4_pair_spins(RowType,RowSpin,nJ,jSpins,jOff,jLen,njs,jExt)
+      call mqc_nef_r4_pair_spins(ColType,ColSpin,nL,lSpins,lOff,lLen,nls,lExt)
+      if (nI*jExt*nK*lExt.gt.0) then
+        allocate(QR(jExt,nI,lExt,nK))
+        QR = 0.0
+        QIsCmplx = .false.
+        do js = 1, njs
+          do ls = 1, nls
+            call mqc_nef_r4_collapse_channel(ERIs,[RowSpin,jSpins(js),ColSpin,lSpins(ls)],&
+              Ax,DR,DC,IsCmplx)
+            if (IsCmplx) then
+              if (any(shape(DC,kind=int64).ne.[jLen(js),nI,lLen(ls),nK])) &
+                call mqc_error_a('mqc_nef_r4_collapse_part: spin block size mismatch',6,&
+                  'channel (i,j,k,l)',RowSpin//jSpins(js)//ColSpin//lSpins(ls))
+            else
+              if (any(shape(DR,kind=int64).ne.[jLen(js),nI,lLen(ls),nK])) &
+                call mqc_error_a('mqc_nef_r4_collapse_part: spin block size mismatch',6,&
+                  'channel (i,j,k,l)',RowSpin//jSpins(js)//ColSpin//lSpins(ls))
+            end if
+            if (IsCmplx.and..not.QIsCmplx) then
+              QC = cmplx(QR,kind=real64)
+              deallocate(QR)
+              QIsCmplx = .true.
+            end if
+            if (QIsCmplx) then
+              if (IsCmplx) then
+                QC(jOff(js)+1:jOff(js)+jLen(js),:,lOff(ls)+1:lOff(ls)+lLen(ls),:) = DC
+              else
+                QC(jOff(js)+1:jOff(js)+jLen(js),:,lOff(ls)+1:lOff(ls)+lLen(ls),:) = &
+                  cmplx(DR,kind=real64)
+              end if
+            else
+              QR(jOff(js)+1:jOff(js)+jLen(js),:,lOff(ls)+1:lOff(ls)+lLen(ls),:) = DR
+            end if
+          end do
+        end do
+!       (jj,i,ll,k) flattened column-major: row (i-1)*jExt+jj, column (k-1)*lExt+ll
+        NRow = jExt*nI
+        NCol = lExt*nK
+        if (QIsCmplx) then
+          MC = reshape(QC,[NRow,NCol])
+          AbsM = abs(MC)
+        else
+          MR = reshape(QR,[NRow,NCol])
+          AbsM = abs(MR)
+        end if
+        HasData = .false.
+        Rows: do r = 1, NRow
+          do c = 1, NCol
+            if (AbsM(r,c).gt.MQC_very_small) then
+              HasData = .true.
+              exit Rows
+            end if
+          end do
+        end do Rows
+        if (HasData) then
+          if (QIsCmplx) then
+            MC(1:r-1,:) = (0.0,0.0)
+            MC(r,1:c-1) = (0.0,0.0)
+            call MQC_Array_To_Matrix(MatOut,MC,Classify=.false.)
+          else
+            MR(1:r-1,:) = 0.0
+            MR(r,1:c-1) = 0.0
+            call MQC_Array_To_Matrix(MatOut,MR,Classify=.false.)
+          end if
+        end if
+      end if
+!
+      end subroutine mqc_nef_r4_collapse_part
+!
+!
+!     PROCEDURE MQC_NEF_R4_Pair_Spins
+!
+!>    \brief <b> MQC_NEF_R4_Pair_Spins (private) returns the spins of the second index
+!>    of a collapsed pair whose first index has spin FirstSpin. </b>
+!>
+!>    singlet: the same spin; triplet: the opposite spin; all: beta then alpha (the
+!>    order of collapseIndex). Off, Len are the offset and size of each spin in the
+!>    pair position, Ext their total; nSecond = [alpha,beta] sizes of the second space.
+      subroutine mqc_nef_r4_pair_spins(ExcType,FirstSpin,nSecond,Spins,Off,Len,nSpins,Ext)
+!
+      implicit none
+      character(len=*),intent(in)::ExcType
+      character(len=1),intent(in)::FirstSpin
+      integer(kind=int64),dimension(2),intent(in)::nSecond
+      character(len=1),dimension(2),intent(out)::Spins
+      integer(kind=int64),dimension(2),intent(out)::Off,Len
+      integer,intent(out)::nSpins
+      integer(kind=int64),intent(out)::Ext
+      integer::m
+!
+      Spins = ' '
+      select case(ExcType)
+      case('singlet')
+        nSpins = 1
+        Spins(1) = FirstSpin
+      case('triplet')
+        nSpins = 1
+        Spins(1) = merge('b','a',FirstSpin.eq.'a')
+      case('all','full')
+        nSpins = 2
+        Spins = ['b','a']
+      case default
+        call mqc_error_a('mqc_nef_r4_pair_spins: Unrecognized excitation type',6,&
+          'ExcType',ExcType)
+      end select
+      Off = 0
+      Len = 0
+      Ext = 0
+      do m = 1, nSpins
+        Off(m) = Ext
+        Len(m) = merge(nSecond(1),nSecond(2),Spins(m).eq.'a')
+        Ext = Ext + Len(m)
+      end do
+!
+      end subroutine mqc_nef_r4_pair_spins
+!
+!
+!     PROCEDURE MQC_NEF_R4_Collapse_Channel
+!
+!>    \brief <b> MQC_NEF_R4_Collapse_Channel (private) returns one spin block of a
+!>    stored NEF_R4 space block as a dense array in collapse order (j,i,l,k). </b>
+!>
+!>    Spins(1:4) are the spins of i,j,k,l ('a'/'b'), on the storage axes Ax =
+!>    [ia,ja,ka,la]; the spin block is read with getBlock (unfolded with FullView).
+!>    The result is in DC (IsCmplx) or DR.
+      subroutine mqc_nef_r4_collapse_channel(ERIs,Spins,Ax,DR,DC,IsCmplx)
+!
+      implicit none
+      type(mqc_twoeris),intent(in)::ERIs
+      character(len=1),dimension(4),intent(in)::Spins
+      integer(kind=int64),dimension(4),intent(in)::Ax
+      real(kind=real64),dimension(:,:,:,:),allocatable,intent(out)::DR
+      complex(kind=real64),dimension(:,:,:,:),allocatable,intent(out)::DC
+      logical,intent(out)::IsCmplx
+      type(mqc_r4tensor)::T
+      real(kind=real64),dimension(:,:,:,:),allocatable::SR
+      complex(kind=real64),dimension(:,:,:,:),allocatable::SC
+      character(len=4)::BlockName
+      integer(kind=int64),dimension(4)::NewAx,NewShape,ROrder,NStor
+      integer::m
+!
+      do m = 1, 4
+        BlockName(Ax(m):Ax(m)) = Spins(m)
+      end do
+      T = ERIs%getBlock(BlockName)
+      IsCmplx = mqc_have_complex(T)
+      if (IsCmplx) then
+        call T%getArray(SC,FullView=.true.)
+        NStor = shape(SC,kind=int64)
+      else
+        call T%getArray(SR,FullView=.true.)
+        NStor = shape(SR,kind=int64)
+      end if
+!     target axis order (j,i,l,k); ROrder maps each storage axis to its target position
+      NewAx = [Ax(2),Ax(1),Ax(4),Ax(3)]
+      do m = 1, 4
+        NewShape(m) = NStor(NewAx(m))
+        ROrder(NewAx(m)) = m
+      end do
+      if (IsCmplx) then
+        DC = reshape(SC,NewShape,order=ROrder)
+      else
+        DR = reshape(SR,NewShape,order=ROrder)
+      end if
+!
+      end subroutine mqc_nef_r4_collapse_channel
 !
 !
 !     PROCEDURE MQC_NEF_R4_Block_Diagonal_PInv
@@ -9869,13 +9905,23 @@
 !>        spaceDim is Integer,Optional
 !>        The number of linear-independent vectors.
 !>    \endverbatim
+!>
+!>    \param[in] wholeMatrix
+!>    \verbatim
+!>        wholeMatrix is Logical,Optional (default .false.)
+!>        .false.: pseudo-invert each diagonal space block of the merged matrix
+!>                 (off-diagonal space blocks are ignored).
+!>        .true. : pseudo-invert the whole merged matrix, off-diagonal space blocks
+!>                 included (mqc_nef_matrix_whole_pinv); exact when the space
+!>                 partition does not block-diagonalize the matrix.
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      function mqc_nef_set_block_diagonal_pinv(NEFSet,spinType,Order,thresh,spaceDim) result(NEFMatOut)
+      function mqc_nef_set_block_diagonal_pinv(NEFSet,spinType,Order,thresh,spaceDim,wholeMatrix) result(NEFMatOut)
 !
       implicit none
       class(mqc_nef_set),intent(in)::NEFSet
@@ -9883,16 +9929,20 @@
       integer(kind=int64),dimension(4),intent(in),optional::Order
       real(kind=real64),intent(in),optional::thresh
       Integer(kind=int64),optional::spaceDim
+      logical,intent(in),optional::wholeMatrix
       type(mqc_nef_matrix)::TmpMat
       type(mqc_nef_set)::CollapsedMat,NEFMatOut
       real(kind=real64)::myThresh
       Integer(kind=int64)::mySpaceDim
+      logical::myWhole
 !
       if(present(thresh)) then
         myThresh = thresh
       else
         myThresh = 1.0d-8
       end if
+      myWhole = .false.
+      if(present(wholeMatrix)) myWhole = wholeMatrix
 !
       if(.not.NEFset%isR4()) &
         call mqc_error_A('mqc_nef_set_block_diagonal_pinv: NEFSet is not R4-type ',6,&
@@ -9914,8 +9964,13 @@
                        sameBraKet=CollapsedMat%isSameBraKetSpace())
 !
       mySpaceDim=0
-      if (.not.CollapsedMat%Zero_Flag(1,1)) &
-        TmpMat = CollapsedMat%Set_Matrix(1,1)%pinv(myThresh,mySpaceDim)
+      if (.not.CollapsedMat%Zero_Flag(1,1)) then
+        if (myWhole) then
+          TmpMat = mqc_nef_matrix_whole_pinv(CollapsedMat%Set_Matrix(1,1),myThresh,mySpaceDim)
+        else
+          TmpMat = CollapsedMat%Set_Matrix(1,1)%pinv(myThresh,mySpaceDim)
+        end if
+      end if
       if (mySpaceDim.ne.0) then
         call NEFMatOut%putMatrix(TmpMat,1,1)
       else
@@ -9925,6 +9980,102 @@
       if (present(spaceDim)) spaceDim = mySpaceDim
 ! 
       end function mqc_nef_set_block_diagonal_pinv
+!
+!
+!     PROCEDURE MQC_NEF_Matrix_Whole_PInv
+!
+!>    \brief <b> MQC_NEF_Matrix_Whole_PInv (private) returns the pseudo-inverse of
+!>    the whole NEF Matrix, all space blocks coupled. </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    The space blocks are assembled into one full matrix (per space: alpha then
+!>    beta rows / columns, the layout of getBlock('full')), pseudo-inverted with
+!>    the singular-value threshold thresh, and split back into 'general' space
+!>    blocks (alphaBeta = beta rows x alpha columns, as mqc_integral_split_full).
+!>    The output rows follow the input columns and vice versa; it keeps the
+!>    operator label and the bra-ket flag of the input (a Mirrored output gets
+!>    only its lower blocks). Empty spaces are skipped; a space holding only
+!>    alpha or only beta functions is not supported (error).
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_nef_matrix_whole_pinv(NEFMat,thresh,spaceDim) result(NEFMatOut)
+!
+      implicit none
+      type(mqc_nef_matrix),intent(in)::NEFMat
+      real(kind=real64),intent(in)::thresh
+      integer(kind=int64),intent(out)::spaceDim
+      type(mqc_nef_matrix)::NEFMatOut
+      type(mqc_scf_integral)::blk,outInt
+      type(mqc_matrix)::blkFull,wholeMat,wholePinv,sub,pa,pb,pab,pba
+      integer(kind=int64),dimension(:),allocatable::naR,nbR,offR,naC,nbC,offC
+      integer(kind=int64)::r,c,i,j,nT,mT,nRow,nCol
+!
+      allocate(naR(NEFMat%NumSpace_row),nbR(NEFMat%NumSpace_row),offR(NEFMat%NumSpace_row))
+      allocate(naC(NEFMat%NumSpace_col),nbC(NEFMat%NumSpace_col),offC(NEFMat%NumSpace_col))
+      nT = 0
+      do r = 1, NEFMat%NumSpace_row
+        naR(r) = NEFMat%Size_vector_alpha_row(r)
+        nbR(r) = NEFMat%Size_vector_beta_row(r)
+        offR(r) = nT
+        nT = nT + naR(r) + nbR(r)
+      end do
+      mT = 0
+      do c = 1, NEFMat%NumSpace_col
+        naC(c) = NEFMat%Size_vector_alpha_col(c)
+        nbC(c) = NEFMat%Size_vector_beta_col(c)
+        offC(c) = mT
+        mT = mT + naC(c) + nbC(c)
+      end do
+!     assemble
+      call wholeMat%init(nT,mT,(0.0,0.0))
+      do r = 1, NEFMat%NumSpace_row
+        do c = 1, NEFMat%NumSpace_col
+          if (naR(r)+nbR(r).eq.0.or.naC(c)+nbC(c).eq.0) cycle
+          if (NEFMat%isBlockZero(r,c)) cycle
+          blk = NEFMat%iat(r,c)
+          blkFull = blk%getBlock('full')
+          do i = 1, naR(r)+nbR(r)
+            do j = 1, naC(c)+nbC(c)
+              call wholeMat%put(blkFull%at(i,j),offR(r)+i,offC(c)+j)
+            end do
+          end do
+        end do
+      end do
+      wholePinv = wholeMat%pinv(thresh,spaceDim=spaceDim)
+!     split back: output space (r,c) = rows of input column space r, columns of input row space c
+      call NEFMatOut%init(NEFMat%Map_Matrix_Col,initial_map_matrix_col=NEFMat%Map_Matrix_Row,&
+           symmetry=NEFMat%Symmetry,sameBraKet=NEFMat%sameBraKet)
+      do r = 1, NEFMat%NumSpace_col
+        do c = 1, NEFMat%NumSpace_row
+          if (NEFMatOut%Mirrored.and.c.gt.r) cycle
+          nRow = naC(r) + nbC(r)
+          nCol = naR(c) + nbR(c)
+          if (nRow.eq.0.or.nCol.eq.0) cycle
+          sub = wholePinv%mat([offC(r)+1,offC(r)+nRow],[offR(c)+1,offR(c)+nCol])
+          if (sub%norm().eq.0.0) cycle
+          if (naC(r).eq.0.or.nbC(r).eq.0.or.naR(c).eq.0.or.nbR(c).eq.0) &
+            call mqc_error_i('mqc_nef_matrix_whole_pinv: a space with only alpha or only beta '//&
+              'functions is not supported',6,'r',r,'c',c)
+          pa = sub%mat([1,naC(r)],[1,naR(c)])
+          pb = sub%mat([naC(r)+1,nRow],[naR(c)+1,nCol])
+          pab = sub%mat([naC(r)+1,nRow],[1,naR(c)])
+          pba = sub%mat([1,naC(r)],[naR(c)+1,nCol])
+          call mqc_integral_allocate(outInt,'','general',pa,pb,pab,pba)
+          call NEFMatOut%iput(outInt,r,c)
+        end do
+      end do
+!
+      end function mqc_nef_matrix_whole_pinv
 !
 !
 !     PROCEDURE MQC_NEF_Matrix_Collapse_Index
@@ -10318,17 +10469,14 @@
 !
     idOut = 0
     select case(selectedExcType)
-    case ('singlet')
+    case ('singlet','triplet')
+!     row-major over (i,j): the stride is the size of j's own spin (triplet: the
+!     alpha part (i a,j b) has n_j^beta columns per i, as in collapseMap; it used
+!     the opposite spin, wrong when n_j^alpha /= n_j^beta)
       if (j_spin.eq.'b') then
         idOut = (i-1)*nefM%blockSize(dimj,j_space,'beta') + j
       else
         idOut = (i-1)*nefM%blockSize(dimj,j_space,'alpha') + j
-      end if 
-    case ('triplet')
-      if (j_spin.eq.'b') then
-        idOut = (i-1)*nefM%blockSize(dimj,j_space,'alpha') + j
-      else
-        idOut = (i-1)*nefM%blockSize(dimj,j_space,'beta') + j
       end if 
     case ('all','full')
 !     each i owns nb+na entries (betas first): the beta stride is nb+na too (was nb,

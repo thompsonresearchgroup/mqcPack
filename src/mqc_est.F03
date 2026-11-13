@@ -7665,7 +7665,7 @@
       case('baab')
         If (eris%type().ne.'general'.and.(eris%intType().eq.'coulomb'.or.&
           eris%intType().eq.'inverted')) then 
-          call r4tOut%init(NDimAlpha1,NDimBeta2,NDimBeta3,NDimAlpha4,zeroR)
+          call r4tOut%init(NDimBeta1,NDimAlpha2,NDimAlpha3,NDimBeta4,zeroR)
         elseIf (eris%type().eq.'regular'.or.eris%type().eq.'raffenetti1'.or. &
           eris%type().eq.'raffenetti2'.or.eris%type().eq.'raffenetti3'.or. &
           (eris%type().eq.'space'.and.eris%inttype().ne.'doublebar')) then
@@ -9245,9 +9245,14 @@
       type(mqc_scf_Eigenvalues),intent(in)::EigA,EigB
       type(mqc_scf_Eigenvalues)::EigOut
       type(mqc_vector)::tmpVectorAlpha,tmpVectorBeta
+      logical::betaA,betaB
 !
-      if(size(EigA,'alpha').ne.size(EigB,'alpha').or.&
-         size(EigA,'beta').ne.size(EigA,'beta')) call mqc_error_i('Integral blocks are &
+!     A missing block is zero: sizes are compared only for blocks stored in both
+!     operands ('space' holds its beta data in alpha).
+      betaA = EigA%hasBeta().or.(EigA%type().eq.'space'.and.EigA%hasAlpha())
+      betaB = EigB%hasBeta().or.(EigB%type().eq.'space'.and.EigB%hasAlpha())
+      if((EigA%hasAlpha().and.EigB%hasAlpha().and.size(EigA,'alpha').ne.size(EigB,'alpha')).or.&
+         (betaA.and.betaB.and.size(EigA,'beta').ne.size(EigB,'beta'))) call mqc_error_i('Integral blocks are &
         &not conformable in mqc_Eigenvalues_sum',6,&
         'size(EigA,alpha)',size(EigA,'alpha'),&
         'size(EigB,alpha)',size(EigB,'alpha'),&
@@ -9384,9 +9389,14 @@
       type(mqc_scf_Eigenvalues),intent(in)::EigA,EigB
       type(mqc_scf_Eigenvalues)::EigOut
       type(mqc_vector)::tmpVectorAlpha,tmpVectorBeta
+      logical::betaA,betaB
 !
-      if(size(EigA,'alpha').ne.size(EigB,'alpha').or.&
-         size(EigA,'beta').ne.size(EigA,'beta')) call mqc_error_i('Integral blocks are &
+!     A missing block is zero: sizes are compared only for blocks stored in both
+!     operands ('space' holds its beta data in alpha).
+      betaA = EigA%hasBeta().or.(EigA%type().eq.'space'.and.EigA%hasAlpha())
+      betaB = EigB%hasBeta().or.(EigB%type().eq.'space'.and.EigB%hasAlpha())
+      if((EigA%hasAlpha().and.EigB%hasAlpha().and.size(EigA,'alpha').ne.size(EigB,'alpha')).or.&
+         (betaA.and.betaB.and.size(EigA,'beta').ne.size(EigB,'beta'))) call mqc_error_i('Integral blocks are &
         &not conformable in mqc_Eigenvalues_Difference',6,&
         'size(EigA,alpha)',size(EigA,'alpha'),&
         'size(EigB,alpha)',size(EigB,'alpha'),&
@@ -28296,7 +28306,8 @@
               elseif(interaction.eq.'doublebar') then
                 element = twoERIs%abab%at(myI,myJ,myK,myL) - twoERIs%abab%at(myI,myL,myK,myJ)
               endIf
-            elseif(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
+            elseif(twoERIs%interactionType.eq.'inverted'.and.&
+                   twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
               if(interaction.eq.'coulomb') then
                 element = twoeris%alphaBeta%at(myI,myJ,myK,myL)
               elseif(interaction.eq.'exchange') then
@@ -28315,7 +28326,8 @@
                 elseif(interaction.eq.'doublebar') then
                   element = conjg(twoERIs%abab%at(myJ,myI,myL,myK)) - conjg(twoERIs%abab%at(myL,myI,myJ,myK))
                 endIf
-              elseif(twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
+              elseif(twoERIs%interactionType.eq.'inverted'.and.&
+               twoERIs%hasSpinBlock('aabb',interactionIn='stored')) then
                 if(interaction.eq.'coulomb') then
                   element = twoeris%alphaBeta%at(myK,myL,myI,myJ)
                 elseif(interaction.eq.'exchange') then
@@ -30317,6 +30329,18 @@
           endIf
         else
           call mqc_error_A('Array type not valid in MQC_Integral_Put',6,'Array_Type',integral%array_type)
+        endIf
+      endIf
+
+!
+!     A stored non-zero element ends the all-zero label: changeType (above) rebuilds an
+!     object with no data yet, labelled 'fullsymmetric'; with that label the element
+!     read as zero and a later diagonal put re-initialized the block, losing it.
+      if(nonZero.and.integral%symmetry.eq.'fullsymmetric') then
+        if(integral%isSquare()) then
+          integral%symmetry = 'unknown'
+        else
+          integral%symmetry = 'asymmetric'
         endIf
       endIf
 

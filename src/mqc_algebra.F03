@@ -901,6 +901,15 @@
         Module Procedure MQC_Matrix_To_ComplexArray
       End Interface
 !
+!>    \brief <b> Copies an intrinsic 2D array into an MQC matrix; with Classify = .false.
+!>    the data are kept as given (StorFull square, StorNoSym non-square), with no zero,
+!>    diagonal or symmetry detection (the assignment, and Classify = .true., classify)</b>
+      Interface MQC_Array_To_Matrix
+        Module Procedure MQC_IntegerArray_To_Matrix
+        Module Procedure MQC_RealArray_To_Matrix
+        Module Procedure MQC_ComplexArray_To_Matrix
+      End Interface
+!
 !>    \brief <b> Sums two variables</b>
       Interface Operator (+)
         Module Procedure MQC_ScalarAdd
@@ -14430,10 +14439,20 @@
 !>    \author L. M. Thompson
 !>    \date 2017
 !
-      recursive Subroutine MQC_Matrix_Diagonalize(A,EVals,EVecs)
+      recursive Subroutine MQC_Matrix_Diagonalize(A,EVals,EVecs,solver)
+!
+!     Optional solver selects the LAPACK eigensolver for dense symmetric/Hermitian
+!     matrices: 'qr' (default; packed xSPEV/xHPEV) or 'dc' (divide and conquer;
+!     xSYEVD/xHEEVD for full storage, xSPEVD/xHPEVD for packed storage).
 !
       Implicit None
       integer(kind=MQC_BlasInt)::mqcBlasInfo
+      Character(len=*),Optional,Intent(In)::solver
+      Character(len=8)::mySolver
+      integer(kind=MQC_BlasInt)::nBlas,lWorkDC,lRWorkDC,lIWorkDC
+      Real(kind=real64),Dimension(:),Allocatable::Work_DC,RWork_DC
+      Complex(kind=real64),Dimension(:),Allocatable::CWork_DC
+      integer(kind=MQC_BlasInt),Dimension(:),Allocatable::IWork_DC
       Class(MQC_Matrix),Intent(In)::A
       Type(MQC_Matrix)::B
       Type(MQC_Matrix),Optional,Intent(InOut)::EVecs
@@ -14449,16 +14468,24 @@
       character(len=64)::typeFlag
       Real(kind=real64),Parameter::Zero=1.0E-8
 !
+      mySolver = 'qr'
+      if(present(solver)) call string_change_case(solver,'l',mySolver)
+      select case(trim(mySolver))
+      case('qr','dc')
+        continue
+      case default
+        call mqc_error_A('MQC_Matrix_Diagonalize: unknown solver (qr or dc)',6,'solver',solver)
+      end select
 !     StorZero operand: result without the storage dispatch
       If(A%Storage.eq.'StorZero') then
 !       same result as a full zero matrix: diagonalize full zero data
         B = A
         Call MQC_Matrix_Zero_To_Data(B,'element',.False.)
-        Call MQC_Matrix_Diagonalize(B,EVals,EVecs)
+        Call MQC_Matrix_Diagonalize(B,EVals,EVecs,solver=mySolver)
       Else
       if(mqc_matrix_test_symmetric(A,'antihermitian',.true.).and.&
         A%norm().gt.Zero) then
-        call MQC_Matrix_Diagonalize(im*A,EVals,EVecs)
+        call MQC_Matrix_Diagonalize(im*A,EVals,EVecs,solver=mySolver)
         EVals = (-1)*im*EVals
         return
       endIf
@@ -14470,7 +14497,26 @@
           if(.not.mqc_matrix_test_symmetric(A,'symmetric',.true.)) &
             call mqc_error_l('Input matrix not symmetric in MQC_Matrix_Diagonalize', 6, &
             'mqc_matrix_test_symmetric(A)', mqc_matrix_test_symmetric(A) )
-          if (A%NRow .eq. A%NCol) then
+          if (A%NRow .eq. A%NCol.and.mySolver.eq.'dc') then
+            Allocate(A_EVecs(A%NRow,A%NRow),A_EVals(A%NRow))
+            A_EVecs = A%matR
+            nBlas = int(A%NRow,kind=MQC_BlasInt)
+            call mqc_check_blas_integer_kind()
+            Allocate(Work_DC(1),IWork_DC(1))
+            call DSYEVD('V','L',nBlas,A_EVecs,nBlas,A_EVals,Work_DC,int(-1,kind=MQC_BlasInt),&
+                 IWork_DC,int(-1,kind=MQC_BlasInt),mqcBlasInfo)
+            lWorkDC = int(Work_DC(1),kind=MQC_BlasInt)
+            lIWorkDC = IWork_DC(1)
+            DeAllocate(Work_DC,IWork_DC)
+            Allocate(Work_DC(lWorkDC),IWork_DC(lIWorkDC))
+            call DSYEVD('V','L',nBlas,A_EVecs,nBlas,A_EVals,Work_DC,lWorkDC,IWork_DC,lIWorkDC,mqcBlasInfo)
+            IError = mqcBlasInfo
+            If(IError.ne.0) then
+              call mqc_error_i('Diagonalization error: the lapack routine DSYEVD failed', 6, &
+                 'IError', IError )
+            endif
+            DeAllocate(Work_DC,IWork_DC)
+          elseif (A%NRow .eq. A%NCol) then
             Allocate(A_Symm((A%NRow*(A%NRow+1))/2),Temp_Vector(3*A%NRow),A_EVecs(A%NRow,A%NRow),A_EVals(A%NRow))
             Do i = 1,A%NRow
               Do j = 1,i
@@ -14495,8 +14541,21 @@
           Allocate(A_Symm((A%NRow*(A%NRow+1))/2),Temp_Vector(3*A%NRow),A_EVecs(A%NRow,A%NRow),A_EVals(A%NRow))
           A_Symm = A%matR(:,1)
           call mqc_check_blas_integer_kind()
-          call DSPEV('V','U',int(A%NRow,kind=MQC_BlasInt),A_Symm,A_EVals,A_EVecs,int(A%NRow,kind=MQC_BlasInt),&
-               Temp_Vector,mqcBlasInfo)
+          if (mySolver.eq.'dc') then
+            nBlas = int(A%NRow,kind=MQC_BlasInt)
+            Allocate(Work_DC(1),IWork_DC(1))
+            call DSPEVD('V','U',nBlas,A_Symm,A_EVals,A_EVecs,nBlas,Work_DC,int(-1,kind=MQC_BlasInt),&
+                 IWork_DC,int(-1,kind=MQC_BlasInt),mqcBlasInfo)
+            lWorkDC = int(Work_DC(1),kind=MQC_BlasInt)
+            lIWorkDC = IWork_DC(1)
+            DeAllocate(Work_DC,IWork_DC)
+            Allocate(Work_DC(lWorkDC),IWork_DC(lIWorkDC))
+            call DSPEVD('V','U',nBlas,A_Symm,A_EVals,A_EVecs,nBlas,Work_DC,lWorkDC,IWork_DC,lIWorkDC,mqcBlasInfo)
+            DeAllocate(Work_DC,IWork_DC)
+          else
+            call DSPEV('V','U',int(A%NRow,kind=MQC_BlasInt),A_Symm,A_EVals,A_EVecs,int(A%NRow,kind=MQC_BlasInt),&
+                 Temp_Vector,mqcBlasInfo)
+          endif
           IError = mqcBlasInfo
           If(IError.ne.0) then
             call mqc_error_I('Diagonalization error: the lapack routine DSPEV failed', 6, &
@@ -14520,7 +14579,28 @@
           if(.not.mqc_matrix_test_symmetric(A,'hermitian',.true.)) &
             call mqc_error_L('Input matrix not Hermitian in MQC_Matrix_Diagonalize',6, &
             "mqc_matrix_test_symmetric(A,'hermitian',.true.)",mqc_matrix_test_symmetric(A,'hermitian',.true.))
-          if (A%NRow .eq. A%NCol) then
+          if (A%NRow .eq. A%NCol.and.mySolver.eq.'dc') then
+            allocate(AC_EVecs(A%NRow,A%NRow),A_EVals(A%NRow))
+            AC_EVecs = A%matC
+            nBlas = int(A%NRow,kind=MQC_BlasInt)
+            call mqc_check_blas_integer_kind()
+            allocate(CWork_DC(1),RWork_DC(1),IWork_DC(1))
+            call ZHEEVD('V','L',nBlas,AC_EVecs,nBlas,A_EVals,CWork_DC,int(-1,kind=MQC_BlasInt),&
+                 RWork_DC,int(-1,kind=MQC_BlasInt),IWork_DC,int(-1,kind=MQC_BlasInt),mqcBlasInfo)
+            lWorkDC = int(real(CWork_DC(1)),kind=MQC_BlasInt)
+            lRWorkDC = int(RWork_DC(1),kind=MQC_BlasInt)
+            lIWorkDC = IWork_DC(1)
+            deallocate(CWork_DC,RWork_DC,IWork_DC)
+            allocate(CWork_DC(lWorkDC),RWork_DC(lRWorkDC),IWork_DC(lIWorkDC))
+            call ZHEEVD('V','L',nBlas,AC_EVecs,nBlas,A_EVals,CWork_DC,lWorkDC,RWork_DC,lRWorkDC,&
+                 IWork_DC,lIWorkDC,mqcBlasInfo)
+            IError = mqcBlasInfo
+            if(IError.ne.0) then
+              call mqc_error_i('Diagonalization error: the lapack routine ZHEEVD failed', 6, &
+                 'IError', IError )
+            endIf
+            deallocate(CWork_DC,RWork_DC,IWork_DC)
+          elseif (A%NRow .eq. A%NCol) then
             allocate(AC_Symm((A%NRow*(A%NRow+1))/2),TempC_Vector(Max(1,2*A%NRow-1)),Temp_Vector(Max(1,3*A%NRow-2)), &
               AC_EVecs(A%NRow,A%NRow),A_EVals(A%NRow))
             k = 0
@@ -14556,8 +14636,23 @@
             endDo
           endDo
           call mqc_check_blas_integer_kind()
-          call ZHPEV('V','L',int(A%NRow,kind=MQC_BlasInt),AC_Symm,A_EVals,AC_EVecs,&
-               int(A%NRow,kind=MQC_BlasInt),TempC_Vector,Temp_Vector,mqcBlasInfo)
+          if (mySolver.eq.'dc') then
+            nBlas = int(A%NRow,kind=MQC_BlasInt)
+            allocate(CWork_DC(1),RWork_DC(1),IWork_DC(1))
+            call ZHPEVD('V','L',nBlas,AC_Symm,A_EVals,AC_EVecs,nBlas,CWork_DC,int(-1,kind=MQC_BlasInt),&
+                 RWork_DC,int(-1,kind=MQC_BlasInt),IWork_DC,int(-1,kind=MQC_BlasInt),mqcBlasInfo)
+            lWorkDC = int(real(CWork_DC(1)),kind=MQC_BlasInt)
+            lRWorkDC = int(RWork_DC(1),kind=MQC_BlasInt)
+            lIWorkDC = IWork_DC(1)
+            deallocate(CWork_DC,RWork_DC,IWork_DC)
+            allocate(CWork_DC(lWorkDC),RWork_DC(lRWorkDC),IWork_DC(lIWorkDC))
+            call ZHPEVD('V','L',nBlas,AC_Symm,A_EVals,AC_EVecs,nBlas,CWork_DC,lWorkDC,RWork_DC,lRWorkDC,&
+                 IWork_DC,lIWorkDC,mqcBlasInfo)
+            deallocate(CWork_DC,RWork_DC,IWork_DC)
+          else
+            call ZHPEV('V','L',int(A%NRow,kind=MQC_BlasInt),AC_Symm,A_EVals,AC_EVecs,&
+                 int(A%NRow,kind=MQC_BlasInt),TempC_Vector,Temp_Vector,mqcBlasInfo)
+          endif
           IError = mqcBlasInfo
           if(IError.ne.0) then
             call mqc_error_i('Diagonalization error: the lapack routine ZHPEV failed', 6, &
@@ -14585,7 +14680,7 @@
       if(present(EVecs)) then
         if(allocated(A_EVecs)) then
           do i = 1,A%NRow
-            call mqc_vectorPhase(A_EVecs(:,i),.True.)
+            call mqc_vectorPhase(A_EVecs(:,i),.True.,.False.)
           endDo
           EVecs = A_EVecs
         elseIf(allocated(AC_EVecs)) then
@@ -23250,6 +23345,210 @@
 !
       Return
       End Subroutine MQC_Set_ComplexArray2Matrix
+!
+!
+!     PROCEDURE MQC_IntegerArray_To_Matrix
+!
+!>    \brief <b> MQC_IntegerArray_To_Matrix copies an intrinsic integer rank-2 array
+!>    into an MQC matrix, optionally without classifying it</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_IntegerArray_To_Matrix sets MatrixOut equal to ArrayIn. With Classify =
+!>    .true. (the default) it is the assignment MatrixOut = ArrayIn (the result is
+!>    classified with MQC_Matrix_Classify). With Classify = .false. the data are kept
+!>    as given: StorFull for a square array, StorNoSym otherwise, with no zero,
+!>    diagonal or symmetry test, so no element is changed by packing within the
+!>    threshold. This is the storage an element-by-element put leaves.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] MatrixOut
+!>    \verbatim
+!>        MatrixOut is Type(MQC_Matrix)
+!>        The MQC matrix to be set equal to the array.
+!>    \endverbatim
+!>
+!>    \param[in] ArrayIn
+!>    \verbatim
+!>        ArrayIn is Integer(kind=int64),Dimension(:,:)
+!>        The array to be input into MatrixOut.
+!>    \endverbatim
+!>
+!>    \param[in] Classify
+!>    \verbatim
+!>        Classify is Logical, optional
+!>        = .true.:  classify the result (default, as the assignment).
+!>        = .false.: keep the full data (StorFull / StorNoSym).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_IntegerArray_To_Matrix(MatrixOut,ArrayIn,Classify)
+!
+      Implicit None
+      Type(MQC_Matrix),Intent(InOut)::MatrixOut
+      Integer(kind=int64),Dimension(:,:),Intent(In)::ArrayIn
+      Logical,Intent(In),Optional::Classify
+      Logical::myClassify
+!
+      myClassify = .True.
+      If(Present(Classify)) myClassify = Classify
+      Call MQC_Deallocate_Matrix(MatrixOut)
+      Call MQC_Allocate_Matrix(Size(ArrayIn,1),Size(ArrayIn,2),MatrixOut,'Integer', &
+        'StorFull')
+      MatrixOut%MatI = ArrayIn
+      If(myClassify) then
+        Call MQC_Matrix_Classify(MatrixOut)
+      ElseIf(Size(ArrayIn,1).ne.Size(ArrayIn,2)) then
+        MatrixOut%Storage = 'StorNoSym'
+      EndIf
+!
+      End Subroutine MQC_IntegerArray_To_Matrix
+!
+!
+!     PROCEDURE MQC_RealArray_To_Matrix
+!
+!>    \brief <b> MQC_RealArray_To_Matrix copies an intrinsic real rank-2 array
+!>    into an MQC matrix, optionally without classifying it</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_RealArray_To_Matrix sets MatrixOut equal to ArrayIn. With Classify =
+!>    .true. (the default) it is the assignment MatrixOut = ArrayIn (the result is
+!>    classified with MQC_Matrix_Classify). With Classify = .false. the data are kept
+!>    as given: StorFull for a square array, StorNoSym otherwise, with no zero,
+!>    diagonal or symmetry test, so no element is changed by packing within the
+!>    threshold. This is the storage an element-by-element put leaves.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] MatrixOut
+!>    \verbatim
+!>        MatrixOut is Type(MQC_Matrix)
+!>        The MQC matrix to be set equal to the array.
+!>    \endverbatim
+!>
+!>    \param[in] ArrayIn
+!>    \verbatim
+!>        ArrayIn is Real(kind=real64),Dimension(:,:)
+!>        The array to be input into MatrixOut.
+!>    \endverbatim
+!>
+!>    \param[in] Classify
+!>    \verbatim
+!>        Classify is Logical, optional
+!>        = .true.:  classify the result (default, as the assignment).
+!>        = .false.: keep the full data (StorFull / StorNoSym).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_RealArray_To_Matrix(MatrixOut,ArrayIn,Classify)
+!
+      Implicit None
+      Type(MQC_Matrix),Intent(InOut)::MatrixOut
+      Real(kind=real64),Dimension(:,:),Intent(In)::ArrayIn
+      Logical,Intent(In),Optional::Classify
+      Logical::myClassify
+!
+      myClassify = .True.
+      If(Present(Classify)) myClassify = Classify
+      Call MQC_Deallocate_Matrix(MatrixOut)
+      Call MQC_Allocate_Matrix(Size(ArrayIn,1),Size(ArrayIn,2),MatrixOut,'Real', &
+        'StorFull')
+      MatrixOut%MatR = ArrayIn
+      If(myClassify) then
+        Call MQC_Matrix_Classify(MatrixOut)
+      ElseIf(Size(ArrayIn,1).ne.Size(ArrayIn,2)) then
+        MatrixOut%Storage = 'StorNoSym'
+      EndIf
+!
+      End Subroutine MQC_RealArray_To_Matrix
+!
+!
+!     PROCEDURE MQC_ComplexArray_To_Matrix
+!
+!>    \brief <b> MQC_ComplexArray_To_Matrix copies an intrinsic complex rank-2 array
+!>    into an MQC matrix, optionally without classifying it</b>
+!
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    MQC_ComplexArray_To_Matrix sets MatrixOut equal to ArrayIn. With Classify =
+!>    .true. (the default) it is the assignment MatrixOut = ArrayIn (the result is
+!>    classified with MQC_Matrix_Classify). With Classify = .false. the data are kept
+!>    as given: StorFull for a square array, StorNoSym otherwise, with no zero,
+!>    diagonal or symmetry test, so no element is changed by packing within the
+!>    threshold. This is the storage an element-by-element put leaves.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in,out] MatrixOut
+!>    \verbatim
+!>        MatrixOut is Type(MQC_Matrix)
+!>        The MQC matrix to be set equal to the array.
+!>    \endverbatim
+!>
+!>    \param[in] ArrayIn
+!>    \verbatim
+!>        ArrayIn is Complex(kind=real64),Dimension(:,:)
+!>        The array to be input into MatrixOut.
+!>    \endverbatim
+!>
+!>    \param[in] Classify
+!>    \verbatim
+!>        Classify is Logical, optional
+!>        = .true.:  classify the result (default, as the assignment).
+!>        = .false.: keep the full data (StorFull / StorNoSym).
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      Subroutine MQC_ComplexArray_To_Matrix(MatrixOut,ArrayIn,Classify)
+!
+      Implicit None
+      Type(MQC_Matrix),Intent(InOut)::MatrixOut
+      Complex(kind=real64),Dimension(:,:),Intent(In)::ArrayIn
+      Logical,Intent(In),Optional::Classify
+      Logical::myClassify
+!
+      myClassify = .True.
+      If(Present(Classify)) myClassify = Classify
+      Call MQC_Deallocate_Matrix(MatrixOut)
+      Call MQC_Allocate_Matrix(Size(ArrayIn,1),Size(ArrayIn,2),MatrixOut,'Complex', &
+        'StorFull')
+      MatrixOut%MatC = ArrayIn
+      If(myClassify) then
+        Call MQC_Matrix_Classify(MatrixOut)
+      ElseIf(Size(ArrayIn,1).ne.Size(ArrayIn,2)) then
+        MatrixOut%Storage = 'StorNoSym'
+      EndIf
+!
+      End Subroutine MQC_ComplexArray_To_Matrix
 !
 !
 !     PROCEDURE MQC_Set_Matrix2IntegerArray
@@ -33536,10 +33835,12 @@
 !>    \date 2020
 !>    \date 2026
 !
-      Function MQC_Matrix_MPInv(A,tol,spaceDim) Result(PInv)
+      Function MQC_Matrix_MPInv(A,tol,spaceDim,solver) Result(PInv)
 !
       Implicit None
       Class(MQC_Matrix)::A
+      Character(len=*),Optional,Intent(In)::solver
+      Character(len=8)::mySolver
       Type(MQC_Matrix)::EUVecs,EVVecs,SMat
       Type(MQC_Vector)::EVals
       Type(MQC_Matrix)::PInv
@@ -33598,7 +33899,9 @@
         if(structure.eq.'diagonal') then
           EVals = mqc_matrix_diagonal_elements(A)
         else
-          call A%diag(EVals,EUVecs)
+          mySolver = MQC_pinv_eigensolver
+          if(present(solver)) mySolver = solver
+          call A%diag(EVals,EUVecs,solver=mySolver)
         endIf
         maxAbs = 0.0
         do I = 1, Size(EVals)
@@ -46143,8 +46446,15 @@
         If(PackFast) then
 !         packed class with a stored-frame kernel (view index v sits at chemist position
 !         IndexOrder(v))
-          Roles = RA%IndexOrder([ia,ib,ic,id])
-          DC = MQC_R4Symm_ToChem(RA%IndexOrder,[RA%I,RA%J,RA%K,RA%L])
+          If(MQC_R4Tensor_HaveFull(RA)) then
+!           full-stored (StorFull and the S_1 layouts): the data is in physical order and
+!           IndexOrder only names the layout, so view and stored frames coincide
+            Roles = [ia,ib,ic,id]
+            DC = [RA%I,RA%J,RA%K,RA%L]
+          Else
+            Roles = RA%IndexOrder([ia,ib,ic,id])
+            DC = MQC_R4Symm_ToChem(RA%IndexOrder,[RA%I,RA%J,RA%K,RA%L])
+          EndIf
           Select Case(TypeCode)
           Case(1)
             Call MQC_R4Contract_Packed_I(RA%SymCode,DC,RA%ITen(1,1,1,1),RA%PlainSymm,Roles,dima,dimb,MBI, &
@@ -46181,8 +46491,15 @@
           End Select
         ElseIf(MQC_R4Contract_Has_Kernel(TA%SymCode)) then
 !         packed class with a kernel, promoted from integer data: the kernel on the copy TA
-          Roles = TA%IndexOrder([ia,ib,ic,id])
-          DC = MQC_R4Symm_ToChem(TA%IndexOrder,[TA%I,TA%J,TA%K,TA%L])
+          If(MQC_R4Tensor_HaveFull(TA)) then
+!           full-stored (StorFull and the S_1 layouts): the data is in physical order and
+!           IndexOrder only names the layout, so view and stored frames coincide
+            Roles = [ia,ib,ic,id]
+            DC = [TA%I,TA%J,TA%K,TA%L]
+          Else
+            Roles = TA%IndexOrder([ia,ib,ic,id])
+            DC = MQC_R4Symm_ToChem(TA%IndexOrder,[TA%I,TA%J,TA%K,TA%L])
+          EndIf
           Select Case(TypeCode)
           Case(2)
             Call MQC_R4Contract_Packed_R(TA%SymCode,DC,TA%RTen(1,1,1,1),TA%PlainSymm,Roles,dima,dimb,MBR, &

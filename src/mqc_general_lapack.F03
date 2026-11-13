@@ -139,7 +139,7 @@
       if(PRESENT(eigenVectors)) then
         eigenVectors = matrixCopy
         do i = 1,N
-          call mqc_vectorPhase(eigenVectors(:,i),.true.)
+          call mqc_vectorPhase(eigenVectors(:,i),.true.,.false.)
         endDo
       endIf
       deAllocate(matrixCopy,Work)
@@ -246,12 +246,12 @@
         'mqc_eigensystem_MatrixFull: Failure in DGEEV diagonalizing matrix.')
       if(PRESENT(leftEigenVectors)) then
         do i = 1,N
-          call mqc_vectorPhase(leftEigenVectors(:,i),.true.)
+          call mqc_vectorPhase(leftEigenVectors(:,i),.true.,.false.)
         endDo
       endIf
       if(PRESENT(rightEigenVectors)) then
         do i = 1,N
-          call mqc_vectorPhase(rightEigenVectors(:,i),.true.)
+          call mqc_vectorPhase(rightEigenVectors(:,i),.true.,.false.)
         endDo
       endIf
       deAllocate(matrixCopy,Work)
@@ -351,7 +351,7 @@
 !     Workspace check...
 !
       allocate(Wtmp(1), IWtmp(1))
-      ABSTOL = 2.0_real64 * mqc_small
+      ABSTOL = 2.0*tiny(ABSTOL)
       INFO   = 0
       call mqc_check_blas_integer_kind()
       call dsyevr(JOBZ,'A','L',int(N,kind=MQC_BlasInt),matrixCopy,int(LDA,kind=MQC_BlasInt),0.0_real64,&
@@ -386,7 +386,7 @@
       if(present(eigenVectors)) then
          eigenVectors = Zloc(:,1:M)   ! here M should equal N for RANGE='A'
          do i = 1,N
-            call mqc_vectorPhase(eigenVectors(:,i),.true.)
+            call mqc_vectorPhase(eigenVectors(:,i),.true.,.false.)
          end do
       end if
 

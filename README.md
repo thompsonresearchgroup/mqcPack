@@ -16,8 +16,8 @@
    **                                                                      **
    **                 The Merced Quantum Chemistry Package                 **
    **                              (MQCPack)                               **
-   **                            Version 26.9.3                            **
-   **                          September 19, 2026                          **
+   **                           Version 26.11.0                            **
+   **                           November 5, 2026                           **
    **                                                                      **
    **                                                                      **
    ** Written By:                                                          **
@@ -125,5 +125,5 @@ A Git checkout may need
 `autoreconf --install` once to generate `configure`; release source archives
 normally include generated Autotools files.
 
-# Licence
+# License
   This project is licensed under the Apache License - see the LICENSE file for details

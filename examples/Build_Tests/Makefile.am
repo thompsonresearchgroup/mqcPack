@@ -6,7 +6,8 @@ TESTS_ENVIRONMENT = abs_top_srcdir='$(abs_top_srcdir)' \
   abs_top_builddir='$(abs_top_builddir)' \
   FC='$(FC)' MQC_TEST_FCFLAGS='$(AM_FCFLAGS) $(FCFLAGS)'
 CLEANFILES = ../algebra2/outfile ../fullci/outfile ../hartreefock/outfile \
-  ../../unitTests/src/outfile unitTest07-numerical.faf
+  ../../unitTests/src/outfile unitTest07-numerical.faf \
+  ../CreateDataList/outfile
 
 TESTS = ../algebra2/testit.sh unitTest01 unitTest02 unitTestIterative unitTest08 unitTest09 \
   ../../unitTests/src/testit.sh
@@ -17,6 +18,9 @@ if WITH_GAUOPEN
 TESTS += ../fullci/testit.sh ../hartreefock/testit.sh \
   unitTest07
 check_PROGRAMS += ../fullci/fullci ../hartreefock/hartreefock unitTest07
+# Runs Gaussian when GAU_BINARY is set (mqc_install exports it); skips otherwise.
+TESTS += test_gaussian_createdatalist.sh
+check_PROGRAMS += ../CreateDataList/CheckInput
 if GAUOPEN_FRONTIER
 TESTS += unitTest03 unitTest04
 check_PROGRAMS += unitTest03 unitTest04
@@ -32,6 +36,7 @@ endif
 ___algebra2_algebra_fun_SOURCES = ../algebra2/algebra_fun.F03
 ___fullci_fullci_SOURCES = ../fullci/fullci.F03
 ___hartreefock_hartreefock_SOURCES = ../hartreefock/hartreefock.F03
+___CreateDataList_CheckInput_SOURCES = ../CreateDataList/CheckInput.F03
 unitTest01_SOURCES = ../../unitTests/src/unitTest01.f03
 unitTest02_SOURCES = ../../unitTests/src/unitTest02.f03
 unitTest03_SOURCES = ../../unitTests/src/unitTest03.f03
@@ -49,7 +54,10 @@ EXTRA_DIST = test_no_gauopen_matrixfile.sh \
   ../algebra2/OUTPUT/out ../fullci/testit.sh ../fullci/OUTPUT/out \
   ../hartreefock/testit.sh ../hartreefock/OUTPUT/out \
   ../data/MatrixFile/rhf_h2-sto3g.mat ../../unitTests/src/testit.sh \
-  ../../unitTests/src/OUTPUT/out
+  ../../unitTests/src/OUTPUT/out test_gaussian_createdatalist.sh \
+  ../CreateDataList/testit_runGau.sh ../CreateDataList/OUTPUT/out_runGau \
+  ../data/Gaussian_input/test.com ../data/Gaussian_input/test1071.com \
+  ../data/Gaussian_input/test1129.com ../data/Gaussian_input/test1132.com
 
 LDADD = ../../src/libmqc.a ${MQC_LAPACK} ${MQC_BLAS}
 

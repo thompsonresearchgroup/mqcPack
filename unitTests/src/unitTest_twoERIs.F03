@@ -26,20 +26,28 @@
       type(mqc_scalar)::sc
       type(mqc_twoERIs)::eriA,eriB,eriC
       type(mqc_twoERIs)::eriAO,eriX,eriHalf,eriPartial,eriTrans,eriTransLR,eriFull,eriSymm
-      type(mqc_matrix)::mA,mB,mC,mD,outBlk
+      type(mqc_twoERISet)::eriSetTest
+      type(mqc_twoERIs)::eriAsymAO,eriDegenAO
+      type(mqc_matrix)::mA,mB,mC,mD,outBlk,oracleMat
       type(mqc_matrix)::moAA,moBB,moAB,moBA,moFull,moAA2,moBB2,moAB2,moBA2,moFull2
+      type(mqc_matrix)::moAAk,moBBk,moABk,moBAk
+      type(mqc_matrix),dimension(4)::coeffMoFull
       type(mqc_scf_integral)::intSp,intSpin,intGen,intOut
       type(mqc_scf_integral)::generalMO,generalMO2
+      type(mqc_scf_integral)::gRegular,gSquare
+      type(mqc_scf_integral),dimension(4)::coeffFull
       real(kind=real64)::got,expected
-      real(kind=real64)::partialError,transError,partialPairError,transPairError,fullError,atError
+      real(kind=real64)::partialError,transError,fullError,atError
       real(kind=real64)::v1,v2,v3,v4,v5,v6,v7
       real(kind=real64)::v8,v9,v10,v11,v12
       complex(kind=real64)::directValue,partialValue,transValue
       complex(kind=real64)::coef1,coef2,coef3,coef4
-      integer::p,q,r,s,mu,nu,lambda,sigma,spin1,spin2,iblock,jblock,iinteraction
+      integer::p,q,r,s,mu,nu,lambda,sigma,spin1,spin2,iblock,jblock,iinteraction,kCoeff
+      integer(kind=int64)::indexA(4),indexB(4),idxValsA(4),idxValsB(4)
       integer::colP,colQ,colR,colS
       character(len=4),dimension(16)::spinLabels
       character(len=9),dimension(3)::interactionLabels
+      character(len=9),dimension(2)::derivedInteractionLabels
       character(len=4)::spinLabel,exchangeLabel
 !
 !     Format Statements
@@ -2310,8 +2318,8 @@
 !
 !--------------------------------------------------------------------
 !     Tests 69-78: space integralType.
-!     All space intTypes behave identically in %at (all read from
-!     the alpha block).  Tests cover all 5 intTypes and both storageTypes.
+!     The requested interaction must match the stored interaction unless
+!     the input is Coulomb or MS.  Tests cover all interaction and storage types.
 !--------------------------------------------------------------------
 !
 !     Test 69: full-coulomb space, aaaa/J
@@ -2333,9 +2341,9 @@
         write(*,1010) 'at/space-coul-full/aaaa/K',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 71: full-exchange space, aaaa/J
+!     Test 71: full-exchange space, default stored access
       call mqc_twoeris_allocate(eriA,'full-exchange','space',blk)
-      sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='coulomb')
+      sc = eriA%at(1,1,1,2,spinBlockIn='aaaa')
       got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/space-exch-full/aaaa/J'
@@ -2343,19 +2351,19 @@
         write(*,1010) 'at/space-exch-full/aaaa/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 72: full-exchange space, aaaa/K
+!     Test 72: full-exchange space, explicit stored interaction
       sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='exchange')
-      got = sc%rval() ; expected = v6
+      got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/space-exch-full/aaaa/K'
       else
         write(*,1010) 'at/space-exch-full/aaaa/K',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 73: full-doublebar space, aaaa/JK at (1,1,1,2) → v5-v6
+!     Test 73: full-doublebar space stores the supplied JK tensor directly
       call mqc_twoeris_allocate(eriA,'full-doublebar','space',blk)
       sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='doublebar')
-      got = sc%rval() ; expected = v5-v6
+      got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/space-dbar-full/aaaa/JK'
       else
@@ -2374,7 +2382,7 @@
 !
 !     Test 75: full-inverted space, aaaa/J at (1,1,1,1) → v2
       call mqc_twoeris_allocate(eriA,'full-inverted','space',tA)
-      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='coulomb')
+      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='inverted')
       got = sc%rval() ; expected = v2
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/space-inv-full/aaaa/J'
@@ -2392,10 +2400,10 @@
         write(*,1010) 'at/space-coul-symm/aaaa/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 77: symm-exchange space, aaaa/K at (1,1,1,2) → v6
+!     Test 77: symm-exchange space stores the supplied K tensor directly
       call mqc_twoeris_allocate(eriA,'symm-exchange','space',blk)
       sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='exchange')
-      got = sc%rval() ; expected = v6
+      got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/space-exch-symm/aaaa/K'
       else
@@ -2509,9 +2517,9 @@
       call mqc_twoeris_allocate(eriA,'full-doublebar','spin',blk,tD,  &
         alphaBeta=tE,abba=tF)
 !
-!     Test 87: aaaa/JK at (1,1,1,2) → alpha(1,1,1,2)-alpha(1,2,1,1)=v5-v6
+!     Test 87: aaaa/JK reads the supplied antisymmetrized tensor directly
       sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='doublebar')
-      got = sc%rval() ; expected = v5-v6
+      got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/spin-dbar-full/aaaa/JK'
       else
@@ -2527,9 +2535,9 @@
         write(*,1010) 'at/spin-dbar-full/aabb/JK',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 89: abba/JK at (1,1,1,1) → (-1)*alphaBeta(i,l,k,j)=-v10
+!     Test 89: abba/JK reads the separately stored abba block
       sc = eriA%at(1,1,1,1,spinBlockIn='abba',interactionIn='doublebar')
-      got = sc%rval() ; expected = -v10
+      got = sc%rval() ; expected = v11
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/spin-dbar-full/abba/JK'
       else
@@ -2583,8 +2591,8 @@
 !     Inverted ERI: alphaBeta stores abab data (tG=v12).
       call mqc_twoeris_allocate(eriA,'full-inverted','spin',tC,tD,tG)
 !
-!     Test 94: aaaa/J at (1,1,1,1) → alpha(1,1,1,1)=v8
-      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='coulomb')
+!     Test 94: aaaa/inverted at (1,1,1,1) → alpha(1,1,1,1)=v8
+      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='inverted')
       got = sc%rval() ; expected = v8
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/spin-inv-full/aaaa/J'
@@ -2592,32 +2600,68 @@
         write(*,1010) 'at/spin-inv-full/aaaa/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 95: aabb/J at (1,1,1,1) → alphaBeta(1,1,1,1)=v12 (abab data)
-      sc = eriA%at(1,1,1,1,spinBlockIn='aabb',interactionIn='coulomb')
+!     Test 95: abab/inverted at (1,1,1,1) → alphaBeta storage=v12
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='inverted')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
-        write(*,1000) 'at/spin-inv-full/aabb/J'
+        write(*,1000) 'at/spin-inv-full/abab/inverted'
       else
-        write(*,1010) 'at/spin-inv-full/aabb/J',got,expected ; nfail=nfail+1
+        write(*,1010) 'at/spin-inv-full/abab/inverted',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 96: symm-inverted spin, aabb/J → v12
+!     Test 96: symm-inverted spin, abab/inverted → v12
       call mqc_twoeris_allocate(eriA,'symm-inverted','spin',tC,tD,tG)
-      sc = eriA%at(1,1,1,1,spinBlockIn='aabb',interactionIn='coulomb')
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='inverted')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
-        write(*,1000) 'at/spin-inv-symm/aabb/J'
+        write(*,1000) 'at/spin-inv-symm/abab/inverted'
       else
-        write(*,1010) 'at/spin-inv-symm/aabb/J',got,expected ; nfail=nfail+1
+        write(*,1010) 'at/spin-inv-symm/abab/inverted',got,expected ; nfail=nfail+1
       endIf
 !
-!     Tests 97-98: spin/ms abab BUG.
-!     spin integralType has no abab/baba spinBlock cases; silently returns 0.
-!     Both tests will FAIL until missing cases are added.
+!     Stored-interaction regression: alphaBeta is a physical aabb block for
+!     doublebar storage, but the same compact slot is physical abab for
+!     inverted storage.  MQC_TwoERIs%at must decode the stored interaction.
+      call mqc_twoeris_allocate(eriA,'full-doublebar','spin',tC,tD,&
+        alphaBeta=tE,abba=tF)
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab')
+      got = sc%rval() ; expected = 0.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'at/spin-dbar-full/abab/stored=0'
+      else
+        write(*,1010) 'at/spin-dbar-full/abab/stored=0',got,expected ; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'full-inverted','spin',tC,tD,tG)
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab')
+      got = sc%rval() ; expected = v12
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'at/spin-inv-full/abab/default-stored'
+      else
+        write(*,1010) 'at/spin-inv-full/abab/default-stored',got,expected ; nfail=nfail+1
+      endIf
+!
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='stored')
+      got = sc%rval() ; expected = 0.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'at/spin-inv-full/abab/literal-stored=0'
+      else
+        write(*,1010) 'at/spin-inv-full/abab/literal-stored=0',got,expected ; nfail=nfail+1
+      endIf
+!
+      sc = eriA%at(1,1,1,1,spinBlockIn='aabb',interactionIn='stored')
+      got = sc%rval() ; expected = v12
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'at/spin-inv-full/aabb/literal-stored'
+      else
+        write(*,1010) 'at/spin-inv-full/aabb/literal-stored',got,expected ; nfail=nfail+1
+      endIf
+!
+!     Tests 97-98: spin/ms abab access by named and global indices.
       call mqc_twoeris_allocate(eriA,'full-ms','spin',tC,tD,alphaBeta=tE,  &
         abba=tF,abab=tG)
 !
-!     Test 97: spinBlock='abab'/J → should be v12; BUG: returns 0
+!     Test 97: spinBlock='abab'/J → v12
       sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='coulomb')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
@@ -2626,7 +2670,7 @@
         write(*,1010) 'at/spin-ms-full/abab/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 98: no-spinBlock composite (1,3,1,3) → ABAB pattern → should be v12; BUG: 0
+!     Test 98: no-spinBlock composite (1,3,1,3) → ABAB pattern → v12
       sc = eriA%at(1,3,1,3,interactionIn='coulomb')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
@@ -2682,8 +2726,8 @@
         write(*,1010) 'at/gen-exch-full/aaaa/K',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 103: abba/J at (1,1,1,1) → abba(1,1,1,1)=v11
-      sc = eriA%at(1,1,1,1,spinBlockIn='abba',interactionIn='coulomb')
+!     Test 103: abba/K at (1,1,1,1) → abba(1,1,1,1)=v11
+      sc = eriA%at(1,1,1,1,spinBlockIn='abba',interactionIn='exchange')
       got = sc%rval() ; expected = v11
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-exch-full/abba/J'
@@ -2691,9 +2735,9 @@
         write(*,1010) 'at/gen-exch-full/abba/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 104: symm-exchange general, baab/J → abba(k,l,i,j)=v11
+!     Test 104: symm-exchange general, baab/K → abba(k,l,i,j)=v11
       call mqc_twoeris_allocate(eriA,'symm-exchange','general',tC,tD,abba=tF)
-      sc = eriA%at(1,1,1,1,spinBlockIn='baab',interactionIn='coulomb')
+      sc = eriA%at(1,1,1,1,spinBlockIn='baab',interactionIn='exchange')
       got = sc%rval() ; expected = v11
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-exch-symm/baab/J'
@@ -2705,29 +2749,29 @@
       call mqc_twoeris_allocate(eriA,'full-doublebar','general',blk,tD,  &
         alphaBeta=tE,abba=tF)
 !
-!     Test 105: aaaa/JK at (1,1,1,2) → alpha(1,1,1,2)-alpha(1,2,1,1)=v5-v6
+!     Test 105: aaaa/JK reads the supplied antisymmetrized tensor directly
       sc = eriA%at(1,1,1,2,spinBlockIn='aaaa',interactionIn='doublebar')
-      got = sc%rval() ; expected = v5-v6
+      got = sc%rval() ; expected = v5
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-dbar-full/aaaa/JK'
       else
         write(*,1010) 'at/gen-dbar-full/aaaa/JK',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 106: aabb/JK at (1,1,1,1) → alphaBeta(1,1,1,1)-abba(i,l,k,j)=v10-v11
+!     Test 106: aabb/JK reads the supplied aabb block directly
       sc = eriA%at(1,1,1,1,spinBlockIn='aabb',interactionIn='doublebar')
-      got = sc%rval() ; expected = v10-v11
+      got = sc%rval() ; expected = v10
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-dbar-full/aabb/JK'
       else
         write(*,1010) 'at/gen-dbar-full/aabb/JK',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 107: symm-doublebar general, bbaa/JK → alphaBeta(k,l,i,j)-abba(k,j,i,l)=v10-v11
+!     Test 107: symm-doublebar general, bbaa/JK is the symmetric aabb partner
       call mqc_twoeris_allocate(eriA,'symm-doublebar','general',blk,tD,  &
         alphaBeta=tE,abba=tF)
       sc = eriA%at(1,1,1,1,spinBlockIn='bbaa',interactionIn='doublebar')
-      got = sc%rval() ; expected = v10-v11
+      got = sc%rval() ; expected = v10
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-dbar-symm/bbaa/JK'
       else
@@ -2780,8 +2824,8 @@
 !     For general type, inverted uses a dedicated abab block (not alphaBeta).
       call mqc_twoeris_allocate(eriA,'full-inverted','general',tC,tD,abab=tG)
 !
-!     Test 112: aaaa/J at (1,1,1,1) → v8
-      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='coulomb')
+!     Test 112: aaaa/inverted at (1,1,1,1) → v8
+      sc = eriA%at(1,1,1,1,spinBlockIn='aaaa',interactionIn='inverted')
       got = sc%rval() ; expected = v8
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-inv-full/aaaa/J'
@@ -2789,8 +2833,8 @@
         write(*,1010) 'at/gen-inv-full/aaaa/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 113: abab/J at (1,1,1,1) → abab(1,1,1,1)=v12
-      sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='coulomb')
+!     Test 113: abab/inverted at (1,1,1,1) → abab(1,1,1,1)=v12
+      sc = eriA%at(1,1,1,1,spinBlockIn='abab',interactionIn='inverted')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-inv-full/abab/J'
@@ -2798,9 +2842,9 @@
         write(*,1010) 'at/gen-inv-full/abab/J',got,expected ; nfail=nfail+1
       endIf
 !
-!     Test 114: symm-inverted general, baba/J → conjg(abab(j,i,l,k))=v12
+!     Test 114: symm-inverted general, baba/inverted → conjg(abab(j,i,l,k))=v12
       call mqc_twoeris_allocate(eriA,'symm-inverted','general',tC,tD,abab=tG)
-      sc = eriA%at(1,1,1,1,spinBlockIn='baba',interactionIn='coulomb')
+      sc = eriA%at(1,1,1,1,spinBlockIn='baba',interactionIn='inverted')
       got = sc%rval() ; expected = v12
       if(abs(got-expected).le.tol) then
         write(*,1000) 'at/gen-inv-symm/baba/J'
@@ -3270,8 +3314,9 @@
       endIf
 !
 !     Test 142: general ERI (with bbba=10) × spin, same=F ind=[3,1] (ia=3, ib=1)
-!     Bug-fix test: ba=R4(bbba,M_bb)=10*3=30 (old code: put into ab by mistake).
-!     Code: aa=8*2+12*3=52, bb=9*3+12*2=51, ab=R4(aaab,M_aa)=10*2=20, ba=30
+!     Output row = axis 2, col = axis 4. ab = beta-row x alpha-col (alphaBeta storage),
+!     ba = alpha-row x beta-col (betaAlpha storage), as in getBlock/integral_allocate.
+!     Code: aa=8*2+12*3=52, bb=9*3+12*2=51, ab=R4(bbba,M_bb)=10*3=30, ba=R4(aaab,M_aa)=10*2=20
 !
       intOut = Contraction(eriB,intSpin,[3_int64,1_int64])
       outBlk = intOut%getBlock('aa') ; sc = outBlk%at(1,1) ; got = sc%rval() ; expected = 52.0d0
@@ -3286,15 +3331,15 @@
       else
         write(*,1010) 'IC/gen+SF x spin/same=F [3,1]: bb',got,expected ; nfail=nfail+1
       endIf
-      outBlk = intOut%getBlock('ab') ; sc = outBlk%at(1,1) ; got = sc%rval() ; expected = 20.0d0
+      outBlk = intOut%getBlock('ab') ; sc = outBlk%at(1,1) ; got = sc%rval() ; expected = 30.0d0
       if(abs(got-expected).le.tol) then
-        write(*,1000) 'IC/gen+SF x spin/same=F [3,1]: ab (aaab*M_aa, not bbba)'
+        write(*,1000) 'IC/gen+SF x spin/same=F [3,1]: ab (bbba*M_bb)'
       else
         write(*,1010) 'IC/gen+SF x spin/same=F [3,1]: ab',got,expected ; nfail=nfail+1
       endIf
-      outBlk = intOut%getBlock('ba') ; sc = outBlk%at(1,1) ; got = sc%rval() ; expected = 30.0d0
+      outBlk = intOut%getBlock('ba') ; sc = outBlk%at(1,1) ; got = sc%rval() ; expected = 20.0d0
       if(abs(got-expected).le.tol) then
-        write(*,1000) 'IC/gen+SF x spin/same=F [3,1]: ba (bbba*M_bb)'
+        write(*,1000) 'IC/gen+SF x spin/same=F [3,1]: ba (aaab*M_aa, not bbba)'
       else
         write(*,1010) 'IC/gen+SF x spin/same=F [3,1]: ba',got,expected ; nfail=nfail+1
       endIf
@@ -3579,8 +3624,10 @@
         do nu=1,n
           do lambda=1,n
             do sigma=1,n
-              call tA%put(real((mu+nu)*(lambda+sigma)+mu*nu+lambda*sigma,&
-                                  real64)/37.0_real64,&
+              colP=max(mu,nu)*(max(mu,nu)-1)/2+min(mu,nu)
+              colQ=max(lambda,sigma)*(max(lambda,sigma)-1)/2+min(lambda,sigma)
+              call tA%put(real(7*min(colP,colQ)+13*max(colP,colQ)+&
+                                  min(colP,colQ)*max(colP,colQ),real64)/37.0_real64,&
                           mu,nu,lambda,sigma)
             end do
           end do
@@ -3612,6 +3659,132 @@
                                  moAA,moBB,moAB,moBA)
       moFull=generalMO%getBlock('full')
 
+!     The scalar accessor must use the same off-diagonal placement as the
+!     assembled rectangular spin-orbital matrix.
+      fullError=0.0_real64
+      do p=1,2*n
+        do q=1,2*n
+          sc=generalMO%at(p,q)
+          directValue=sc%cval()
+          sc=moFull%at(p,q)
+          fullError=max(fullError,abs(directValue-sc%cval()))
+        end do
+      end do
+      if(fullError.lt.tol) then
+        write(*,1000) 'general integral at agrees with full block'
+      else
+        write(*,1010) 'general integral at agrees with full block',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
+!     Form G[D] independently in the complete spin-orbital basis.  The
+!     energy contracts G[D] with transpose(D).  The exchange contribution to
+!     output spin block (sigma,tau) uses density block (sigma,tau); the matrix
+!     transpose required by the scalar energy contraction is applied separately.
+      call mA%init(2*n,2*n,(0.0_real64,0.0_real64))
+      do p=1,2*n
+        mu=mod(p-1,n)+1
+        spin1=(p-1)/n
+        do q=1,2*n
+          nu=mod(q-1,n)+1
+          spin2=(q-1)/n
+          directValue=(0.0_real64,0.0_real64)
+          if(spin1.eq.spin2) then
+            do iblock=0,1
+              do r=1,n
+                do s=1,n
+                  sc=tA%at(mu,nu,r,s)
+                  partialValue=sc%cval()
+                  sc=moFull%at(s+iblock*n,r+iblock*n)
+                  directValue=directValue+partialValue*sc%cval()
+                end do
+              end do
+            end do
+          end if
+          do r=1,n
+            do s=1,n
+              sc=tA%at(mu,s,r,nu)
+              partialValue=sc%cval()
+              sc=moFull%at(s+spin1*n,r+spin2*n)
+              directValue=directValue-partialValue*sc%cval()
+            end do
+          end do
+          call mA%put(directValue,p,q)
+        end do
+      end do
+
+!     The optimized ERI-set contraction and the explicit square contraction
+!     must select the same lower-left/upper-right density blocks.
+      call eriSetTest%addToSet(eriAO)
+      gRegular=contraction(eriSetTest,generalMO,0.0_real64)
+      gSquare=contraction(eriSetTest,generalMO,0.0_real64,'coulomb')+&
+              contraction(eriSetTest,generalMO,0.0_real64,'exchange')
+      outBlk=gSquare%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general square contraction agrees with full spin-orbital oracle'
+      else
+        write(*,1010) 'general square contraction agrees with full spin-orbital oracle',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
+      outBlk=gRegular%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular contraction agrees with full spin-orbital oracle'
+      else
+        write(*,1010) 'general regular contraction agrees with full spin-orbital oracle',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
+      outBlk=gRegular%getBlock('alpha')-gSquare%getBlock('alpha')
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular and square contractions agree: aa'
+      else
+        write(*,1010) 'general regular and square contractions agree: aa',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+      outBlk=gRegular%getBlock('beta')-gSquare%getBlock('beta')
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular and square contractions agree: bb'
+      else
+        write(*,1010) 'general regular and square contractions agree: bb',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+      outBlk=gRegular%getBlock('alpha-beta')-gSquare%getBlock('alpha-beta')
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular and square contractions agree: ab'
+      else
+        write(*,1010) 'general regular and square contractions agree: ab',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+      outBlk=gRegular%getBlock('beta-alpha')-gSquare%getBlock('beta-alpha')
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular and square contractions agree: ba'
+      else
+        write(*,1010) 'general regular and square contractions agree: ba',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+      outBlk=gRegular%getBlock('full')-gSquare%getBlock('full')
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'general regular and square contractions agree'
+      else
+        write(*,1010) 'general regular and square contractions agree',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
       eriX=generalMO%outer2ERI(dagger(generalMO))
       eriHalf=mqc_eri_eri_partial_contraction_2ERI(eriAO,eriX,&
                                                    [4,3,1,2],[1,4,3,2])
@@ -3623,6 +3796,7 @@
         'abaa','abab','abba','abbb','baaa','baab','baba','babb',&
         'bbaa','bbab','bbba','bbbb']
       interactionLabels=[character(len=9)::'coulomb','exchange','doublebar']
+      derivedInteractionLabels=[character(len=9)::'inverted','ms']
       do iblock=1,size(spinLabels)
         spinLabel=spinLabels(iblock)
         tB=eriPartial%getBlock(spinLabel)
@@ -3674,6 +3848,60 @@
         end if
       end do
 
+!     Compare representative general/general partial contractions with the
+!     same contractions performed on the complete spin-orbital tensors.
+      tD=eriTrans%getBlock('full')
+      indexA=[2_int64,3_int64,4_int64,1_int64]
+      fullError=0.0_real64
+      do iinteraction=1,3
+        select case(iinteraction)
+        case(1)
+          indexB=[2_int64,4_int64,1_int64,3_int64]
+        case(2)
+          indexB=[1_int64,2_int64,3_int64,4_int64]
+        case(3)
+          indexB=[1_int64,3_int64,2_int64,4_int64]
+        end select
+        oracleMat=MQC_R4Tensor_R4Tensor_Partial_Contraction(tD,tD,indexA,indexB)
+        call mB%init(size(oracleMat,1),size(oracleMat,2))
+        do r=1,size(oracleMat,1)
+          do s=1,size(oracleMat,2)
+            do p=1,size(tD,indexA(1))
+              do q=1,size(tD,indexA(2))
+                idxValsA(indexA(1))=p
+                idxValsA(indexA(2))=q
+                idxValsA(indexA(3))=r
+                idxValsA(indexA(4))=s
+                idxValsB(indexB(1))=p
+                idxValsB(indexB(2))=q
+                idxValsB(indexB(3))=r
+                idxValsB(indexB(4))=s
+                call mB%put(mB%at(r,s)+tD%at(idxValsA(1),idxValsA(2),idxValsA(3),idxValsA(4))*&
+                  tD%at(idxValsB(1),idxValsB(2),idxValsB(3),idxValsB(4)),r,s)
+              end do
+            end do
+          end do
+        end do
+        outBlk=oracleMat-mB
+        sc=outBlk%norm('M')
+        if(sc%rval().ge.tol) then
+          write(*,1010) 'low-level R4 partial contraction agrees with explicit loop',&
+            sc%rval(),0.0_real64
+          nfail=nfail+1
+        end if
+        intOut=mqc_eri_eri_partial_contraction(eriTrans,eriTrans,indexA,indexB)
+        outBlk=intOut%getBlock('full')-mB
+        sc=outBlk%norm('M')
+        fullError=max(fullError,sc%rval())
+      end do
+      if(fullError.lt.tol) then
+        write(*,1000) 'general ERI partial contractions agree with full oracle'
+      else
+        write(*,1010) 'general ERI partial contractions agree with full oracle',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
 !--------------------------------------------------------------------
 !     Test 159b: different complex-general bra and ket transformations.
 !
@@ -3689,6 +3917,87 @@
       call mqc_integral_allocate(generalMO2,'complex general ket MOs','general',&
                                  moAA2,moBB2,moAB2,moBA2)
       moFull2=generalMO2%getBlock('full')
+
+!     General one-electron operations must reproduce the same operation on
+!     the complete spin-orbital matrices.  Check each stage used by the
+!     mixed-bra/ket MO transformation separately.
+      intOut=dagger(generalMO)
+      mA=dagger(moFull)
+      outBlk=intOut%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'complex-general dagger agrees with full matrix'
+      else
+        write(*,1010) 'complex-general dagger agrees with full matrix',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
+      intOut=matmul(dagger(generalMO),generalMO2)
+      mA=matmul(dagger(moFull),moFull2)
+      outBlk=intOut%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'complex-general product agrees with full matrix'
+      else
+        write(*,1010) 'complex-general product agrees with full matrix',fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
+      intOut=matmul(matmul(dagger(generalMO),generalMO2),generalMO)
+      mA=matmul(matmul(dagger(moFull),moFull2),moFull)
+      outBlk=intOut%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'complex-general three-factor product agrees with full matrix'
+      else
+        write(*,1010) 'complex-general three-factor product agrees with full matrix',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
+!     Repeat the mixed-bra/ket transformation with the operator stored in the
+!     compressed Hermitian form used for one-electron matrix-file data.
+      mA=moAA+dagger(moAA)
+      mB=moBB+dagger(moBB)
+      call mqc_integral_allocate(intGen,'complex general Hermitian operator','general',&
+        mA,mB,moAB,nDimA1=n,nDimA2=n,nDimB1=n,nDimB2=n,symmetry='hermitian')
+      intOut=matmul(matmul(dagger(generalMO),intGen),generalMO2)
+      mA=matmul(matmul(dagger(moFull),intGen%getBlock('full')),moFull2)
+      outBlk=intOut%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'compressed-Hermitian mixed-bra/ket product agrees with full matrix'
+      else
+        write(*,1010) 'compressed-Hermitian mixed-bra/ket product agrees with full matrix',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
+!     Matrix-file import supplies both off-diagonal blocks before requesting
+!     Hermitian compression; verify that this equivalent representation is
+!     also unchanged by the transformation.
+      mA=moAA+dagger(moAA)
+      mB=moBB+dagger(moBB)
+      mC=dagger(moAB)
+      call mqc_integral_allocate(intGen,'full-input general Hermitian operator','general',&
+        mA,mB,moAB,mC,nDimA1=n,nDimA2=n,nDimB1=n,nDimB2=n,symmetry='hermitian')
+      intOut=matmul(matmul(dagger(generalMO),intGen),generalMO2)
+      mA=matmul(matmul(dagger(moFull),intGen%getBlock('full')),moFull2)
+      outBlk=intOut%getBlock('full')-mA
+      sc=outBlk%norm('M')
+      fullError=sc%rval()
+      if(fullError.lt.tol) then
+        write(*,1000) 'full-input Hermitian mixed-bra/ket product agrees with full matrix'
+      else
+        write(*,1010) 'full-input Hermitian mixed-bra/ket product agrees with full matrix',&
+          fullError,0.0_real64
+        nfail=nfail+1
+      end if
+
       call TwoERI_Trans(6,0,generalMO,eriAO,eriTransLR,Right_MOs=generalMO2)
       tD=eriTransLR%getBlock('full')
       fullError=0.0_real64
@@ -3755,6 +4064,12 @@
           if(jblock.eq.0) stop 'exchange spin block not found'
           do spin1=1,2
             atError=0.0_real64
+            fullError=0.0_real64
+            if(spin1.eq.1) then
+              tB=eriFull%getBlock(spinLabel,interactionIn=interactionLabels(iinteraction))
+            else
+              tB=eriSymm%getBlock(spinLabel,interactionIn=interactionLabels(iinteraction))
+            endIf
             do p=1,n; do q=1,n; do r=1,n; do s=1,n
               sc=oracleBlocks(iblock)%at(p,q,r,s)
               directValue=sc%cval()
@@ -3770,17 +4085,60 @@
                 sc=eriSymm%at(p,q,r,s,spinLabel,interactionLabels(iinteraction))
               endIf
               atError=max(atError,abs(sc%cval()-directValue))
+              sc=tB%at(p,q,r,s)
+              fullError=max(fullError,abs(sc%cval()-directValue))
             end do; end do; end do; end do
-            if(atError.le.tol) then
-              write(*,'(1X,A,1X,A,1X,A4,1X,A)') 'PASS  at oracle',&
+            if(atError.le.tol.and.fullError.le.tol) then
+              write(*,'(1X,A,1X,A,1X,A4,1X,A)') 'PASS  accessors oracle',&
                 merge('full','symm',spin1.eq.1),spinLabel,trim(interactionLabels(iinteraction))
             else
-              write(*,'(1X,A,1X,A,1X,A4,1X,A,A,ES14.6)') 'FAIL  at oracle',&
+              write(*,'(1X,A,1X,A,1X,A4,1X,A,2(A,ES14.6))') 'FAIL  accessors oracle',&
                 merge('full','symm',spin1.eq.1),spinLabel,trim(interactionLabels(iinteraction)),&
-                ' error=',atError
+                ' at error=',atError,' getBlock error=',fullError
               nfail=nfail+1
             endIf
+            if(spin1.eq.1) then
+              if(.not.eriFull%hasSpinBlock(spinLabel,interactionIn=interactionLabels(iinteraction))) then
+                write(*,'(1X,A,1X,A4,1X,A)') 'FAIL  hasSpinBlock oracle full',spinLabel,&
+                  trim(interactionLabels(iinteraction))
+                nfail=nfail+1
+              endIf
+            else
+              if(.not.eriSymm%hasSpinBlock(spinLabel,interactionIn=interactionLabels(iinteraction))) then
+                write(*,'(1X,A,1X,A4,1X,A)') 'FAIL  hasSpinBlock oracle symm',spinLabel,&
+                  trim(interactionLabels(iinteraction))
+                nfail=nfail+1
+              endIf
+            endIf
           end do
+        end do
+      end do
+!
+!     Inverted and mixed-spin interactions have separate at-oracle tests
+!     above.  Here verify that block extraction returns exactly the same
+!     physical elements as scalar access for a Coulomb source.
+      do iinteraction=1,size(derivedInteractionLabels)
+        do iblock=1,size(spinLabels)
+          spinLabel=spinLabels(iblock)
+          tB=eriFull%getBlock(spinLabel,&
+            interactionIn=derivedInteractionLabels(iinteraction))
+          fullError=0.0_real64
+          do p=1,n; do q=1,n; do r=1,n; do s=1,n
+            sc=eriFull%at(p,q,r,s,spinLabel,&
+              derivedInteractionLabels(iinteraction))
+            directValue=sc%cval()
+            sc=tB%at(p,q,r,s)
+            fullError=max(fullError,abs(sc%cval()-directValue))
+          end do; end do; end do; end do
+          if(fullError.le.tol) then
+            write(*,'(1X,A,1X,A4,1X,A)') 'PASS  getBlock/at consistency',&
+              spinLabel,trim(derivedInteractionLabels(iinteraction))
+          else
+            write(*,'(1X,A,1X,A4,1X,A,A,ES14.6)') 'FAIL  getBlock/at consistency',&
+              spinLabel,trim(derivedInteractionLabels(iinteraction)),&
+              ' error=',fullError
+            nfail=nfail+1
+          endIf
         end do
       end do
 !
@@ -3896,15 +4254,15 @@
         end if
       end do
 
-      call report_partner('aabb','bbaa',[3,4,1,2],.false.)
-      call report_partner('aaab','aaba',[2,1,4,3],.true.)
-      call report_partner('aaab','abaa',[3,4,1,2],.false.)
-      call report_partner('aaab','baaa',[4,3,2,1],.true.)
-      call report_partner('abba','baab',[3,4,1,2],.false.)
-      call report_partner('abab','baba',[2,1,4,3],.true.)
-      call report_partner('abbb','bbba',[4,3,2,1],.true.)
-      call report_partner('abbb','bbab',[3,4,1,2],.false.)
-      call report_partner('abbb','babb',[2,1,4,3],.true.)
+      call report_partner('aabb','bbaa',[3,4,1,2],.false.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('aaab','aaba',[2,1,4,3],.true.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('aaab','abaa',[3,4,1,2],.false.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('aaab','baaa',[4,3,2,1],.true.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('abba','baab',[3,4,1,2],.false.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('abab','baba',[2,1,4,3],.true.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('abbb','bbba',[4,3,2,1],.true.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('abbb','bbab',[3,4,1,2],.false.,eriPartial,eriTrans,tol,nfail)
+      call report_partner('abbb','babb',[2,1,4,3],.true.,eriPartial,eriTrans,tol,nfail)
 
       tD=eriTrans%getBlock('full')
       fullError=0.0_real64
@@ -3926,24 +4284,303 @@
       end do; end do; end do; end do
       write(*,'(1X,A,ES14.6)') 'real-general full tensor oracle error=',fullError
 !
+!--------------------------------------------------------------------
+!     Test 162: asymmetric four-independent-coefficient full transform
+!     (mqc_twoeris_full_transform / TwoERI_Trans_Full).
+!
+!     Unlike every transform tested above, the four MO coefficient
+!     matrices driving legs P,Q,R,S are genuinely distinct -- not reused
+!     pairwise -- a combination TwoERI_Trans itself cannot express at
+!     all. There is no existing trusted routine to compare against, so
+!     (exactly as Test 159 does for TwoERI_Trans) the reference is an
+!     explicit spin-orbital four-index sum built directly from the four
+!     coefficients and the same fixed AO tensor tA used throughout this
+!     file.
+!--------------------------------------------------------------------
+!
+      do kCoeff=1,4
+        call moAAk%init(n,n,(0.0_real64,0.0_real64))
+        call moBBk%init(n,n,(0.0_real64,0.0_real64))
+        call moABk%init(n,n,(0.0_real64,0.0_real64))
+        call moBAk%init(n,n,(0.0_real64,0.0_real64))
+        do p=1,n
+          do q=1,n
+            call moAAk%put(cmplx(real(kCoeff*100+10+3*p+q,real64)/173.0_real64,&
+              real(kCoeff*7-5+p-2*q,real64)/97.0_real64,real64),p,q)
+            call moBBk%put(cmplx(real(kCoeff*100+20+3*p+q,real64)/173.0_real64,&
+              real(kCoeff*7-10+p-2*q,real64)/97.0_real64,real64),p,q)
+            call moABk%put(cmplx(real(kCoeff*100+30+3*p+q,real64)/173.0_real64,&
+              real(kCoeff*7-15+p-2*q,real64)/97.0_real64,real64),p,q)
+            call moBAk%put(cmplx(real(kCoeff*100+40+3*p+q,real64)/173.0_real64,&
+              real(kCoeff*7-20+p-2*q,real64)/97.0_real64,real64),p,q)
+          end do
+        end do
+        call mqc_integral_allocate(coeffFull(kCoeff),'asymmetric test MOs','general',&
+                                    moAAk,moBBk,moABk,moBAk)
+        coeffMoFull(kCoeff)=coeffFull(kCoeff)%getBlock('full')
+      end do
+!
+      call mqc_twoeris_allocate(eriAsymAO,'full-coulomb','regular',tA)
+      call mqc_twoeris_full_transform(eriAsymAO,'molecular',coeffFull(1),coeffFull(2),&
+                                       coeffFull(3),coeffFull(4))
+!
+      do iblock=1,size(spinLabels)
+        spinLabel=spinLabels(iblock)
+        tC=eriAsymAO%getBlock(spinLabel)
+        fullError=0.0_real64
+        do p=1,n
+          do q=1,n
+            do r=1,n
+              do s=1,n
+                directValue=(0.0_real64,0.0_real64)
+                colP=p+merge(0,n,spinLabel(1:1).eq.'a')
+                colQ=q+merge(0,n,spinLabel(2:2).eq.'a')
+                colR=r+merge(0,n,spinLabel(3:3).eq.'a')
+                colS=s+merge(0,n,spinLabel(4:4).eq.'a')
+                do spin1=0,1
+                  do spin2=0,1
+                    do mu=1,n
+                      do nu=1,n
+                        do lambda=1,n
+                          do sigma=1,n
+                            sc=coeffMoFull(1)%at(mu+spin1*n,colP); coef1=sc%cval()
+                            sc=coeffMoFull(2)%at(nu+spin1*n,colQ); coef2=sc%cval()
+                            sc=coeffMoFull(3)%at(lambda+spin2*n,colR); coef3=sc%cval()
+                            sc=coeffMoFull(4)%at(sigma+spin2*n,colS); coef4=sc%cval()
+                            sc=tA%at(mu,nu,lambda,sigma)
+                            directValue=directValue+conjg(coef1)*coef2*&
+                              conjg(coef3)*coef4*sc%cval()
+                          end do
+                        end do
+                      end do
+                    end do
+                  end do
+                end do
+                sc=tC%at(p,q,r,s)
+                fullError=max(fullError,abs(sc%cval()-directValue))
+              end do
+            end do
+          end do
+        end do
+        if(fullError.le.tol) then
+          write(*,'(1X,A,1X,A4)') 'PASS  asymmetric four-coefficient transform block',spinLabel
+        else
+          write(*,'(1X,A,1X,A4,A,ES14.6)') 'FAIL  asymmetric four-coefficient transform block',&
+            spinLabel,' error=',fullError
+          nfail=nfail+1
+        end if
+      end do
+!
+!--------------------------------------------------------------------
+!     Test 162b: degenerate sanity check -- mqc_twoeris_full_transform
+!     called with a single coefficient (all four legs default to it)
+!     must exactly reproduce the already-validated TwoERI_Trans/eriTrans
+!     result from Test 161 (same generalMO, same AO tensor tA).
+!--------------------------------------------------------------------
+!
+      call mqc_twoeris_allocate(eriDegenAO,'full-coulomb','regular',tA)
+      call mqc_twoeris_full_transform(eriDegenAO,'molecular',generalMO)
+      do iblock=1,size(spinLabels)
+        spinLabel=spinLabels(iblock)
+        tC=eriDegenAO%getBlock(spinLabel)
+        tD=eriTrans%getBlock(spinLabel)
+        fullError=0.0_real64
+        do p=1,n; do q=1,n; do r=1,n; do s=1,n
+          sc=tC%at(p,q,r,s); coef1=sc%cval()
+          sc=tD%at(p,q,r,s); coef2=sc%cval()
+          fullError=max(fullError,abs(coef1-coef2))
+        end do; end do; end do; end do
+        if(fullError.le.tol) then
+          write(*,'(1X,A,1X,A4)') 'PASS  single-coefficient full_transform vs TwoERI_Trans',spinLabel
+        else
+          write(*,'(1X,A,1X,A4,A,ES14.6)') 'FAIL  single-coefficient full_transform vs TwoERI_Trans',&
+            spinLabel,' error=',fullError
+          nfail=nfail+1
+        end if
+      end do
+!
+!
+!--------------------------------------------------------------------
+!     Tests 163-174: physical versus literal-storage block access.
+!     Use off-diagonal indices so Coulomb and exchange permutations do
+!     not accidentally coincide.
+!--------------------------------------------------------------------
+!
+      call tF%put(31.0_real64,1,2,2,1)
+      call tG%put(37.0_real64,2,1,1,2)
+      call mqc_twoeris_allocate(eriA,'full-exchange','spin',tC,tD,tF,tG)
+!
+      if(.not.eriA%hasSpinBlock('bbaa').and.&
+         eriA%hasSpinBlock('bbaa',interactionIn='stored')) then
+        write(*,1000) 'access/full-exchange: bbaa physical=0, stored=present'
+      else
+        write(*,1010) 'access/full-exchange: bbaa physical=0, stored=present',1.0_real64,0.0_real64
+        nfail=nfail+1
+      endIf
+      if(eriA%hasSpinBlock('baab').and.&
+         .not.eriA%hasSpinBlock('baab',interactionIn='stored')) then
+        write(*,1000) 'access/full-exchange: baab physical=present, stored=0'
+      else
+        write(*,1010) 'access/full-exchange: baab physical=present, stored=0',1.0_real64,0.0_real64
+        nfail=nfail+1
+      endIf
+!
+      blk=eriA%getBlock('bbaa')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=0.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/full-exchange: getBlock(bbaa) physical zero'
+      else
+        write(*,1010) 'access/full-exchange: getBlock(bbaa) physical zero',got,expected; nfail=nfail+1
+      endIf
+      blk=eriA%getBlock('bbaa',interactionIn='stored')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=37.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/full-exchange: getBlock(bbaa,stored) literal betaAlpha'
+      else
+        write(*,1010) 'access/full-exchange: getBlock(bbaa,stored) literal betaAlpha',got,expected; nfail=nfail+1
+      endIf
+      blk=eriA%getBlock('baab')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=37.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/full-exchange: getBlock(baab) maps betaAlpha'
+      else
+        write(*,1010) 'access/full-exchange: getBlock(baab) maps betaAlpha',got,expected; nfail=nfail+1
+      endIf
+      sc=eriA%at(2,1,1,2,spinBlockIn='baab')
+      got=sc%rval(); expected=37.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/full-exchange: at(baab) agrees with getBlock'
+      else
+        write(*,1010) 'access/full-exchange: at(baab) agrees with getBlock',got,expected; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'symm-exchange','spin',tC,tD,tF)
+      if(.not.eriA%hasSpinBlock('bbaa').and.eriA%hasSpinBlock('baab')) then
+        write(*,1000) 'access/symm-exchange: bbaa=0 and baab=present'
+      else
+        write(*,1010) 'access/symm-exchange: bbaa=0 and baab=present',1.0_real64,0.0_real64
+        nfail=nfail+1
+      endIf
+      blk=eriA%getBlock('baab')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=31.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/symm-exchange: getBlock(baab) maps symmetric aabb slot'
+      else
+        write(*,1010) 'access/symm-exchange: getBlock(baab) maps symmetric aabb slot',got,expected; nfail=nfail+1
+      endIf
+      sc=eriA%at(2,1,1,2,spinBlockIn='baab')
+      got=sc%rval(); expected=31.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'access/symm-exchange: at(baab) agrees with getBlock'
+      else
+        write(*,1010) 'access/symm-exchange: at(baab) agrees with getBlock',got,expected; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'full-coulomb','spin',tC,tD,tE,tG)
+      blk=eriA%getBlock('baab',interactionIn='exchange')
+      sc=blk%at(2,1,1,2); got=sc%rval()
+      sc=eriA%at(2,1,1,2,spinBlockIn='baab',interactionIn='exchange')
+      expected=sc%rval()
+      if(abs(got-expected).le.tol.and.eriA%hasSpinBlock('baab',interactionIn='exchange')) then
+        write(*,1000) 'access/full-coulomb: getBlock/at/hasSpinBlock exchange consistency'
+      else
+        write(*,1010) 'access/full-coulomb: getBlock/at/hasSpinBlock exchange consistency',got,expected
+        nfail=nfail+1
+      endIf
+!
+!--------------------------------------------------------------------
+!     Tests 175-178: scalar multiplication must preserve the literal
+!     betaAlpha slot used by full spin exchange and inverted storage.
+!--------------------------------------------------------------------
+!
+      call mqc_twoeris_allocate(eriA,'full-exchange','spin',tC,tD,tF,tG)
+      eriC=2.0_real64*eriA
+      blk=eriC%getBlock('bbaa',interactionIn='stored')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=74.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'scalar/full-exchange: literal bbaa preserved'
+      else
+        write(*,1010) 'scalar/full-exchange: literal bbaa preserved',got,expected; nfail=nfail+1
+      endIf
+      blk=eriC%getBlock('baab')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=74.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'scalar/full-exchange: physical baab preserved'
+      else
+        write(*,1010) 'scalar/full-exchange: physical baab preserved',got,expected; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'full-inverted','spin',tC,tD,tF,tG)
+      eriC=2.0_real64*eriA
+      blk=eriC%getBlock('bbaa',interactionIn='stored')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=74.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'scalar/full-inverted: literal bbaa preserved'
+      else
+        write(*,1010) 'scalar/full-inverted: literal bbaa preserved',got,expected; nfail=nfail+1
+      endIf
+      blk=eriC%getBlock('baba')
+      sc=blk%at(2,1,1,2); got=sc%rval(); expected=74.0_real64
+      if(abs(got-expected).le.tol) then
+        write(*,1000) 'scalar/full-inverted: physical baba preserved'
+      else
+        write(*,1010) 'scalar/full-inverted: physical baba preserved',got,expected; nfail=nfail+1
+      endIf
+!
+!     Dimension-swap regression: swapping tensor axes 1 and 3 maps
+!     Coulomb <-> exchange while leaving inverted storage invariant.
+      call mqc_twoeris_allocate(eriA,'full-coulomb','spin',tC,tD,tE,tG)
+      blk=eriA%getBlock('aabb')
+      sc=blk%at(2,1,1,2); expected=sc%rval()
+      eriC=eriA%swap(1,3)
+      blk=eriC%getBlock('baab')
+      sc=blk%at(1,1,2,2); got=sc%rval()
+      if(trim(eriC%intType()).eq.'exchange'.and.abs(got-expected).le.tol) then
+        write(*,1000) 'swap(1,3)/spin: coulomb -> exchange'
+      else
+        write(*,1010) 'swap(1,3)/spin: coulomb -> exchange',got,expected; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'full-exchange','spin',tC,tD,tF,tG)
+      eriC=eriA%swap(1,3)
+      if(trim(eriC%intType()).eq.'coulomb') then
+        write(*,1000) 'swap(1,3)/spin: exchange -> coulomb'
+      else
+        write(*,1010) 'swap(1,3)/spin: exchange -> coulomb',1.0_real64,0.0_real64; nfail=nfail+1
+      endIf
+!
+      call mqc_twoeris_allocate(eriA,'full-inverted','spin',tC,tD,tF,tG)
+      eriC=eriA%swap(1,3)
+      if(trim(eriC%intType()).eq.'inverted') then
+        write(*,1000) 'swap(1,3)/spin: inverted -> inverted'
+      else
+        write(*,1010) 'swap(1,3)/spin: inverted -> inverted',1.0_real64,0.0_real64; nfail=nfail+1
+      endIf
+!
       write(*,9000) nfail
       if(nfail.gt.0) stop 1
 
       contains
 
-      subroutine report_partner(storedLabel,partnerLabel,order,doConjg)
+      subroutine report_partner(storedLabel,partnerLabel,order,doConjg,ePartial,eTrans,tolIn,nFailIO)
+!       Compares a stored spin block with its symmetry partner in the partial-contraction
+!       and TwoERI_Trans results; PASS when both differences are within tolIn.
         character(len=4),intent(in)::storedLabel,partnerLabel
         integer,dimension(4),intent(in)::order
         logical,intent(in)::doConjg
+        type(mqc_twoERIs),intent(in)::ePartial,eTrans
+        real(kind=real64),intent(in)::tolIn
+        integer,intent(inout)::nFailIO
         type(mqc_r4tensor)::storedBlock,partnerBlock
         type(mqc_scalar)::storedScalar,partnerScalar
         integer::i1,i2,i3,i4
         integer,dimension(4)::idx
         complex(kind=real64)::storedValue,partnerValue
+        real(kind=real64)::pairPartial,pairTrans
 
-        storedBlock=eriPartial%getBlock(storedLabel)
-        partnerBlock=eriPartial%getBlock(partnerLabel)
-        partialPairError=0.0_real64
+        storedBlock=ePartial%getBlock(storedLabel)
+        partnerBlock=ePartial%getBlock(partnerLabel)
+        pairPartial=0.0
         do i1=1,size(partnerBlock,1); do i2=1,size(partnerBlock,2)
           do i3=1,size(partnerBlock,3); do i4=1,size(partnerBlock,4)
             idx=[i1,i2,i3,i4]
@@ -3953,13 +4590,13 @@
             storedValue=storedScalar%cval()
             if(doConjg) storedValue=conjg(storedValue)
             partnerValue=partnerScalar%cval()
-            partialPairError=max(partialPairError,abs(storedValue-partnerValue))
+            pairPartial=max(pairPartial,abs(storedValue-partnerValue))
           end do; end do
         end do; end do
 
-        storedBlock=eriTrans%getBlock(storedLabel)
-        partnerBlock=eriTrans%getBlock(partnerLabel)
-        transPairError=0.0_real64
+        storedBlock=eTrans%getBlock(storedLabel)
+        partnerBlock=eTrans%getBlock(partnerLabel)
+        pairTrans=0.0
         do i1=1,size(partnerBlock,1); do i2=1,size(partnerBlock,2)
           do i3=1,size(partnerBlock,3); do i4=1,size(partnerBlock,4)
             idx=[i1,i2,i3,i4]
@@ -3969,12 +4606,16 @@
             storedValue=storedScalar%cval()
             if(doConjg) storedValue=conjg(storedValue)
             partnerValue=partnerScalar%cval()
-            transPairError=max(transPairError,abs(storedValue-partnerValue))
+            pairTrans=max(pairTrans,abs(storedValue-partnerValue))
           end do; end do
         end do; end do
-        write(*,'(1X,A,1X,A4,A,A4,2(A,ES14.6))') 'real-general symmetry',&
-          storedLabel,' -> ',partnerLabel,' partial=',partialPairError,&
-          ' TwoERI_Trans=',transPairError
+        if(pairPartial.le.tolIn.and.pairTrans.le.tolIn) then
+          write(*,'(1X,A,1X,A4,A,A4)') 'PASS  real-general symmetry',storedLabel,' -> ',partnerLabel
+        else
+          write(*,'(1X,A,1X,A4,A,A4,2(A,ES14.6))') 'FAIL  real-general symmetry',&
+            storedLabel,' -> ',partnerLabel,' partial=',pairPartial,' TwoERI_Trans=',pairTrans
+          nFailIO=nFailIO+1
+        end if
       end subroutine report_partner
 !
       end program unitTest_twoERIs

@@ -3660,7 +3660,7 @@
         case(2)
           nDim = SIZE(mqcVariableOut%realArray)
           do i = 1,nDim
-            if(ABS(mqcVariableOut%realArray(i)).gt.MQC_small)  &
+            if(mqcVariableOut%realArray(i).ne.mqc_float(0))  &
               mqcVariableOut%realArray(i) = mqcVariableOut%realArray(i)**intPower
           endDo
         case(3)

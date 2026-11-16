@@ -50,7 +50,7 @@
 !
 !     Define Types and Classes.
 !
-      use iso_fortran_env, only: int64, real64
+      use iso_fortran_env, only: int32, int64, real64
       implicit none
       real(kind=real64),public,parameter::angPBohr=0.52917706d0                                                          ! Angstom per Bohr
       real(kind=real64),public,parameter::kGPAMU=1.660538921d-27                                                         ! Kilograms per atomic mass unit
@@ -72,6 +72,13 @@
       real(kind=real64),public,parameter::eMPKG = 4.35974434d-18*10000.0d0/(2.99792458d10*1.0d0/137.035999074d0)**2      ! Electron mass in Kg
       real(kind=real64),public,parameter::pi = 4.0d0 * ATan(1.0)                                                         ! Pi
       real(kind=real64),public,parameter::MQC_small = 1.0d-6                                                             ! 10^-6, used as a threshold for near zero.
+      real(kind=real64),public,protected::MQC_very_small = 1.0d-12                                                       ! 10^-12, threshold for near zero; set with mqc_set_very_small.
+      character(len=8),public,protected::MQC_pinv_eigensolver = 'qr'                                                     ! eigensolver used by MQC_Matrix_MPInv: 'qr' (xSPEV/xHPEV) or 'dc' (divide and conquer); set with mqc_set_pinv_eigensolver.
+#ifdef MQC_BLAS_ILP64
+      integer,public,parameter::MQC_BlasInt = int64                                                                     ! integer kind of BLAS/LAPACK arguments (ILP64 library)
+#else
+      integer,public,parameter::MQC_BlasInt = int32                                                                     ! integer kind of BLAS/LAPACK arguments (LP64 library)
+#endif
       complex(kind=real64),public,parameter::im = cmplx(0.0,1.0)                                                         ! Imaginary number.
 !
 !----------------------------------------------------------------
@@ -374,6 +381,45 @@
       end subroutine mqc_version_print
 !
 !PROCEDURE mqc_error
+!PROCEDURE mqc_set_very_small
+      subroutine mqc_set_very_small(thresh)
+!
+!     This subroutine sets MQC_very_small, the threshold below which an element is
+!     treated as exactly zero when deciding whether a spin block must exist (e.g. in
+!     mqc_integral_put). Call it once, before any OpenMP parallel region.
+!
+      implicit none
+      real(kind=real64),intent(in)::thresh
+!
+      MQC_very_small = thresh
+!
+      end subroutine mqc_set_very_small
+!
+!
+!PROCEDURE mqc_set_pinv_eigensolver
+      subroutine mqc_set_pinv_eigensolver(solver)
+!
+!     This subroutine sets MQC_pinv_eigensolver, the eigensolver that
+!     MQC_Matrix_MPInv passes to MQC_Matrix_Diagonalize for Hermitian and
+!     anti-Hermitian matrices: 'qr' (packed xSPEV/xHPEV, the default) or 'dc'
+!     (divide and conquer: xSYEVD/xHEEVD for full storage, xSPEVD/xHPEVD for packed
+!     storage). Other diagonalizations are not affected. Call it once, before any
+!     OpenMP parallel region.
+!
+      implicit none
+      character(len=*),intent(in)::solver
+      character(len=8)::mySolver
+!
+      call string_change_case(solver,'l',mySolver)
+      select case(trim(mySolver))
+      case('qr','dc')
+        MQC_pinv_eigensolver = mySolver
+      case default
+        call mqc_error_A('mqc_set_pinv_eigensolver: unknown eigensolver (qr or dc)',6,'solver',solver)
+      end select
+!
+      end subroutine mqc_set_pinv_eigensolver
+!
       Subroutine mqc_error(Message,IOut)
 !
 !     This subroutine is used to kill a MQC job. The character string in

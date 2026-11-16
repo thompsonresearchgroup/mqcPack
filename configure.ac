@@ -143,6 +143,13 @@ AS_CASE([$FC],
   ],
   [AC_MSG_ERROR([unsupported Fortran compiler: $FC])])
 
+AC_ARG_ENABLE([blas-ilp64],
+  [AS_HELP_STRING([--enable-blas-ilp64],
+    [link a BLAS/LAPACK with 64-bit integers (ILP64); default is 32-bit (LP64)])],
+  [mqc_blas_ilp64=$enableval], [mqc_blas_ilp64=no])
+AS_IF([test "x$mqc_blas_ilp64" = xyes],
+  [MQC_CPPFLAGS="$MQC_CPPFLAGS -DMQC_BLAS_ILP64"])
+
 AS_IF([test "x$mqc_with_gauopen" = xyes], [
   MQC_CPPFLAGS="$MQC_CPPFLAGS -DMATRIXFILE"
   AS_CASE([$MQC_GAUOPEN_API],

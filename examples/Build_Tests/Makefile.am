@@ -10,9 +10,22 @@ CLEANFILES = ../algebra2/outfile ../fullci/outfile ../hartreefock/outfile \
   ../CreateDataList/outfile
 
 TESTS = ../algebra2/testit.sh unitTest01 unitTest02 unitTestIterative unitTest08 unitTest09 \
-  ../../unitTests/src/testit.sh
+  ../../unitTests/src/testit.sh ../../unitTests/src/unitTest_NEF_collapse_expand \
+  ../../unitTests/src/unitTest_NEF_set_algebra \
+  ../../unitTests/src/unitTest_NEF_r4_full_transform \
+  ../../unitTests/src/unitTest_NEF_twoeris_r4_transform \
+  ../../unitTests/src/unitTest_NEF_empty_space_transform \
+  ../../unitTests/src/unitTest_NEF_merge_unmerge_roundtrip \
+  ../../unitTests/src/unitTest_symmetry ../stressTest/testit.sh
 check_PROGRAMS = ../algebra2/algebra_fun unitTest01 unitTest02 unitTestIterative unitTest08 \
-  unitTest09 ../../unitTests/src/unitTest_twoERIs
+  unitTest09 ../../unitTests/src/unitTest_twoERIs ../../unitTests/src/unitTest_NEF_collapse_expand \
+  ../../unitTests/src/unitTest_NEF_set_algebra \
+  ../../unitTests/src/unitTest_NEF_r4_full_transform \
+  ../../unitTests/src/unitTest_NEF_twoeris_r4_transform \
+  ../../unitTests/src/unitTest_NEF_empty_space_transform \
+  ../../unitTests/src/unitTest_NEF_merge_unmerge_roundtrip \
+  ../../unitTests/src/unitTest_symmetry ../stressTest/stress_trans \
+  ../stressTest/stress_twoeri
 
 if WITH_GAUOPEN
 TESTS += ../fullci/testit.sh ../hartreefock/testit.sh \
@@ -48,7 +61,23 @@ unitTestIterative_SOURCES = ../../unitTests/src/unitTestIterative.f03
 unitTest08_SOURCES = ../../unitTests/src/unitTest08.f03
 unitTest09_SOURCES = ../../unitTests/src/unitTest09.f03
 ______unitTests_src_unitTest_twoERIs_SOURCES = \
-  ../../unitTests/src/unitTest_twoERIs.F03
+  ../../unitTests/src/unitTest_twoERIs.f03
+______unitTests_src_unitTest_NEF_collapse_expand_SOURCES = \
+  ../../unitTests/src/unitTest_NEF_collapse_expand.F03
+______unitTests_src_unitTest_NEF_set_algebra_SOURCES = \
+  ../../unitTests/src/unitTest_NEF_set_algebra.f03
+______unitTests_src_unitTest_NEF_r4_full_transform_SOURCES = \
+  ../../unitTests/src/unitTest_NEF_r4_full_transform.f03
+______unitTests_src_unitTest_NEF_twoeris_r4_transform_SOURCES = \
+  ../../unitTests/src/unitTest_NEF_twoeris_r4_transform.f03
+______unitTests_src_unitTest_NEF_empty_space_transform_SOURCES = \
+  ../../unitTests/src/unitTest_NEF_empty_space_transform.f03
+______unitTests_src_unitTest_NEF_merge_unmerge_roundtrip_SOURCES = \
+  ../../unitTests/src/unitTest_NEF_merge_unmerge_roundtrip.f03
+______unitTests_src_unitTest_symmetry_SOURCES = \
+  ../../unitTests/src/unitTest_symmetry.f03
+___stressTest_stress_trans_SOURCES = ../stressTest/stress_trans.f03
+___stressTest_stress_twoeri_SOURCES = ../stressTest/stress_twoeri.f03
 EXTRA_DIST = test_no_gauopen_matrixfile.sh \
   test_public_gauopen_character.sh ../algebra2/testit.sh \
   ../algebra2/OUTPUT/out ../fullci/testit.sh ../fullci/OUTPUT/out \
@@ -57,7 +86,9 @@ EXTRA_DIST = test_no_gauopen_matrixfile.sh \
   ../../unitTests/src/OUTPUT/out test_gaussian_createdatalist.sh \
   ../CreateDataList/testit_runGau.sh ../CreateDataList/OUTPUT/out_runGau \
   ../data/Gaussian_input/test.com ../data/Gaussian_input/test1071.com \
-  ../data/Gaussian_input/test1129.com ../data/Gaussian_input/test1132.com
+  ../data/Gaussian_input/test1129.com ../data/Gaussian_input/test1132.com \
+  ../stressTest/run_stress.sh \
+  ../stressTest/run_twoeri.sh ../stressTest/testit.sh
 
 LDADD = ../../src/libmqc.a ${MQC_LAPACK} ${MQC_BLAS}
 

@@ -33740,13 +33740,13 @@
         If(Present(OnePartInts)) then
           If(OnePartInts%type().eq.'space'.or.(Spin(1).eq.0.and.Spin(2).eq.0)) then
 !            Call MQC_Print(Sgn*OnePartInts%Alpha%at(Orbs(1),Orbs(2)),iOut,'1 and 2 both alpha, adding core:')
-            MatEl = MatEl + Sgn*OnePartInts%Alpha%at(Orbs(1),Orbs(2)) 
+            If(OnePartInts%hasAlpha()) MatEl = MatEl + Sgn*OnePartInts%Alpha%at(Orbs(1),Orbs(2)) 
           ElseIf(Spin(1).eq.1.and.Spin(2).eq.1) then
 !            Call MQC_Print(Sgn*OnePartInts%Beta%at(Orbs(1),Orbs(2)),iOut,'1 and 2 both beta, adding core:')
-            MatEl = MatEl + Sgn*OnePartInts%Beta%at(Orbs(1),Orbs(2))
+            If(OnePartInts%hasBeta()) MatEl = MatEl + Sgn*OnePartInts%Beta%at(Orbs(1),Orbs(2))
           ElseIf(Spin(1).eq.0.and.Spin(2).eq.1) then
 !            Call MQC_Print(Sgn*OnePartInts%AlphaBeta%at(Orbs(1),Orbs(2)),iOut,'1 alpha and 2 beta, adding core:')
-            MatEl = MatEl + Sgn*OnePartInts%AlphaBeta%at(Orbs(1),Orbs(2))
+            If(OnePartInts%hasAlphaBeta()) MatEl = MatEl + Sgn*OnePartInts%AlphaBeta%at(Orbs(1),Orbs(2))
           ElseIf(Spin(1).eq.1.and.Spin(2).eq.0) then
 !            Call MQC_Print(Sgn*OnePartInts%BetaAlpha%at(Orbs(1),Orbs(2)),iOut,'1 beta and 2 alpha, adding core:')
             MatEl = MatEl + Sgn*OnePartInts%baElement(Orbs(1),Orbs(2))
@@ -33766,16 +33766,16 @@
             If(BTest(Alpha_String_1,IPos)) then
 !              Write(IOut,*) 'Alpha:',IPos+1
 !              Call MQC_Print(OnePartInts%Alpha%at(IPos+1,IPos+1),IOut,'(I|h|I)')
-              MatEl = MatEl + OnePartInts%Alpha%at(IPos+1,IPos+1)
+              If(OnePartInts%hasAlpha()) MatEl = MatEl + OnePartInts%Alpha%at(IPos+1,IPos+1)
             EndIf
             If(BTest(Beta_String_1,IPos)) then
 !              Write(IOut,*) 'Beta:',IPos+1
               If(OnePartInts%type().eq.'spin'.or.OnePartInts%type().eq.'general') then
 !                Call MQC_Print(OnePartInts%Beta%at(IPos+1,IPos+1),IOut,'(I|h|I)')
-                MatEl = MatEl + OnePartInts%Beta%at(IPos+1,IPos+1)
+                If(OnePartInts%hasBeta()) MatEl = MatEl + OnePartInts%Beta%at(IPos+1,IPos+1)
               Else
 !                Call MQC_Print(OnePartInts%Alpha%at(IPos+1,IPos+1),IOut,'(I|h|I)')
-                MatEl = MatEl + OnePartInts%Alpha%at(IPos+1,IPos+1)
+                If(OnePartInts%hasAlpha()) MatEl = MatEl + OnePartInts%Alpha%at(IPos+1,IPos+1)
               EndIf
             EndIf
           EndDo

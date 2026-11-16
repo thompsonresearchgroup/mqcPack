@@ -169,12 +169,15 @@ Contains
           ProjectedVectors(j,i)=ProjectedEigenvectors%At(j,i)
         EndDo
       EndDo
-      RitzVectors=MatMul(Basis(:,1:SubspaceSize),&
-        ProjectedVectors(1:SubspaceSize,1:RequestedRoots))
-      OperatorRitz=MatMul(OperatorBasis(:,1:SubspaceSize),&
-        ProjectedVectors(1:SubspaceSize,1:RequestedRoots))
-      MetricRitz=MatMul(MetricBasis(:,1:SubspaceSize),&
-        ProjectedVectors(1:SubspaceSize,1:RequestedRoots))
+      Call MQC_Iterative_Gemm('N',Basis(:,1:SubspaceSize),&
+        ProjectedVectors(1:SubspaceSize,1:RequestedRoots),RitzVectors,&
+        (1.0_real64,0.0_real64),(0.0_real64,0.0_real64))
+      Call MQC_Iterative_Gemm('N',OperatorBasis(:,1:SubspaceSize),&
+        ProjectedVectors(1:SubspaceSize,1:RequestedRoots),OperatorRitz,&
+        (1.0_real64,0.0_real64),(0.0_real64,0.0_real64))
+      Call MQC_Iterative_Gemm('N',MetricBasis(:,1:SubspaceSize),&
+        ProjectedVectors(1:SubspaceSize,1:RequestedRoots),MetricRitz,&
+        (1.0_real64,0.0_real64),(0.0_real64,0.0_real64))
       CorrectionCount=0
       Do k=1,RequestedRoots
         Residuals(:,k)=OperatorRitz(:,k)-ProjectedValues(k)*MetricRitz(:,k)
@@ -195,15 +198,11 @@ Contains
           EndIf
           WorkVector(i)=WorkVector(i)/Denominator
         EndDo
-        Call MQC_Iterative_Orthogonalize(WorkVector,Basis(:,1:SubspaceSize))
-        If(CorrectionCount.gt.0) Call MQC_Iterative_Orthogonalize(WorkVector,&
-          Corrections(:,1:CorrectionCount))
-        NormValue=Sqrt(Real(Dot_Product(WorkVector,WorkVector),Kind=real64))
-        If(NormValue.gt.1.0e-12_real64) Then
-          CorrectionCount=CorrectionCount+1
-          Corrections(:,CorrectionCount)=WorkVector/NormValue
-        EndIf
+        CorrectionCount=CorrectionCount+1
+        Corrections(:,CorrectionCount)=WorkVector
       EndDo
+      If(CorrectionCount.gt.0) Call MQC_Iterative_Block_Orthogonalize(&
+        Corrections(:,1:CorrectionCount),CorrectionCount,Basis(:,1:SubspaceSize))
       AllConverged=All(RootResiduals.le.ConvergenceTolerance)
       If(AllConverged.or.CorrectionCount.eq.0) Exit
 
@@ -212,18 +211,11 @@ Contains
         Basis(:,1:RequestedRoots)=RitzVectors
         SubspaceSize=RequestedRoots
         Call MQC_Iterative_Orthonormalize_Block(Basis,SubspaceSize)
-        NewCount=0
-        Do k=1,Min(CorrectionCount,MaxSubspace-SubspaceSize)
-          WorkVector=Corrections(:,k)
-          Call MQC_Iterative_Orthogonalize(WorkVector,Basis(:,1:SubspaceSize))
-          If(NewCount.gt.0) Call MQC_Iterative_Orthogonalize(WorkVector,&
-            Basis(:,SubspaceSize+1:SubspaceSize+NewCount))
-          NormValue=Sqrt(Real(Dot_Product(WorkVector,WorkVector),Kind=real64))
-          If(NormValue.gt.1.0e-12_real64) Then
-            NewCount=NewCount+1
-            Basis(:,SubspaceSize+NewCount)=WorkVector/NormValue
-          EndIf
-        EndDo
+        NewCount=Min(CorrectionCount,MaxSubspace-SubspaceSize)
+        Basis(:,SubspaceSize+1:SubspaceSize+NewCount)=Corrections(:,1:NewCount)
+        Call MQC_Iterative_Block_Orthogonalize(&
+          Basis(:,SubspaceSize+1:SubspaceSize+NewCount),NewCount,&
+          Basis(:,1:SubspaceSize))
         SubspaceSize=SubspaceSize+NewCount
         Call Operator%Apply(Basis(:,1:SubspaceSize),OperatorBasis(:,1:SubspaceSize))
         If(Present(MetricOperator)) Then
@@ -380,20 +372,15 @@ Contains
   Subroutine MQC_Iterative_Projected_Matrix(Basis,OperatorBasis,ProjectedMatrix)
     Complex(Kind=real64),Intent(In)::Basis(:,:),OperatorBasis(:,:)
     Type(MQC_Matrix),Intent(Out)::ProjectedMatrix
-    Complex(Kind=real64)::Element
-    Integer(Kind=int64)::i,j,Dimension
+    Complex(Kind=real64),Allocatable::Projected(:,:)
+    Integer(Kind=int64)::Dimension
 
     Dimension=Size(Basis,2)
-    Call ProjectedMatrix%Init(Dimension,Dimension,&
-      Scalar=(0.0_real64,0.0_real64))
-    Do j=1,Dimension
-      Do i=j,Dimension
-        Element=Dot_Product(Basis(:,i),OperatorBasis(:,j))
-        If(i.eq.j) Element=Cmplx(Real(Element,Kind=real64),0.0_real64,Kind=real64)
-        Call ProjectedMatrix%Put(Element,i,j)
-        Call ProjectedMatrix%Put(Conjg(Element),j,i)
-      EndDo
-    EndDo
+    Allocate(Projected(Dimension,Dimension))
+    Call MQC_Iterative_Gemm('C',Basis,OperatorBasis,Projected,&
+      (1.0_real64,0.0_real64),(0.0_real64,0.0_real64))
+    Projected=0.5_real64*(Projected+Conjg(Transpose(Projected)))
+    ProjectedMatrix=Projected
   End Subroutine MQC_Iterative_Projected_Matrix
 
 !> Orthonormalize a block and discard numerically dependent columns.
@@ -426,15 +413,69 @@ Contains
   Subroutine MQC_Iterative_Orthogonalize(Vector,Basis)
     Complex(Kind=real64),Intent(InOut)::Vector(:)
     Complex(Kind=real64),Intent(In)::Basis(:,:)
-    Complex(Kind=real64)::Overlap
-    Integer(Kind=int64)::Pass,i
+    Complex(Kind=real64),Allocatable::Overlap(:)
+    Integer(Kind=int32)::N,M
+    Integer::Pass
+    External::zgemv
 
+    N=Int(Size(Basis,1),Kind=int32)
+    M=Int(Size(Basis,2),Kind=int32)
+    If(M.eq.0) Return
+    Allocate(Overlap(M))
     Do Pass=1,2
-      Do i=1,Size(Basis,2)
-        Overlap=Dot_Product(Basis(:,i),Vector)
-        Vector=Vector-Basis(:,i)*Overlap
-      EndDo
+      Call zgemv('C',N,M,(1.0_real64,0.0_real64),Basis,N,Vector,1_int32,&
+        (0.0_real64,0.0_real64),Overlap,1_int32)
+      Call zgemv('N',N,M,(-1.0_real64,0.0_real64),Basis,N,Overlap,1_int32,&
+        (1.0_real64,0.0_real64),Vector,1_int32)
     EndDo
   End Subroutine MQC_Iterative_Orthogonalize
+
+!> Orthogonalize a block of vectors against an orthonormal basis (two
+!> classical Gram-Schmidt passes with ZGEMM), then orthonormalize the block
+!> and drop dependent columns.  Kept columns are packed to the front.
+  Subroutine MQC_Iterative_Block_Orthogonalize(Vectors,NumberOfVectors,Basis)
+    Complex(Kind=real64),Intent(InOut)::Vectors(:,:)
+    Integer(Kind=int64),Intent(InOut)::NumberOfVectors
+    Complex(Kind=real64),Intent(In)::Basis(:,:)
+    Complex(Kind=real64),Allocatable::Overlap(:,:)
+    Integer::Pass
+
+    If(Size(Basis,2).gt.0.and.NumberOfVectors.gt.0) Then
+      Allocate(Overlap(Size(Basis,2),NumberOfVectors))
+      Do Pass=1,2
+        Call MQC_Iterative_Gemm('C',Basis,Vectors(:,1:NumberOfVectors),Overlap,&
+          (1.0_real64,0.0_real64),(0.0_real64,0.0_real64))
+        Call MQC_Iterative_Gemm('N',Basis,Overlap,Vectors(:,1:NumberOfVectors),&
+          (-1.0_real64,0.0_real64),(1.0_real64,0.0_real64))
+      EndDo
+    EndIf
+    Call MQC_Iterative_Orthonormalize_Block(Vectors,NumberOfVectors)
+  End Subroutine MQC_Iterative_Block_Orthogonalize
+
+!> C = Alpha*op(A)*B + Beta*C with BLAS ZGEMM, op(A) = A ('N') or A^H ('C').
+  Subroutine MQC_Iterative_Gemm(TransA,A,B,C,Alpha,Beta)
+    Character(Len=1),Intent(In)::TransA
+    Complex(Kind=real64),Intent(In)::A(:,:),B(:,:),Alpha,Beta
+    Complex(Kind=real64),Intent(InOut)::C(:,:)
+    Integer(Kind=int32)::M,N,K,LDA,LDB,LDC
+    External::zgemm
+
+    M=Int(Size(C,1),Kind=int32)
+    N=Int(Size(C,2),Kind=int32)
+    If(TransA.eq.'N') Then
+      K=Int(Size(A,2),Kind=int32)
+    Else
+      K=Int(Size(A,1),Kind=int32)
+    EndIf
+    If(M.eq.0.or.N.eq.0) Return
+    If(K.eq.0) Then
+      C=Beta*C
+      Return
+    EndIf
+    LDA=Int(Max(1_int64,Int(Size(A,1),Kind=int64)),Kind=int32)
+    LDB=Int(Max(1_int64,Int(Size(B,1),Kind=int64)),Kind=int32)
+    LDC=Int(Max(1_int64,Int(Size(C,1),Kind=int64)),Kind=int32)
+    Call zgemm(TransA,'N',M,N,K,Alpha,A,LDA,B,LDB,Beta,C,LDC)
+  End Subroutine MQC_Iterative_Gemm
 
 End Submodule MQC_Algebra_Iterative

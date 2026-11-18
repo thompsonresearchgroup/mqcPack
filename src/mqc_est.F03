@@ -416,6 +416,7 @@
         procedure, public::isZeroBlock => mqc_eris_is_zero_block
 !>      \brief <b> Return a spin block of MQC_TwoERIs object as an MQC rank-4 tensor</b>
         procedure, public::getBlock => mqc_2eris_output_block
+        procedure, public::ref => mqc_twoERIs_ref
         procedure, public::type => mqc_eris_array_type
         procedure, public::intType => mqc_eris_interaction_type
         procedure, public::storType => mqc_eris_storage_type
@@ -494,7 +495,8 @@
         mqc_eri_eri_contraction_core,mqc_eri_eri_partial_contraction_core,&
         mqc_eri_eri_partial_contraction_2eri_core,TwoERI_Trans_Full_Core,&
         mqc_twoeris_is_space_doublebar,mqc_twoeris_space_to_spin,mqc_twoeris_to_general,&
-        mqc_twoeris_needs_general,mqc_twoeris_native_pair,mqc_integral_compact
+        mqc_twoeris_needs_general,mqc_twoeris_native_pair,mqc_integral_compact,&
+        mqc_eriset_full_ref
 !
       Interface Dagger
         Module Procedure MQC_Integral_Conjugate_Transpose
@@ -7861,7 +7863,295 @@
       end select
       endIf
 !
-      end function mqc_2ERIs_output_block  
+      end function mqc_2ERIs_output_block
+!
+!     PROCEDURE MQC_TwoERIs_Ref
+!
+!>    \brief <b> MQC_TwoERIs_Ref (ref) returns a read-only reference to the stored
+!>    MQC_R4Tensor member that holds a spin block of an MQC_TwoERIs variable, with
+!>    the index order and conjugation that turn it into that block. </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    For the interaction type of the object (ERIs%intType()), the block that
+!>    getBlock(BlockName) returns equals R4Ptr%permute(Order,DoConjg):
+!>    - literal stored block: R4Ptr => that member, Order = [1,2,3,4], DoConjg false;
+!>    - implied block (space/regular/Raffenetti types read from alpha; symm-storage
+!>      mirrors ^3412, (^2143)*, (^4321)*): R4Ptr => the stored member it is the
+!>      image of, with that Order and DoConjg;
+!>    - no stored image (getBlock gives a zero block): R4Ptr => null(); use getBlock.
+!>    'full' and reinterpreted interactions are not available: use getBlock.
+!>    Every target member is tested with hasSpinBlock(...,interactionIn='stored'),
+!>    so an associated pointer always points to an allocated member.
+!>    ref avoids the copy of getBlock in hot loops. ERIs must have the TARGET
+!>    attribute; the pointer is valid only while the caller runs and ERIs is not
+!>    modified. Never write through it.
+!>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] ERIs
+!>    \verbatim
+!>        ERIs is class(mqc_twoeris), target.
+!>    \endverbatim
+!>
+!>    \param[in] BlockName
+!>    \verbatim
+!>        BlockName is character(len=*). Any getBlock spin-block name ('aaaa',
+!>        'alpha', 'aabb', 'alpha-beta', ..., 'abbb'); 'full' is an error.
+!>    \endverbatim
+!>
+!>    \param[out] Order
+!>    \verbatim
+!>        Order is Integer(kind=int64),Dimension(4),optional. Index order of the
+!>        view (as in MQC_R4Tensor_Permute).
+!>    \endverbatim
+!>
+!>    \param[out] DoConjg
+!>    \verbatim
+!>        DoConjg is Logical,optional. Conjugate the viewed values.
+!>        Without Order and DoConjg, a block that needs a non-identity view is an
+!>        error.
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      function mqc_twoERIs_ref(eris,blockName,order,doConjg) result(R4Ptr)
+!
+      implicit none
+      class(mqc_twoeris),intent(in),target::eris
+      character(len=*),intent(in)::blockName
+      integer(kind=int64),dimension(4),intent(out),optional::order
+      logical,intent(out),optional::doConjg
+      type(mqc_r4tensor),pointer::R4Ptr
+      character(len=64)::myBlockName,eType,iType,sType
+      integer(kind=int64),dimension(4)::myOrder
+      logical::myConjg,spaceLike,notGeneral
+!
+      call string_change_case(blockName,'l',myBlockName)
+      eType = eris%type()
+      iType = eris%intType()
+      sType = eris%storType()
+      spaceLike = eType.eq.'regular'.or.eType.eq.'raffenetti1'.or.eType.eq.'raffenetti2'.or. &
+        eType.eq.'raffenetti3'.or.eType.eq.'space'
+      notGeneral = eType.ne.'general'
+      R4Ptr => null()
+      myOrder = [1,2,3,4]
+      myConjg = .false.
+!
+!     Branches follow mqc_2ERIs_output_block (default interaction) one to one; an
+!     empty branch is a zero block there.
+      select case(myBlockName)
+      case('alpha','aaaa','alpha-alpha')
+        if(eris%hasSpinBlock('aaaa',interactionIn='stored')) R4Ptr => eris%alpha
+      case('beta','bbbb','beta-beta')
+        if(spaceLike) then
+          if(eris%hasSpinBlock('aaaa',interactionIn='stored')) R4Ptr => eris%alpha
+        elseIf(eris%hasSpinBlock('bbbb',interactionIn='stored')) then
+          R4Ptr => eris%beta
+        endIf
+      case('alpha-beta','alphabeta','aabb')
+        if(notGeneral.and.(iType.eq.'exchange'.or.iType.eq.'inverted')) then
+!         zero block
+        elseIf(eType.eq.'spin'.or.eType.eq.'general'.or. &
+          (eType.eq.'space'.and.iType.eq.'doublebar')) then
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) R4Ptr => eris%alphaBeta
+        elseIf(spaceLike) then
+          if(eris%hasSpinBlock('aaaa',interactionIn='stored')) R4Ptr => eris%alpha
+        elseIf(eris%hasSpinBlock('aabb',interactionIn='stored')) then
+          R4Ptr => eris%alphaBeta
+        endIf
+      case('beta-alpha','betaalpha','bbaa')
+        if(notGeneral.and.(iType.eq.'exchange'.or.iType.eq.'inverted')) then
+!         zero block
+        elseIf(eType.eq.'spin'.or.eType.eq.'general'.or. &
+          (eType.eq.'space'.and.iType.eq.'doublebar')) then
+          if(eType.eq.'space') then
+            if(eris%hasSpinBlock('aabb',interactionIn='stored')) R4Ptr => eris%alphaBeta
+          elseIf(sType.eq.'symm') then
+            if(eris%hasSpinBlock('aabb',interactionIn='stored')) then
+              R4Ptr => eris%alphaBeta
+              myOrder = [3,4,1,2]
+            endIf
+          elseIf(sType.eq.'full') then
+            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) R4Ptr => eris%betaAlpha
+          endIf
+        elseIf(spaceLike) then
+          if(eris%hasSpinBlock('aaaa',interactionIn='stored')) R4Ptr => eris%alpha
+        elseIf(eris%hasSpinBlock('bbaa',interactionIn='stored')) then
+          R4Ptr => eris%betaAlpha
+        endIf
+      case('abab')
+        if(notGeneral.and.(iType.eq.'coulomb'.or.iType.eq.'exchange'.or. &
+          iType.eq.'doublebar')) then
+!         zero block
+        elseIf(spaceLike) then
+          if(eris%hasSpinBlock('aaaa',interactionIn='stored')) R4Ptr => eris%alpha
+        elseIf(eType.eq.'spin') then
+          if(iType.eq.'ms'.and.eris%hasSpinBlock('abab',interactionIn='stored')) then
+            R4Ptr => eris%abab
+          elseIf(eris%hasSpinBlock('aabb',interactionIn='stored')) then
+            R4Ptr => eris%alphaBeta
+          endIf
+        elseIf(eris%hasSpinBlock('abab',interactionIn='stored')) then
+          R4Ptr => eris%abab
+        endIf
+      case('abba')
+        if(notGeneral.and.(iType.eq.'coulomb'.or.iType.eq.'inverted')) then
+!         zero block
+        elseIf(eType.eq.'regular'.or.eType.eq.'raffenetti1'.or.eType.eq.'raffenetti2'.or. &
+          eType.eq.'raffenetti3'.or.(eType.eq.'space'.and.iType.ne.'doublebar')) then
+          if(eris%hasSpinBlock('aaaa',interactionIn='stored')) R4Ptr => eris%alpha
+        elseIf(eType.eq.'spin'.and.iType.eq.'exchange') then
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) R4Ptr => eris%alphaBeta
+        elseIf(eris%hasSpinBlock('abba',interactionIn='stored')) then
+          R4Ptr => eris%abba
+        endIf
+      case('baab')
+        if(notGeneral.and.(iType.eq.'coulomb'.or.iType.eq.'inverted')) then
+!         zero block
+        elseIf(eType.eq.'regular'.or.eType.eq.'raffenetti1'.or.eType.eq.'raffenetti2'.or. &
+          eType.eq.'raffenetti3'.or.(eType.eq.'space'.and.iType.ne.'doublebar')) then
+          if(eris%hasSpinBlock('aaaa',interactionIn='stored')) R4Ptr => eris%alpha
+        elseIf(eType.eq.'spin'.and.iType.eq.'exchange') then
+          if(sType.eq.'full') then
+            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) R4Ptr => eris%betaAlpha
+          elseIf(sType.eq.'symm') then
+            if(eris%hasSpinBlock('aabb',interactionIn='stored')) then
+              R4Ptr => eris%alphaBeta
+              myOrder = [3,4,1,2]
+            endIf
+          endIf
+        elseIf(eType.eq.'space'.and.iType.eq.'doublebar') then
+          if(eris%hasSpinBlock('abba',interactionIn='stored')) R4Ptr => eris%abba
+        elseIf(sType.eq.'symm') then
+          if(eris%hasSpinBlock('abba',interactionIn='stored')) then
+            R4Ptr => eris%abba
+            myOrder = [3,4,1,2]
+          endIf
+        elseIf(eris%hasSpinBlock('baab',interactionIn='stored')) then
+          R4Ptr => eris%baab
+        endIf
+      case('baba')
+        if(notGeneral.and.(iType.eq.'coulomb'.or.iType.eq.'exchange'.or. &
+          iType.eq.'doublebar')) then
+!         zero block
+        elseIf(spaceLike) then
+          if(eris%hasSpinBlock('aaaa',interactionIn='stored')) R4Ptr => eris%alpha
+        elseIf(eType.eq.'spin'.and.iType.eq.'inverted') then
+          if(sType.eq.'full') then
+            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) R4Ptr => eris%betaAlpha
+          elseIf(sType.eq.'symm') then
+            if(eris%hasSpinBlock('aabb',interactionIn='stored')) then
+              R4Ptr => eris%alphaBeta
+              myOrder = [2,1,4,3]
+              myConjg = .true.
+            endIf
+          endIf
+        elseIf(eType.eq.'spin'.and.iType.eq.'ms') then
+          if(sType.eq.'symm') then
+            if(eris%hasSpinBlock('abab',interactionIn='stored')) then
+              R4Ptr => eris%abab
+              myOrder = [2,1,4,3]
+              myConjg = .true.
+            endIf
+          elseIf(eris%hasSpinBlock('baba',interactionIn='stored')) then
+            R4Ptr => eris%baba
+          endIf
+        elseIf(sType.eq.'symm') then
+          if(eris%hasSpinBlock('abab',interactionIn='stored')) then
+            R4Ptr => eris%abab
+            myOrder = [2,1,4,3]
+            myConjg = .true.
+          endIf
+        elseIf(eris%hasSpinBlock('baba',interactionIn='stored')) then
+          R4Ptr => eris%baba
+        endIf
+      case('aaab')
+        if(eType.eq.'general'.and.eris%hasSpinBlock('aaab',interactionIn='stored')) &
+          R4Ptr => eris%aaab
+      case('aaba')
+        if(eType.eq.'general'.and.eris%hasSpinBlock('aaba',interactionIn='stored')) then
+          R4Ptr => eris%aaba
+        elseIf(eType.eq.'general'.and.sType.eq.'symm') then
+          if(eris%hasSpinBlock('aaab',interactionIn='stored')) then
+            R4Ptr => eris%aaab
+            myOrder = [2,1,4,3]
+            myConjg = .true.
+          endIf
+        endIf
+      case('abaa')
+        if(eType.eq.'general'.and.eris%hasSpinBlock('abaa',interactionIn='stored')) then
+          R4Ptr => eris%abaa
+        elseIf(eType.eq.'general'.and.sType.eq.'symm') then
+          if(eris%hasSpinBlock('aaab',interactionIn='stored')) then
+            R4Ptr => eris%aaab
+            myOrder = [3,4,1,2]
+          endIf
+        endIf
+      case('baaa')
+        if(eType.eq.'general'.and.eris%hasSpinBlock('baaa',interactionIn='stored')) then
+          R4Ptr => eris%baaa
+        elseIf(eType.eq.'general'.and.sType.eq.'symm') then
+          if(eris%hasSpinBlock('aaab',interactionIn='stored')) then
+!           dagger = permute([4,3,2,1],.true.)
+            R4Ptr => eris%aaab
+            myOrder = [4,3,2,1]
+            myConjg = .true.
+          endIf
+        endIf
+      case('bbba')
+        if(eType.eq.'general'.and.eris%hasSpinBlock('bbba',interactionIn='stored')) then
+          R4Ptr => eris%bbba
+        elseIf(eType.eq.'general'.and.sType.eq.'symm') then
+          if(eris%hasSpinBlock('abbb',interactionIn='stored')) then
+            R4Ptr => eris%abbb
+            myOrder = [4,3,2,1]
+            myConjg = .true.
+          endIf
+        endIf
+      case('bbab')
+        if(eType.eq.'general'.and.eris%hasSpinBlock('bbab',interactionIn='stored')) then
+          R4Ptr => eris%bbab
+        elseIf(eType.eq.'general'.and.sType.eq.'symm') then
+          if(eris%hasSpinBlock('abbb',interactionIn='stored')) then
+            R4Ptr => eris%abbb
+            myOrder = [3,4,1,2]
+          endIf
+        endIf
+      case('babb')
+        if(eType.eq.'general'.and.eris%hasSpinBlock('babb',interactionIn='stored')) then
+          R4Ptr => eris%babb
+        elseIf(eType.eq.'general'.and.sType.eq.'symm') then
+          if(eris%hasSpinBlock('abbb',interactionIn='stored')) then
+            R4Ptr => eris%abbb
+            myOrder = [2,1,4,3]
+            myConjg = .true.
+          endIf
+        endIf
+      case('abbb')
+        if(eType.eq.'general'.and.eris%hasSpinBlock('abbb',interactionIn='stored')) &
+          R4Ptr => eris%abbb
+      case default
+        call mqc_error_A('unrecognised block name in mqc_twoERIs_ref (full: use getBlock)',6, &
+          'myBlockName',myBlockName)
+      end select
+!
+      if(present(order)) order = myOrder
+      if(present(doConjg)) doConjg = myConjg
+      if(.not.(present(order).and.present(doConjg)).and.associated(R4Ptr).and. &
+        (any(myOrder.ne.[1,2,3,4]).or.myConjg)) &
+        call mqc_error_A('mqc_twoERIs_ref: block needs a view, pass Order and DoConjg',6, &
+          'myBlockName',myBlockName)
+!
+      end function mqc_twoERIs_ref
 
 !     PROCEDURE MQC_2ERISet_output_eri
 !
@@ -9863,7 +10153,7 @@
       function mqc_eri_sum(ERIA,ERIB) result(ERIOut)
 !
       implicit none
-      type(mqc_twoERIs),intent(in)::ERIA,ERIB
+      type(mqc_twoERIs),intent(in),target::ERIA,ERIB
       type(mqc_twoERIs)::ERIOut
       type(mqc_r4tensor)::aaaa,bbbb,aabb,bbaa,abab,abba,baab,baba,&
                           aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb
@@ -9871,6 +10161,16 @@
       logical::nz_aaaa,nz_bbbb,nz_aabb,nz_bbaa,nz_abab,nz_abba,nz_baab,nz_baba
       logical::nz_aaab,nz_aaba,nz_abaa,nz_baaa,nz_bbba,nz_bbab,nz_babb,nz_abbb
       character(len=64)::outIntType
+!     %ref reads (lazy): each sum site asks only for its two blocks; a block that is the
+!     stored member as is (Order = [1,2,3,4], no conjugation) is read through the pointer,
+!     any other block with getBlock.
+      type(mqc_r4tensor),pointer::refPA,refPB
+      integer(kind=int64),dimension(4)::refOrderA,refOrderB
+      logical::refConjgA,refConjgB,litA,litB
+!     a block used by several sites of one branch is looked up once at the start of the
+!     branch (refPHA/litHA, refPHB/litHB)
+      type(mqc_r4tensor),pointer::refPHA,refPHB
+      logical::litHA,litHB
 !
       nz_aaaa = .false.
       nz_bbbb = .false.
@@ -9905,7 +10205,23 @@
             case('coulomb')
               !space/coulomb + space/coulomb
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               call mqc_twoeris_allocate(ERIOut,'full-coulomb','space',aaaa,&
@@ -9916,11 +10232,59 @@
             case('exchange','doublebar')
               !space/coulomb + space/exchange/doublebar
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(3) = nz_aabb
@@ -9933,15 +10297,95 @@
             case('inverted','ms')
               !space/coulomb + space/inverted/ms
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(2) = nz_bbbb
@@ -9962,7 +10406,23 @@
             case('exchange')
               !space/exchange + space/exchange
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               call mqc_twoeris_allocate(ERIOut,'full-exchange','space',aaaa,&
@@ -9973,11 +10433,59 @@
             case('coulomb')
               !space/exchange + space/coulomb
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(3) = nz_aabb
@@ -9990,11 +10498,59 @@
             case('doublebar')
               !space/exchange + space/doublebar
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(3) = nz_aabb
@@ -10007,15 +10563,95 @@
             case('inverted','ms')
               !space/exchange + space/inverted/ms
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(2) = nz_bbbb
@@ -10036,7 +10672,23 @@
             case('inverted')
               !space/inverted + space/inverted
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               call mqc_twoeris_allocate(ERIOut,'full-inverted','space',aaaa,allocationVector=allocVec,&
@@ -10045,15 +10697,95 @@
             case('coulomb','exchange','doublebar','ms')
               !space/inverted + space/coulomb/exchange/doublebar/ms
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(2) = nz_bbbb
@@ -10074,11 +10806,59 @@
             case('doublebar')
               !space/doublebar + space/doublebar
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(3) = nz_aabb
@@ -10091,11 +10871,59 @@
             case('exchange')
               !space/doublebar + space/exchange
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(3) = nz_aabb
@@ -10108,11 +10936,59 @@
             case('coulomb')
               !space/doublebar + space/coulomb
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(3) = nz_aabb
@@ -10125,15 +11001,95 @@
             case('inverted','ms')
               !space/doublebar + space/inverted/ms
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(2) = nz_bbbb
@@ -10154,7 +11110,23 @@
             case('ms')
               !space/ms + space/ms
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               call mqc_twoeris_allocate(ERIOut,'full-ms','space',aaaa,allocationVector=allocVec,&
@@ -10163,15 +11135,95 @@
             case('coulomb','exchange','inverted','doublebar')
               !space/ms + space/coulomb/exchange/inverted/doublebar
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(2) = nz_bbbb
@@ -10198,14 +11250,78 @@
             case('coulomb')
               !space/coulomb + spin/coulomb
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -10232,9 +11348,41 @@
               !LMTLMT This is not strictly doublebar but can be stored in doublebar. Should we 
               ! always assume doublebar is C-E or anything that can be stored in the structure?
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIA%getBlock('aabb')
               nz_abba = .not.ERIB%isZeroBlock('abba')
@@ -10272,9 +11420,41 @@
             case('inverted')
               !space/coulomb + spin/inverted
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIA%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba')
@@ -10314,16 +11494,80 @@
             case('doublebar')
               !space/coulomb + spin/doublebar
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIB%isZeroBlock('abba')
               if(nz_abba) abba = ERIB%getBlock('abba')
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIB%isZeroBlock('baab')
                 if(nz_baab) baab = ERIB%getBlock('baab')
                 allocVec = .true.
@@ -10354,18 +11598,82 @@
             case('ms')
               !space/coulomb + spin/ms
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIB%isZeroBlock('abba')
               if(nz_abba) abba = ERIB%getBlock('abba')
               nz_abab = .not.ERIB%isZeroBlock('abab')
               if(nz_abab) abab = ERIB%getBlock('abab')
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIB%isZeroBlock('baab')
                 if(nz_baab) baab = ERIB%getBlock('baab')
                 nz_baba = .not.ERIB%isZeroBlock('baba')
@@ -10407,9 +11715,41 @@
             case('coulomb')
               !space/exchange + spin/coulomb
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIB%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba')
@@ -10447,14 +11787,78 @@
             case('exchange')
               !space/exchange + spin/exchange
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_aabb) aabb = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_aabb) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('abba')+refPB
+                else
+                  aabb = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_bbaa) bbaa = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('baab')+refPB
+                  else
+                    bbaa = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -10479,9 +11883,41 @@
             case('inverted')
               !space/exchange + spin/inverted
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba')
               if(nz_abba) abba = ERIA%getBlock('abba')
               nz_abab = .not.ERIB%isZeroBlock('abab')
@@ -10522,18 +11958,82 @@
             case('doublebar')
               !space/exchange + spin/doublebar
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIB%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIB%isZeroBlock('bbaa')
                 if(nz_bbaa) bbaa = ERIB%getBlock('bbaa')
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -10562,20 +12062,84 @@
             case('ms')
               !space/exchange + spin/ms
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIB%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIB%isZeroBlock('abab')
               if(nz_abab) abab = ERIB%getBlock('abab')
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIB%isZeroBlock('bbaa')
                 if(nz_bbaa) bbaa = ERIB%getBlock('bbaa')
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 nz_baba = .not.ERIB%isZeroBlock('baba')
                 if(nz_baba) baba = ERIB%getBlock('baba')
                 allocVec = .true.
@@ -10615,9 +12179,41 @@
             case('coulomb')
               !space/inverted + spin/coulomb
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIB%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba')
@@ -10663,9 +12259,41 @@
             case('exchange')
               !space/inverted + spin/exchange
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_abba = .not.ERIB%isZeroBlock('abba')
               if(nz_abba) abba = ERIB%getBlock('abba')
               nz_abab = .not.ERIA%isZeroBlock('abab')
@@ -10704,13 +12332,77 @@
             case('inverted')
               !space/inverted + spin/inverted
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-              if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+              if(nz_baba) then
+                refPA => ERIA%ref('baba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('baba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  baba = refPA+refPB
+                elseIf(litA) then
+                  baba = refPA+ERIB%getBlock('baba')
+                elseIf(litB) then
+                  baba = ERIA%getBlock('baba')+refPB
+                else
+                  baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(2) = nz_bbbb
@@ -10725,9 +12417,41 @@
             case('doublebar')
               !space/inverted + spin/doublebar
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIB%getBlock('aabb')
               nz_abba = .not.ERIB%isZeroBlock('abba')
@@ -10773,22 +12497,86 @@
             case('ms')
               !space/inverted + spin/ms
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIB%getBlock('aabb')
               nz_abba = .not.ERIB%isZeroBlock('abba')
               if(nz_abba) abba = ERIB%getBlock('abba')
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIB%isZeroBlock('bbaa')
                 if(nz_bbaa) bbaa = ERIB%getBlock('bbaa')
                 nz_baab = .not.ERIB%isZeroBlock('baab')
                 if(nz_baab) baab = ERIB%getBlock('baab')
                 nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-                if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                if(nz_baba) then
+                  refPA => ERIA%ref('baba',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baba',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baba = refPA+refPB
+                  elseIf(litA) then
+                    baba = refPA+ERIB%getBlock('baba')
+                  elseIf(litB) then
+                    baba = ERIA%getBlock('baba')+refPB
+                  else
+                    baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -10827,16 +12615,80 @@
             case('coulomb')
               !space/doublebar + spin/coulomb
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba')
               if(nz_abba) abba = ERIA%getBlock('abba')
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab')
                 if(nz_baab) baab = ERIA%getBlock('baab')
                 allocVec = .true.
@@ -10868,18 +12720,82 @@
             case('exchange')
               !space/doublebar + spin/exchange
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIA%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
                 if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -10909,9 +12825,41 @@
             case('inverted')
               !space/doublebar + spin/inverted
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIA%getBlock('aabb')
               nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
@@ -10942,18 +12890,114 @@
             case('doublebar')
               !space/doublebar + spin/doublebar
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -10983,20 +13027,116 @@
             case('ms')
               !space/doublebar + spin/ms
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIB%isZeroBlock('abab')
               if(nz_abab) abab = ERIB%getBlock('abab')
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 nz_baba = .not.ERIB%isZeroBlock('baba')
                 if(nz_baba) baba = ERIB%getBlock('baba')
                 allocVec = .true.
@@ -11037,18 +13177,82 @@
             case('coulomb')
               !space/ms + spin/coulomb
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba')
               if(nz_abba) abba = ERIA%getBlock('abba')
               nz_abab = .not.ERIA%isZeroBlock('abab')
               if(nz_abab) abab = ERIA%getBlock('abab')
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab')
                 if(nz_baab) baab = ERIA%getBlock('baab')
                 nz_baba = .not.ERIA%isZeroBlock('baba')
@@ -11085,20 +13289,84 @@
             case('exchange')
               !space/ms + spin/exchange
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIA%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab')
               if(nz_abab) abab = ERIA%getBlock('abab')
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
                 if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 nz_baba = .not.ERIA%isZeroBlock('baba')
                 if(nz_baba) baba = ERIA%getBlock('baba')
                 allocVec = .true.
@@ -11133,9 +13401,41 @@
             case('inverted')
               !space/ms + spin/inverted
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIA%getBlock('aabb')
               nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
@@ -11145,9 +13445,41 @@
               nz_baab = .not.ERIA%isZeroBlock('baab')
               if(nz_baab) baab = ERIA%getBlock('baab')
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-              if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+              if(nz_baba) then
+                refPA => ERIA%ref('baba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('baba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  baba = refPA+refPB
+                elseIf(litA) then
+                  baba = refPA+ERIB%getBlock('baba')
+                elseIf(litB) then
+                  baba = ERIA%getBlock('baba')+refPB
+                else
+                  baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(2) = nz_bbbb
@@ -11166,20 +13498,116 @@
             case('doublebar')
               !space/ms + spin/doublebar
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab')
               if(nz_abab) abab = ERIA%getBlock('abab')
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 nz_baba = .not.ERIA%isZeroBlock('baba')
                 if(nz_baba) baba = ERIA%getBlock('baba')
                 allocVec = .true.
@@ -11214,22 +13642,150 @@
             case('ms')
               !space/ms + spin/ms
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               if(ERIB%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-                if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                if(nz_baba) then
+                  refPA => ERIA%ref('baba',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baba',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baba = refPA+refPB
+                  elseIf(litA) then
+                    baba = refPA+ERIB%getBlock('baba')
+                  elseIf(litB) then
+                    baba = ERIA%getBlock('baba')+refPB
+                  else
+                    baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -11268,17 +13824,83 @@
                  'ERIA%inttype', ERIA%inttype() )
           end select
         case('general')
+          refPHA => ERIA%ref('aaaa',refOrderA,refConjgA)
+          litHA = associated(refPHA)
+          if(litHA) litHA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
           nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-          if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+          if(nz_aaaa) then
+            refPA => refPHA
+            litA = litHA
+            refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              aaaa = refPA+refPB
+            elseIf(litA) then
+              aaaa = refPA+ERIB%getBlock('aaaa')
+            elseIf(litB) then
+              aaaa = ERIA%getBlock('aaaa')+refPB
+            else
+              aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+            endIf
+          endIf
           nz_bbbb = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('bbbb')
-          if(nz_bbbb) bbbb = ERIA%getBlock('aaaa')+ERIB%getBlock('bbbb')
+          if(nz_bbbb) then
+            refPA => refPHA
+            litA = litHA
+            refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              bbbb = refPA+refPB
+            elseIf(litA) then
+              bbbb = refPA+ERIB%getBlock('bbbb')
+            elseIf(litB) then
+              bbbb = ERIA%getBlock('aaaa')+refPB
+            else
+              bbbb = ERIA%getBlock('aaaa')+ERIB%getBlock('bbbb')
+            endIf
+          endIf
           select case(ERIA%intType())
           case('coulomb')
+            refPHA => ERIA%ref('aaaa',refOrderA,refConjgA)
+            litHA = associated(refPHA)
+            if(litHA) litHA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
             !space/coulomb + general/xxx
             nz_aabb = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aabb')
-            if(nz_aabb) aabb = ERIA%getBlock('aaaa')+ERIB%getBlock('aabb')
+            if(nz_aabb) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aabb')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aaaa')+refPB
+              else
+                aabb = ERIA%getBlock('aaaa')+ERIB%getBlock('aabb')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('bbaa')
-            if(nz_bbaa) bbaa = ERIA%getBlock('aaaa')+ERIB%getBlock('bbaa')
+            if(nz_bbaa) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('bbaa')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('aaaa')+refPB
+              else
+                bbaa = ERIA%getBlock('aaaa')+ERIB%getBlock('bbaa')
+              endIf
+            endIf
             nz_abab = .not.ERIB%isZeroBlock('abab')
             if(nz_abab) abab = ERIB%getBlock('abab')
             nz_baba = .not.ERIB%isZeroBlock('baba')
@@ -11299,6 +13921,9 @@
                    'ERIB%inttype', ERIB%inttype())
             end select
           case('exchange')
+            refPHA => ERIA%ref('aaaa',refOrderA,refConjgA)
+            litHA = associated(refPHA)
+            if(litHA) litHA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
             !space/exchange + general/xxx
             nz_aabb = .not.ERIB%isZeroBlock('aabb')
             if(nz_aabb) aabb = ERIB%getBlock('aabb')
@@ -11309,9 +13934,39 @@
             nz_baba = .not.ERIB%isZeroBlock('baba')
             if(nz_baba) baba = ERIB%getBlock('baba')
             nz_baab = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('baab')
-            if(nz_baab) baab = ERIA%getBlock('aaaa')+ERIB%getBlock('baab')
+            if(nz_baab) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('baab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('baab')
+              elseIf(litB) then
+                baab = ERIA%getBlock('aaaa')+refPB
+              else
+                baab = ERIA%getBlock('aaaa')+ERIB%getBlock('baab')
+              endIf
+            endIf
             nz_abba = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('abba')
-            if(nz_abba) abba = ERIA%getBlock('aaaa')+ERIB%getBlock('abba')
+            if(nz_abba) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('abba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('abba')
+              elseIf(litB) then
+                abba = ERIA%getBlock('aaaa')+refPB
+              else
+                abba = ERIA%getBlock('aaaa')+ERIB%getBlock('abba')
+              endIf
+            endIf
             select case(ERIB%intType())
             case('exchange')
               outIntType = 'exchange'
@@ -11324,15 +13979,48 @@
                    'ERIB%inttype', ERIB%inttype())
             end select
           case('inverted')
+            refPHA => ERIA%ref('aaaa',refOrderA,refConjgA)
+            litHA = associated(refPHA)
+            if(litHA) litHA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
             !space/inverted + general/xxx
             nz_aabb = .not.ERIB%isZeroBlock('aabb')
             if(nz_aabb) aabb = ERIB%getBlock('aabb')
             nz_bbaa = .not.ERIB%isZeroBlock('bbaa')
             if(nz_bbaa) bbaa = ERIB%getBlock('bbaa')
             nz_abab = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('abab')
-            if(nz_abab) abab = ERIA%getBlock('aaaa')+ERIB%getBlock('abab')
+            if(nz_abab) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('abab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abab = refPA+refPB
+              elseIf(litA) then
+                abab = refPA+ERIB%getBlock('abab')
+              elseIf(litB) then
+                abab = ERIA%getBlock('aaaa')+refPB
+              else
+                abab = ERIA%getBlock('aaaa')+ERIB%getBlock('abab')
+              endIf
+            endIf
             nz_baba = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('baba')
-            if(nz_baba) baba = ERIA%getBlock('aaaa')+ERIB%getBlock('baba')
+            if(nz_baba) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('baba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baba = refPA+refPB
+              elseIf(litA) then
+                baba = refPA+ERIB%getBlock('baba')
+              elseIf(litB) then
+                baba = ERIA%getBlock('aaaa')+refPB
+              else
+                baba = ERIA%getBlock('aaaa')+ERIB%getBlock('baba')
+              endIf
+            endIf
             nz_baab = .not.ERIB%isZeroBlock('baab')
             if(nz_baab) baab = ERIB%getBlock('baab')
             nz_abba = .not.ERIB%isZeroBlock('abba')
@@ -11347,19 +14035,84 @@
                    'ERIB%inttype', ERIB%inttype())
             end select
           case('doublebar')
+            refPHA => ERIA%ref('aabb',refOrderA,refConjgA)
+            litHA = associated(refPHA)
+            if(litHA) litHA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
             !space/doublebar + general/xxx
             nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-            if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+            if(nz_aabb) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aabb')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aabb')+refPB
+              else
+                aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('bbaa')
-            if(nz_bbaa) bbaa = ERIA%getBlock('aabb')+ERIB%getBlock('bbaa')
+            if(nz_bbaa) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('bbaa')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('aabb')+refPB
+              else
+                bbaa = ERIA%getBlock('aabb')+ERIB%getBlock('bbaa')
+              endIf
+            endIf
             nz_abab = .not.ERIB%isZeroBlock('abab')
             if(nz_abab) abab = ERIB%getBlock('abab')
             nz_baba = .not.ERIB%isZeroBlock('baba')
             if(nz_baba) baba = ERIB%getBlock('baba')
             nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-            if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+            if(nz_baab) then
+              refPA => ERIA%ref('baab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('baab')
+              elseIf(litB) then
+                baab = ERIA%getBlock('baab')+refPB
+              else
+                baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+              endIf
+            endIf
             nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-            if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+            if(nz_abba) then
+              refPA => ERIA%ref('abba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('abba')
+              elseIf(litB) then
+                abba = ERIA%getBlock('abba')+refPB
+              else
+                abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              endIf
+            endIf
             select case(ERIB%intType())
             case('coulomb','exchange','doublebar')
               outIntType = 'doublebar'
@@ -11370,19 +14123,112 @@
                    'ERIB%inttype', ERIB%inttype())
             end select
           case('ms')
+            refPHA => ERIA%ref('aaaa',refOrderA,refConjgA)
+            litHA = associated(refPHA)
+            if(litHA) litHA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
             !space/ms + general/xxx
             nz_aabb = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aabb')
-            if(nz_aabb) aabb = ERIA%getBlock('aaaa')+ERIB%getBlock('aabb')
+            if(nz_aabb) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aabb')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aaaa')+refPB
+              else
+                aabb = ERIA%getBlock('aaaa')+ERIB%getBlock('aabb')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('bbaa')
-            if(nz_bbaa) bbaa = ERIA%getBlock('aaaa')+ERIB%getBlock('bbaa')
+            if(nz_bbaa) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('bbaa')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('aaaa')+refPB
+              else
+                bbaa = ERIA%getBlock('aaaa')+ERIB%getBlock('bbaa')
+              endIf
+            endIf
             nz_abab = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('abab')
-            if(nz_abab) abab = ERIA%getBlock('aaaa')+ERIB%getBlock('abab')
+            if(nz_abab) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('abab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abab = refPA+refPB
+              elseIf(litA) then
+                abab = refPA+ERIB%getBlock('abab')
+              elseIf(litB) then
+                abab = ERIA%getBlock('aaaa')+refPB
+              else
+                abab = ERIA%getBlock('aaaa')+ERIB%getBlock('abab')
+              endIf
+            endIf
             nz_baba = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('baba')
-            if(nz_baba) baba = ERIA%getBlock('aaaa')+ERIB%getBlock('baba')
+            if(nz_baba) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('baba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baba = refPA+refPB
+              elseIf(litA) then
+                baba = refPA+ERIB%getBlock('baba')
+              elseIf(litB) then
+                baba = ERIA%getBlock('aaaa')+refPB
+              else
+                baba = ERIA%getBlock('aaaa')+ERIB%getBlock('baba')
+              endIf
+            endIf
             nz_baab = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('baab')
-            if(nz_baab) baab = ERIA%getBlock('aaaa')+ERIB%getBlock('baab')
+            if(nz_baab) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('baab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('baab')
+              elseIf(litB) then
+                baab = ERIA%getBlock('aaaa')+refPB
+              else
+                baab = ERIA%getBlock('aaaa')+ERIB%getBlock('baab')
+              endIf
+            endIf
             nz_abba = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('abba')
-            if(nz_abba) abba = ERIA%getBlock('aaaa')+ERIB%getBlock('abba')
+            if(nz_abba) then
+              refPA => refPHA
+              litA = litHA
+              refPB => ERIB%ref('abba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('abba')
+              elseIf(litB) then
+                abba = ERIA%getBlock('aaaa')+refPB
+              else
+                abba = ERIA%getBlock('aaaa')+ERIB%getBlock('abba')
+              endIf
+            endIf
             outIntType = 'ms'
           case default
             call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -11475,18 +14321,114 @@
             case('exchange')
               !spin/coulomb + space/exchange
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               if(ERIA%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -11515,18 +14457,114 @@
             case('inverted')
               !spin/coulomb + space/inverted
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               if(ERIA%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-                if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                if(nz_baba) then
+                  refPA => ERIA%ref('baba',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baba',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baba = refPA+refPB
+                  elseIf(litA) then
+                    baba = refPA+ERIB%getBlock('baba')
+                  elseIf(litB) then
+                    baba = ERIA%getBlock('baba')+refPB
+                  else
+                    baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -11649,18 +14687,114 @@
             case('coulomb')
               !spin/exchange + space/coulomb
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               if(ERIA%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -11689,14 +14823,78 @@
             case('exchange')
               !spin/exchange + space/exchange
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_aabb) aabb = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_aabb) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('abba')+refPB
+                else
+                  aabb = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               if(ERIA%storType().eq.'full') then
                 nz_bbaa = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_bbaa) bbaa = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('baab')+refPB
+                  else
+                    bbaa = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -11721,18 +14919,114 @@
             case('inverted')
               !spin/exchange + space/inverted
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               if(ERIA%storType().eq.'full') then
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-                if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                if(nz_baba) then
+                  refPA => ERIA%ref('baba',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baba',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baba = refPA+refPB
+                  elseIf(litA) then
+                    baba = refPA+ERIB%getBlock('baba')
+                  elseIf(litB) then
+                    baba = ERIA%getBlock('baba')+refPB
+                  else
+                    baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -12482,11 +15776,59 @@
             select case(ERIB%intType())
             case('coulomb')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
@@ -12497,7 +15839,23 @@
                      nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -12509,9 +15867,41 @@
               endIf
             case('exchange')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIA%getBlock('aabb')
               nz_abba = .not.ERIB%isZeroBlock('abba')
@@ -12544,9 +15934,41 @@
               endIf
             case('inverted')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
               if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
@@ -12568,11 +15990,59 @@
                    nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIB%isZeroBlock('abba')
               if(nz_abba) abba = ERIB%getBlock('abba')
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
@@ -12586,7 +16056,23 @@
                      nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIB%isZeroBlock('baab')
                 if(nz_baab) baab = ERIB%getBlock('baab')
                 allocVec = .true.
@@ -12603,11 +16089,59 @@
               endIf
             case('ms')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIB%isZeroBlock('abba')
               if(nz_abba) abba = ERIB%getBlock('abba')
               nz_abab = .not.ERIB%isZeroBlock('abab')
@@ -12624,7 +16158,23 @@
                      nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIB%isZeroBlock('baab')
                 if(nz_baab) baab = ERIB%getBlock('baab')
                 nz_baba = .not.ERIB%isZeroBlock('baba')
@@ -12651,9 +16201,41 @@
             select case(ERIB%intType())
             case('coulomb')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIB%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba')
@@ -12686,11 +16268,59 @@
               endIf
             case('exchange')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_aabb) aabb = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_aabb) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('abba')+refPB
+                else
+                  aabb = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
@@ -12701,7 +16331,23 @@
                      nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 nz_bbaa = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_bbaa) bbaa = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('baab')+refPB
+                  else
+                    bbaa = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -12713,9 +16359,41 @@
               endIf
             case('inverted')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba')
               if(nz_abba) abba = ERIA%getBlock('abba')
               nz_baab = .not.ERIA%isZeroBlock('baab')
@@ -12737,13 +16415,61 @@
                    nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIB%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
@@ -12757,7 +16483,23 @@
                 nz_bbaa = .not.ERIB%isZeroBlock('bbaa')
                 if(nz_bbaa) bbaa = ERIB%getBlock('bbaa')
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -12772,13 +16514,61 @@
               endIf
             case('ms')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIB%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIB%isZeroBlock('abab')
               if(nz_abab) abab = ERIB%getBlock('abab')
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
@@ -12795,7 +16585,23 @@
                 nz_bbaa = .not.ERIB%isZeroBlock('bbaa')
                 if(nz_bbaa) bbaa = ERIB%getBlock('bbaa')
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 nz_baba = .not.ERIB%isZeroBlock('baba')
                 if(nz_baba) baba = ERIB%getBlock('baba')
                 allocVec = .true.
@@ -12820,9 +16626,41 @@
             select case(ERIB%intType())
             case('coulomb')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_bbaa = .not.ERIB%isZeroBlock('bbaa')
               if(nz_bbaa) bbaa = ERIB%getBlock('bbaa')
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
@@ -12844,9 +16682,41 @@
                    nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('exchange')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_abba = .not.ERIB%isZeroBlock('abba')
               if(nz_abba) abba = ERIB%getBlock('abba')
               nz_baab = .not.ERIB%isZeroBlock('baab')
@@ -12868,11 +16738,59 @@
                    nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('inverted')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_aabb) aabb = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_aabb) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('abab')+refPB
+                else
+                  aabb = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
@@ -12883,7 +16801,23 @@
                      nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 nz_bbaa = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-                if(nz_bbaa) bbaa = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('baba',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baba',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('baba')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('baba')+refPB
+                  else
+                    bbaa = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -12895,9 +16829,41 @@
               endIf
             case('doublebar')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_bbaa = .not.ERIB%isZeroBlock('bbaa')
               if(nz_bbaa) bbaa = ERIB%getBlock('bbaa')
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
@@ -12925,9 +16891,41 @@
                    nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('ms')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_bbaa = .not.ERIB%isZeroBlock('bbaa')
               if(nz_bbaa) bbaa = ERIB%getBlock('bbaa')
               nz_aabb = .not.ERIB%isZeroBlock('aabb')
@@ -12937,9 +16935,41 @@
               nz_baab = .not.ERIB%isZeroBlock('baab')
               if(nz_baab) baab = ERIB%getBlock('baab')
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-              if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+              if(nz_baba) then
+                refPA => ERIA%ref('baba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('baba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  baba = refPA+refPB
+                elseIf(litA) then
+                  baba = refPA+ERIB%getBlock('baba')
+                elseIf(litB) then
+                  baba = ERIA%getBlock('baba')+refPB
+                else
+                  baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(2) = nz_bbbb
@@ -12961,11 +16991,59 @@
             select case(ERIB%intType())
             case('coulomb')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba')
               if(nz_abba) abba = ERIA%getBlock('abba')
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
@@ -12979,7 +17057,23 @@
                      nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab')
                 if(nz_baab) baab = ERIA%getBlock('baab')
                 allocVec = .true.
@@ -12996,13 +17090,61 @@
               endIf
             case('exchange')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIA%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
@@ -13016,7 +17158,23 @@
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
                 if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -13031,9 +17189,41 @@
               endIf
             case('inverted')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
               if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
@@ -13061,13 +17251,77 @@
                    nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
@@ -13079,9 +17333,41 @@
                      nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -13096,13 +17382,77 @@
               endIf
             case('ms')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIB%isZeroBlock('abab')
               if(nz_abab) abab = ERIB%getBlock('abab')
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
@@ -13117,9 +17467,41 @@
                      nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 nz_baba = .not.ERIB%isZeroBlock('baba')
                 if(nz_baba) baba = ERIB%getBlock('baba')
                 allocVec = .true.
@@ -13144,11 +17526,59 @@
             select case(ERIB%intType())
             case('coulomb')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba')
               if(nz_abba) abba = ERIA%getBlock('abba')
               nz_abab = .not.ERIA%isZeroBlock('abab')
@@ -13165,7 +17595,23 @@
                      nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab')
                 if(nz_baab) baab = ERIA%getBlock('baab')
                 nz_baba = .not.ERIA%isZeroBlock('baba')
@@ -13186,13 +17632,61 @@
               endIf
             case('exchange')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
               if(nz_aabb) aabb = ERIA%getBlock('aabb')
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab')
               if(nz_abab) abab = ERIA%getBlock('abab')
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
@@ -13209,7 +17703,23 @@
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
                 if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 nz_baba = .not.ERIA%isZeroBlock('baba')
                 if(nz_baba) baba = ERIA%getBlock('baba')
                 allocVec = .true.
@@ -13228,9 +17738,41 @@
               endIf
             case('inverted')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
               if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')
               nz_aabb = .not.ERIA%isZeroBlock('aabb')
@@ -13240,9 +17782,41 @@
               nz_baab = .not.ERIA%isZeroBlock('baab')
               if(nz_baab) baab = ERIA%getBlock('baab')
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-              if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+              if(nz_baba) then
+                refPA => ERIA%ref('baba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('baba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  baba = refPA+refPB
+                elseIf(litA) then
+                  baba = refPA+ERIB%getBlock('baba')
+                elseIf(litB) then
+                  baba = ERIA%getBlock('baba')+refPB
+                else
+                  baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                endIf
+              endIf
               allocVec = .true.
               allocVec(1) = nz_aaaa
               allocVec(2) = nz_bbbb
@@ -13258,13 +17832,77 @@
                    nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
             case('doublebar')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab')
               if(nz_abab) abab = ERIA%getBlock('abab')
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
@@ -13279,9 +17917,41 @@
                      nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 nz_baba = .not.ERIA%isZeroBlock('baba')
                 if(nz_baba) baba = ERIA%getBlock('baba')
                 allocVec = .true.
@@ -13300,15 +17970,95 @@
               endIf
             case('ms')
               nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-              if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              if(nz_aaaa) then
+                refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aaaa = refPA+refPB
+                elseIf(litA) then
+                  aaaa = refPA+ERIB%getBlock('aaaa')
+                elseIf(litB) then
+                  aaaa = ERIA%getBlock('aaaa')+refPB
+                else
+                  aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+                endIf
+              endIf
               nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-              if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              if(nz_bbbb) then
+                refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  bbbb = refPA+refPB
+                elseIf(litA) then
+                  bbbb = refPA+ERIB%getBlock('bbbb')
+                elseIf(litB) then
+                  bbbb = ERIA%getBlock('bbbb')+refPB
+                else
+                  bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+                endIf
+              endIf
               nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-              if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              if(nz_aabb) then
+                refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  aabb = refPA+refPB
+                elseIf(litA) then
+                  aabb = refPA+ERIB%getBlock('aabb')
+                elseIf(litB) then
+                  aabb = ERIA%getBlock('aabb')+refPB
+                else
+                  aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+                endIf
+              endIf
               nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-              if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              if(nz_abba) then
+                refPA => ERIA%ref('abba',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abba',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abba = refPA+refPB
+                elseIf(litA) then
+                  abba = refPA+ERIB%getBlock('abba')
+                elseIf(litB) then
+                  abba = ERIA%getBlock('abba')+refPB
+                else
+                  abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+                endIf
+              endIf
               nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-              if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              if(nz_abab) then
+                refPA => ERIA%ref('abab',refOrderA,refConjgA)
+                litA = associated(refPA)
+                if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                refPB => ERIB%ref('abab',refOrderB,refConjgB)
+                litB = associated(refPB)
+                if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                if(litA.and.litB) then
+                  abab = refPA+refPB
+                elseIf(litA) then
+                  abab = refPA+ERIB%getBlock('abab')
+                elseIf(litB) then
+                  abab = ERIA%getBlock('abab')+refPB
+                else
+                  abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+                endIf
+              endIf
               if(ERIA%storType().eq.'symm'.and.ERIB%storType().eq.'symm') then
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
@@ -13321,11 +18071,59 @@
                      nB1=size(ERIA,'beta',1),nB2=size(ERIA,'beta',2),nB3=size(ERIA,'beta',3),nB4=size(ERIA,'beta',4))
               else
                 nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-                if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                if(nz_bbaa) then
+                  refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    bbaa = refPA+refPB
+                  elseIf(litA) then
+                    bbaa = refPA+ERIB%getBlock('bbaa')
+                  elseIf(litB) then
+                    bbaa = ERIA%getBlock('bbaa')+refPB
+                  else
+                    bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+                  endIf
+                endIf
                 nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-                if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                if(nz_baab) then
+                  refPA => ERIA%ref('baab',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baab',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baab = refPA+refPB
+                  elseIf(litA) then
+                    baab = refPA+ERIB%getBlock('baab')
+                  elseIf(litB) then
+                    baab = ERIA%getBlock('baab')+refPB
+                  else
+                    baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+                  endIf
+                endIf
                 nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-                if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                if(nz_baba) then
+                  refPA => ERIA%ref('baba',refOrderA,refConjgA)
+                  litA = associated(refPA)
+                  if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+                  refPB => ERIB%ref('baba',refOrderB,refConjgB)
+                  litB = associated(refPB)
+                  if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+                  if(litA.and.litB) then
+                    baba = refPA+refPB
+                  elseIf(litA) then
+                    baba = refPA+ERIB%getBlock('baba')
+                  elseIf(litB) then
+                    baba = ERIA%getBlock('baba')+refPB
+                  else
+                    baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+                  endIf
+                endIf
                 allocVec = .true.
                 allocVec(1) = nz_aaaa
                 allocVec(2) = nz_bbbb
@@ -13352,13 +18150,77 @@
           select case(ERIA%intType())
           case('coulomb')
             nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+            if(nz_aaaa) then
+              refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aaaa = refPA+refPB
+              elseIf(litA) then
+                aaaa = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                aaaa = ERIA%getBlock('aaaa')+refPB
+              else
+                aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-            if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+            if(nz_bbbb) then
+              refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbbb = refPA+refPB
+              elseIf(litA) then
+                bbbb = refPA+ERIB%getBlock('bbbb')
+              elseIf(litB) then
+                bbbb = ERIA%getBlock('bbbb')+refPB
+              else
+                bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              endIf
+            endIf
             nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-            if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+            if(nz_aabb) then
+              refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aabb')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aabb')+refPB
+              else
+                aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-            if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+            if(nz_bbaa) then
+              refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('bbaa')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('bbaa')+refPB
+              else
+                bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+              endIf
+            endIf
             nz_abab = .not.ERIB%isZeroBlock('abab')
             if(nz_abab) abab = ERIB%getBlock('abab')
             nz_abba = .not.ERIB%isZeroBlock('abba')
@@ -13380,9 +18242,41 @@
             end select
           case('exchange')
             nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+            if(nz_aaaa) then
+              refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aaaa = refPA+refPB
+              elseIf(litA) then
+                aaaa = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                aaaa = ERIA%getBlock('aaaa')+refPB
+              else
+                aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-            if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+            if(nz_bbbb) then
+              refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbbb = refPA+refPB
+              elseIf(litA) then
+                bbbb = refPA+ERIB%getBlock('bbbb')
+              elseIf(litB) then
+                bbbb = ERIA%getBlock('bbbb')+refPB
+              else
+                bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              endIf
+            endIf
             nz_aabb = .not.ERIB%isZeroBlock('aabb')
             if(nz_aabb) aabb = ERIB%getBlock('aabb')
             nz_bbaa = .not.ERIB%isZeroBlock('bbaa')
@@ -13390,9 +18284,41 @@
             nz_abab = .not.ERIB%isZeroBlock('abab')
             if(nz_abab) abab = ERIB%getBlock('abab')
             nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-            if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+            if(nz_abba) then
+              refPA => ERIA%ref('abba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('abba')
+              elseIf(litB) then
+                abba = ERIA%getBlock('abba')+refPB
+              else
+                abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              endIf
+            endIf
             nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-            if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+            if(nz_baab) then
+              refPA => ERIA%ref('baab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('baab')
+              elseIf(litB) then
+                baab = ERIA%getBlock('baab')+refPB
+              else
+                baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+              endIf
+            endIf
             nz_baba = .not.ERIB%isZeroBlock('baba')
             if(nz_baba) baba = ERIB%getBlock('baba')
             select case(ERIB%intType())
@@ -13408,21 +18334,85 @@
             end select
           case('inverted')
             nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+            if(nz_aaaa) then
+              refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aaaa = refPA+refPB
+              elseIf(litA) then
+                aaaa = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                aaaa = ERIA%getBlock('aaaa')+refPB
+              else
+                aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-            if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+            if(nz_bbbb) then
+              refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbbb = refPA+refPB
+              elseIf(litA) then
+                bbbb = refPA+ERIB%getBlock('bbbb')
+              elseIf(litB) then
+                bbbb = ERIA%getBlock('bbbb')+refPB
+              else
+                bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              endIf
+            endIf
             nz_aabb = .not.ERIB%isZeroBlock('aabb')
             if(nz_aabb) aabb = ERIB%getBlock('aabb')
             nz_bbaa = .not.ERIB%isZeroBlock('bbaa')
             if(nz_bbaa) bbaa = ERIB%getBlock('bbaa')
             nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-            if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+            if(nz_abab) then
+              refPA => ERIA%ref('abab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abab = refPA+refPB
+              elseIf(litA) then
+                abab = refPA+ERIB%getBlock('abab')
+              elseIf(litB) then
+                abab = ERIA%getBlock('abab')+refPB
+              else
+                abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              endIf
+            endIf
             nz_abba = .not.ERIB%isZeroBlock('abba')
             if(nz_abba) abba = ERIB%getBlock('abba')
             nz_baab = .not.ERIB%isZeroBlock('baab')
             if(nz_baab) baab = ERIB%getBlock('baab')
             nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-            if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+            if(nz_baba) then
+              refPA => ERIA%ref('baba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baba = refPA+refPB
+              elseIf(litA) then
+                baba = refPA+ERIB%getBlock('baba')
+              elseIf(litB) then
+                baba = ERIA%getBlock('baba')+refPB
+              else
+                baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+              endIf
+            endIf
             select case(ERIB%intType())
             case('inverted')
               outIntType = 'inverted'
@@ -13434,19 +18424,115 @@
             end select
           case('doublebar')
             nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+            if(nz_aaaa) then
+              refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aaaa = refPA+refPB
+              elseIf(litA) then
+                aaaa = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                aaaa = ERIA%getBlock('aaaa')+refPB
+              else
+                aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-            if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+            if(nz_bbbb) then
+              refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbbb = refPA+refPB
+              elseIf(litA) then
+                bbbb = refPA+ERIB%getBlock('bbbb')
+              elseIf(litB) then
+                bbbb = ERIA%getBlock('bbbb')+refPB
+              else
+                bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              endIf
+            endIf
             nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-            if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+            if(nz_aabb) then
+              refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aabb')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aabb')+refPB
+              else
+                aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-            if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+            if(nz_bbaa) then
+              refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('bbaa')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('bbaa')+refPB
+              else
+                bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+              endIf
+            endIf
             nz_abab = .not.ERIB%isZeroBlock('abab')
             if(nz_abab) abab = ERIB%getBlock('abab')
             nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-            if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+            if(nz_abba) then
+              refPA => ERIA%ref('abba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('abba')
+              elseIf(litB) then
+                abba = ERIA%getBlock('abba')+refPB
+              else
+                abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              endIf
+            endIf
             nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-            if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+            if(nz_baab) then
+              refPA => ERIA%ref('baab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('baab')
+              elseIf(litB) then
+                baab = ERIA%getBlock('baab')+refPB
+              else
+                baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+              endIf
+            endIf
             nz_baba = .not.ERIB%isZeroBlock('baba')
             if(nz_baba) baba = ERIB%getBlock('baba')
             select case(ERIB%intType())
@@ -13460,21 +18546,149 @@
             end select
           case('ms')
             nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+            if(nz_aaaa) then
+              refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aaaa = refPA+refPB
+              elseIf(litA) then
+                aaaa = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                aaaa = ERIA%getBlock('aaaa')+refPB
+              else
+                aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-            if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+            if(nz_bbbb) then
+              refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbbb = refPA+refPB
+              elseIf(litA) then
+                bbbb = refPA+ERIB%getBlock('bbbb')
+              elseIf(litB) then
+                bbbb = ERIA%getBlock('bbbb')+refPB
+              else
+                bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+              endIf
+            endIf
             nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-            if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+            if(nz_aabb) then
+              refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aabb')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aabb')+refPB
+              else
+                aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-            if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+            if(nz_bbaa) then
+              refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('bbaa')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('bbaa')+refPB
+              else
+                bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+              endIf
+            endIf
             nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-            if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+            if(nz_abab) then
+              refPA => ERIA%ref('abab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abab = refPA+refPB
+              elseIf(litA) then
+                abab = refPA+ERIB%getBlock('abab')
+              elseIf(litB) then
+                abab = ERIA%getBlock('abab')+refPB
+              else
+                abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              endIf
+            endIf
             nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-            if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+            if(nz_abba) then
+              refPA => ERIA%ref('abba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('abba')
+              elseIf(litB) then
+                abba = ERIA%getBlock('abba')+refPB
+              else
+                abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              endIf
+            endIf
             nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-            if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+            if(nz_baab) then
+              refPA => ERIA%ref('baab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('baab')
+              elseIf(litB) then
+                baab = ERIA%getBlock('baab')+refPB
+              else
+                baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+              endIf
+            endIf
             nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-            if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+            if(nz_baba) then
+              refPA => ERIA%ref('baba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baba = refPA+refPB
+              elseIf(litA) then
+                baba = refPA+ERIB%getBlock('baba')
+              elseIf(litB) then
+                baba = ERIA%getBlock('baba')+refPB
+              else
+                baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+              endIf
+            endIf
             outIntType = 'ms'
           case default
             call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -13530,16 +18744,82 @@
       case('general')
         select case (ERIB%integraltype)
         case('space')
+          refPHB => ERIB%ref('aaaa',refOrderB,refConjgB)
+          litHB = associated(refPHB)
+          if(litHB) litHB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
           nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-          if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+          if(nz_aaaa) then
+            refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => refPHB
+            litB = litHB
+            if(litA.and.litB) then
+              aaaa = refPA+refPB
+            elseIf(litA) then
+              aaaa = refPA+ERIB%getBlock('aaaa')
+            elseIf(litB) then
+              aaaa = ERIA%getBlock('aaaa')+refPB
+            else
+              aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+            endIf
+          endIf
           nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('aaaa')
-          if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('aaaa')
+          if(nz_bbbb) then
+            refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => refPHB
+            litB = litHB
+            if(litA.and.litB) then
+              bbbb = refPA+refPB
+            elseIf(litA) then
+              bbbb = refPA+ERIB%getBlock('aaaa')
+            elseIf(litB) then
+              bbbb = ERIA%getBlock('bbbb')+refPB
+            else
+              bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('aaaa')
+            endIf
+          endIf
           select case(ERIB%intType())
           case('coulomb')
+            refPHB => ERIB%ref('aaaa',refOrderB,refConjgB)
+            litHB = associated(refPHB)
+            if(litHB) litHB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
             nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aaaa')
+            if(nz_aabb) then
+              refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aabb')+refPB
+              else
+                aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('aaaa')
+            if(nz_bbaa) then
+              refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('bbaa')+refPB
+              else
+                bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_abab = .not.ERIA%isZeroBlock('abab')
             if(nz_abab) abab = ERIA%getBlock('abab')
             nz_baba = .not.ERIA%isZeroBlock('baba')
@@ -13560,6 +18840,9 @@
                    'ERIA%inttype', ERIA%inttype())
             end select
           case('exchange')
+            refPHB => ERIB%ref('aaaa',refOrderB,refConjgB)
+            litHB = associated(refPHB)
+            if(litHB) litHB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
             nz_aabb = .not.ERIA%isZeroBlock('aabb')
             if(nz_aabb) aabb = ERIA%getBlock('aabb')
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
@@ -13569,9 +18852,39 @@
             nz_baba = .not.ERIA%isZeroBlock('baba')
             if(nz_baba) baba = ERIA%getBlock('baba')
             nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('aaaa')
+            if(nz_baab) then
+              refPA => ERIA%ref('baab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                baab = ERIA%getBlock('baab')+refPB
+              else
+                baab = ERIA%getBlock('baab')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('aaaa')
+            if(nz_abba) then
+              refPA => ERIA%ref('abba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                abba = ERIA%getBlock('abba')+refPB
+              else
+                abba = ERIA%getBlock('abba')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             select case(ERIA%intType())
             case('exchange')
               outIntType = 'exchange'
@@ -13584,14 +18897,47 @@
                    'ERIA%inttype', ERIA%inttype())
             end select
           case('inverted')
+            refPHB => ERIB%ref('aaaa',refOrderB,refConjgB)
+            litHB = associated(refPHB)
+            if(litHB) litHB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
             nz_aabb = .not.ERIA%isZeroBlock('aabb')
             if(nz_aabb) aabb = ERIA%getBlock('aabb')
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
             if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')
             nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('aaaa')
+            if(nz_abab) then
+              refPA => ERIA%ref('abab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                abab = refPA+refPB
+              elseIf(litA) then
+                abab = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                abab = ERIA%getBlock('abab')+refPB
+              else
+                abab = ERIA%getBlock('abab')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('aaaa')
+            if(nz_baba) then
+              refPA => ERIA%ref('baba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                baba = refPA+refPB
+              elseIf(litA) then
+                baba = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                baba = ERIA%getBlock('baba')+refPB
+              else
+                baba = ERIA%getBlock('baba')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_baab = .not.ERIA%isZeroBlock('baab')
             if(nz_baab) baab = ERIA%getBlock('baab')
             nz_abba = .not.ERIA%isZeroBlock('abba')
@@ -13606,18 +18952,83 @@
                    'ERIA%inttype', ERIA%inttype())
             end select
           case('doublebar')
+            refPHB => ERIB%ref('aabb',refOrderB,refConjgB)
+            litHB = associated(refPHB)
+            if(litHB) litHB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
             nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-            if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+            if(nz_aabb) then
+              refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aabb')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aabb')+refPB
+              else
+                aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('aabb')
-            if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('aabb')
+            if(nz_bbaa) then
+              refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('aabb')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('bbaa')+refPB
+              else
+                bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('aabb')
+              endIf
+            endIf
             nz_abab = .not.ERIA%isZeroBlock('abab')
             if(nz_abab) abab = ERIA%getBlock('abab')
             nz_baba = .not.ERIA%isZeroBlock('baba')
             if(nz_baba) baba = ERIA%getBlock('baba')
             nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-            if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+            if(nz_baab) then
+              refPA => ERIA%ref('baab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('baab')
+              elseIf(litB) then
+                baab = ERIA%getBlock('baab')+refPB
+              else
+                baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+              endIf
+            endIf
             nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-            if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+            if(nz_abba) then
+              refPA => ERIA%ref('abba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('abba')
+              elseIf(litB) then
+                abba = ERIA%getBlock('abba')+refPB
+              else
+                abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              endIf
+            endIf
             select case(ERIA%intType())
             case('coulomb','exchange','doublebar')
               outIntType = 'doublebar'
@@ -13628,18 +19039,111 @@
                    'ERIA%inttype', ERIA%inttype())
             end select
           case('ms')
+            refPHB => ERIB%ref('aaaa',refOrderB,refConjgB)
+            litHB = associated(refPHB)
+            if(litHB) litHB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
             nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aaaa')
+            if(nz_aabb) then
+              refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aabb')+refPB
+              else
+                aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('aaaa')
+            if(nz_bbaa) then
+              refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('bbaa')+refPB
+              else
+                bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('aaaa')
+            if(nz_abab) then
+              refPA => ERIA%ref('abab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                abab = refPA+refPB
+              elseIf(litA) then
+                abab = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                abab = ERIA%getBlock('abab')+refPB
+              else
+                abab = ERIA%getBlock('abab')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('aaaa')
+            if(nz_baba) then
+              refPA => ERIA%ref('baba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                baba = refPA+refPB
+              elseIf(litA) then
+                baba = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                baba = ERIA%getBlock('baba')+refPB
+              else
+                baba = ERIA%getBlock('baba')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('aaaa')
+            if(nz_baab) then
+              refPA => ERIA%ref('baab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                baab = ERIA%getBlock('baab')+refPB
+              else
+                baab = ERIA%getBlock('baab')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('aaaa')
-            if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('aaaa')
+            if(nz_abba) then
+              refPA => ERIA%ref('abba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => refPHB
+              litB = litHB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('aaaa')
+              elseIf(litB) then
+                abba = ERIA%getBlock('abba')+refPB
+              else
+                abba = ERIA%getBlock('abba')+ERIB%getBlock('aaaa')
+              endIf
+            endIf
             outIntType = 'ms'
           case default
             call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -13689,15 +19193,79 @@
           endIf
         case('spin')
           nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-          if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+          if(nz_aaaa) then
+            refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              aaaa = refPA+refPB
+            elseIf(litA) then
+              aaaa = refPA+ERIB%getBlock('aaaa')
+            elseIf(litB) then
+              aaaa = ERIA%getBlock('aaaa')+refPB
+            else
+              aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+            endIf
+          endIf
           nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-          if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+          if(nz_bbbb) then
+            refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              bbbb = refPA+refPB
+            elseIf(litA) then
+              bbbb = refPA+ERIB%getBlock('bbbb')
+            elseIf(litB) then
+              bbbb = ERIA%getBlock('bbbb')+refPB
+            else
+              bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+            endIf
+          endIf
           select case(ERIB%intType())
           case('coulomb')
             nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-            if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+            if(nz_aabb) then
+              refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aabb')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aabb')+refPB
+              else
+                aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-            if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+            if(nz_bbaa) then
+              refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('bbaa')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('bbaa')+refPB
+              else
+                bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+              endIf
+            endIf
             nz_abab = .not.ERIA%isZeroBlock('abab')
             if(nz_abab) abab = ERIA%getBlock('abab')
             nz_baba = .not.ERIA%isZeroBlock('baba')
@@ -13727,9 +19295,41 @@
             nz_baba = .not.ERIA%isZeroBlock('baba')
             if(nz_baba) baba = ERIA%getBlock('baba')
             nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-            if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+            if(nz_baab) then
+              refPA => ERIA%ref('baab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('baab')
+              elseIf(litB) then
+                baab = ERIA%getBlock('baab')+refPB
+              else
+                baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+              endIf
+            endIf
             nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-            if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+            if(nz_abba) then
+              refPA => ERIA%ref('abba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('abba')
+              elseIf(litB) then
+                abba = ERIA%getBlock('abba')+refPB
+              else
+                abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              endIf
+            endIf
             select case(ERIA%intType())
             case('exchange')
               outIntType = 'exchange'
@@ -13747,9 +19347,41 @@
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa')
             if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')
             nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-            if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+            if(nz_abab) then
+              refPA => ERIA%ref('abab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abab = refPA+refPB
+              elseIf(litA) then
+                abab = refPA+ERIB%getBlock('abab')
+              elseIf(litB) then
+                abab = ERIA%getBlock('abab')+refPB
+              else
+                abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              endIf
+            endIf
             nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-            if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+            if(nz_baba) then
+              refPA => ERIA%ref('baba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baba = refPA+refPB
+              elseIf(litA) then
+                baba = refPA+ERIB%getBlock('baba')
+              elseIf(litB) then
+                baba = ERIA%getBlock('baba')+refPB
+              else
+                baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+              endIf
+            endIf
             nz_baab = .not.ERIA%isZeroBlock('baab')
             if(nz_baab) baab = ERIA%getBlock('baab')
             nz_abba = .not.ERIA%isZeroBlock('abba')
@@ -13765,17 +19397,81 @@
             end select
           case('doublebar')
             nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-            if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+            if(nz_aabb) then
+              refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aabb')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aabb')+refPB
+              else
+                aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-            if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+            if(nz_bbaa) then
+              refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('bbaa')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('bbaa')+refPB
+              else
+                bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+              endIf
+            endIf
             nz_abab = .not.ERIA%isZeroBlock('abab')
             if(nz_abab) abab = ERIA%getBlock('abab')
             nz_baba = .not.ERIA%isZeroBlock('baba')
             if(nz_baba) baba = ERIA%getBlock('baba')
             nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-            if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+            if(nz_baab) then
+              refPA => ERIA%ref('baab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('baab')
+              elseIf(litB) then
+                baab = ERIA%getBlock('baab')+refPB
+              else
+                baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+              endIf
+            endIf
             nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-            if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+            if(nz_abba) then
+              refPA => ERIA%ref('abba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('abba')
+              elseIf(litB) then
+                abba = ERIA%getBlock('abba')+refPB
+              else
+                abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              endIf
+            endIf
             select case(ERIA%intType())
             case('coulomb','exchange','doublebar')
               outIntType = 'doublebar'
@@ -13787,17 +19483,113 @@
             end select
           case('ms')
             nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-            if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+            if(nz_aabb) then
+              refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                aabb = refPA+refPB
+              elseIf(litA) then
+                aabb = refPA+ERIB%getBlock('aabb')
+              elseIf(litB) then
+                aabb = ERIA%getBlock('aabb')+refPB
+              else
+                aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+              endIf
+            endIf
             nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-            if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+            if(nz_bbaa) then
+              refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                bbaa = refPA+refPB
+              elseIf(litA) then
+                bbaa = refPA+ERIB%getBlock('bbaa')
+              elseIf(litB) then
+                bbaa = ERIA%getBlock('bbaa')+refPB
+              else
+                bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+              endIf
+            endIf
             nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-            if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+            if(nz_abab) then
+              refPA => ERIA%ref('abab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abab = refPA+refPB
+              elseIf(litA) then
+                abab = refPA+ERIB%getBlock('abab')
+              elseIf(litB) then
+                abab = ERIA%getBlock('abab')+refPB
+              else
+                abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+              endIf
+            endIf
             nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-            if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+            if(nz_baba) then
+              refPA => ERIA%ref('baba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baba = refPA+refPB
+              elseIf(litA) then
+                baba = refPA+ERIB%getBlock('baba')
+              elseIf(litB) then
+                baba = ERIA%getBlock('baba')+refPB
+              else
+                baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+              endIf
+            endIf
             nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-            if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+            if(nz_baab) then
+              refPA => ERIA%ref('baab',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('baab',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                baab = refPA+refPB
+              elseIf(litA) then
+                baab = refPA+ERIB%getBlock('baab')
+              elseIf(litB) then
+                baab = ERIA%getBlock('baab')+refPB
+              else
+                baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+              endIf
+            endIf
             nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-            if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+            if(nz_abba) then
+              refPA => ERIA%ref('abba',refOrderA,refConjgA)
+              litA = associated(refPA)
+              if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+              refPB => ERIB%ref('abba',refOrderB,refConjgB)
+              litB = associated(refPB)
+              if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+              if(litA.and.litB) then
+                abba = refPA+refPB
+              elseIf(litA) then
+                abba = refPA+ERIB%getBlock('abba')
+              elseIf(litB) then
+                abba = ERIA%getBlock('abba')+refPB
+              else
+                abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+              endIf
+            endIf
             outIntType = 'ms'
           case default
             call mqc_error_A('Unknown twoERI storage type in mqc_eri_sum', 6, &
@@ -13847,37 +19639,293 @@
           endIf
         case('general')
           nz_aaaa = .not.ERIA%isZeroBlock('aaaa').or..not.ERIB%isZeroBlock('aaaa')
-          if(nz_aaaa) aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+          if(nz_aaaa) then
+            refPA => ERIA%ref('aaaa',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('aaaa',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              aaaa = refPA+refPB
+            elseIf(litA) then
+              aaaa = refPA+ERIB%getBlock('aaaa')
+            elseIf(litB) then
+              aaaa = ERIA%getBlock('aaaa')+refPB
+            else
+              aaaa = ERIA%getBlock('aaaa')+ERIB%getBlock('aaaa')
+            endIf
+          endIf
           nz_bbbb = .not.ERIA%isZeroBlock('bbbb').or..not.ERIB%isZeroBlock('bbbb')
-          if(nz_bbbb) bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+          if(nz_bbbb) then
+            refPA => ERIA%ref('bbbb',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('bbbb',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              bbbb = refPA+refPB
+            elseIf(litA) then
+              bbbb = refPA+ERIB%getBlock('bbbb')
+            elseIf(litB) then
+              bbbb = ERIA%getBlock('bbbb')+refPB
+            else
+              bbbb = ERIA%getBlock('bbbb')+ERIB%getBlock('bbbb')
+            endIf
+          endIf
           nz_aabb = .not.ERIA%isZeroBlock('aabb').or..not.ERIB%isZeroBlock('aabb')
-          if(nz_aabb) aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+          if(nz_aabb) then
+            refPA => ERIA%ref('aabb',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('aabb',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              aabb = refPA+refPB
+            elseIf(litA) then
+              aabb = refPA+ERIB%getBlock('aabb')
+            elseIf(litB) then
+              aabb = ERIA%getBlock('aabb')+refPB
+            else
+              aabb = ERIA%getBlock('aabb')+ERIB%getBlock('aabb')
+            endIf
+          endIf
           nz_bbaa = .not.ERIA%isZeroBlock('bbaa').or..not.ERIB%isZeroBlock('bbaa')
-          if(nz_bbaa) bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+          if(nz_bbaa) then
+            refPA => ERIA%ref('bbaa',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('bbaa',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              bbaa = refPA+refPB
+            elseIf(litA) then
+              bbaa = refPA+ERIB%getBlock('bbaa')
+            elseIf(litB) then
+              bbaa = ERIA%getBlock('bbaa')+refPB
+            else
+              bbaa = ERIA%getBlock('bbaa')+ERIB%getBlock('bbaa')
+            endIf
+          endIf
           nz_aaab = .not.ERIA%isZeroBlock('aaab').or..not.ERIB%isZeroBlock('aaab')
-          if(nz_aaab) aaab = ERIA%getBlock('aaab')+ERIB%getBlock('aaab')
+          if(nz_aaab) then
+            refPA => ERIA%ref('aaab',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('aaab',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              aaab = refPA+refPB
+            elseIf(litA) then
+              aaab = refPA+ERIB%getBlock('aaab')
+            elseIf(litB) then
+              aaab = ERIA%getBlock('aaab')+refPB
+            else
+              aaab = ERIA%getBlock('aaab')+ERIB%getBlock('aaab')
+            endIf
+          endIf
           nz_aaba = .not.ERIA%isZeroBlock('aaba').or..not.ERIB%isZeroBlock('aaba')
-          if(nz_aaba) aaba = ERIA%getBlock('aaba')+ERIB%getBlock('aaba')
+          if(nz_aaba) then
+            refPA => ERIA%ref('aaba',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('aaba',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              aaba = refPA+refPB
+            elseIf(litA) then
+              aaba = refPA+ERIB%getBlock('aaba')
+            elseIf(litB) then
+              aaba = ERIA%getBlock('aaba')+refPB
+            else
+              aaba = ERIA%getBlock('aaba')+ERIB%getBlock('aaba')
+            endIf
+          endIf
           nz_abaa = .not.ERIA%isZeroBlock('abaa').or..not.ERIB%isZeroBlock('abaa')
-          if(nz_abaa) abaa = ERIA%getBlock('abaa')+ERIB%getBlock('abaa')
+          if(nz_abaa) then
+            refPA => ERIA%ref('abaa',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('abaa',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              abaa = refPA+refPB
+            elseIf(litA) then
+              abaa = refPA+ERIB%getBlock('abaa')
+            elseIf(litB) then
+              abaa = ERIA%getBlock('abaa')+refPB
+            else
+              abaa = ERIA%getBlock('abaa')+ERIB%getBlock('abaa')
+            endIf
+          endIf
           nz_baaa = .not.ERIA%isZeroBlock('baaa').or..not.ERIB%isZeroBlock('baaa')
-          if(nz_baaa) baaa = ERIA%getBlock('baaa')+ERIB%getBlock('baaa')
+          if(nz_baaa) then
+            refPA => ERIA%ref('baaa',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('baaa',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              baaa = refPA+refPB
+            elseIf(litA) then
+              baaa = refPA+ERIB%getBlock('baaa')
+            elseIf(litB) then
+              baaa = ERIA%getBlock('baaa')+refPB
+            else
+              baaa = ERIA%getBlock('baaa')+ERIB%getBlock('baaa')
+            endIf
+          endIf
           nz_bbba = .not.ERIA%isZeroBlock('bbba').or..not.ERIB%isZeroBlock('bbba')
-          if(nz_bbba) bbba = ERIA%getBlock('bbba')+ERIB%getBlock('bbba')
+          if(nz_bbba) then
+            refPA => ERIA%ref('bbba',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('bbba',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              bbba = refPA+refPB
+            elseIf(litA) then
+              bbba = refPA+ERIB%getBlock('bbba')
+            elseIf(litB) then
+              bbba = ERIA%getBlock('bbba')+refPB
+            else
+              bbba = ERIA%getBlock('bbba')+ERIB%getBlock('bbba')
+            endIf
+          endIf
           nz_bbab = .not.ERIA%isZeroBlock('bbab').or..not.ERIB%isZeroBlock('bbab')
-          if(nz_bbab) bbab = ERIA%getBlock('bbab')+ERIB%getBlock('bbab')
+          if(nz_bbab) then
+            refPA => ERIA%ref('bbab',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('bbab',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              bbab = refPA+refPB
+            elseIf(litA) then
+              bbab = refPA+ERIB%getBlock('bbab')
+            elseIf(litB) then
+              bbab = ERIA%getBlock('bbab')+refPB
+            else
+              bbab = ERIA%getBlock('bbab')+ERIB%getBlock('bbab')
+            endIf
+          endIf
           nz_babb = .not.ERIA%isZeroBlock('babb').or..not.ERIB%isZeroBlock('babb')
-          if(nz_babb) babb = ERIA%getBlock('babb')+ERIB%getBlock('babb')
+          if(nz_babb) then
+            refPA => ERIA%ref('babb',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('babb',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              babb = refPA+refPB
+            elseIf(litA) then
+              babb = refPA+ERIB%getBlock('babb')
+            elseIf(litB) then
+              babb = ERIA%getBlock('babb')+refPB
+            else
+              babb = ERIA%getBlock('babb')+ERIB%getBlock('babb')
+            endIf
+          endIf
           nz_abbb = .not.ERIA%isZeroBlock('abbb').or..not.ERIB%isZeroBlock('abbb')
-          if(nz_abbb) abbb = ERIA%getBlock('abbb')+ERIB%getBlock('abbb')
+          if(nz_abbb) then
+            refPA => ERIA%ref('abbb',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('abbb',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              abbb = refPA+refPB
+            elseIf(litA) then
+              abbb = refPA+ERIB%getBlock('abbb')
+            elseIf(litB) then
+              abbb = ERIA%getBlock('abbb')+refPB
+            else
+              abbb = ERIA%getBlock('abbb')+ERIB%getBlock('abbb')
+            endIf
+          endIf
           nz_abba = .not.ERIA%isZeroBlock('abba').or..not.ERIB%isZeroBlock('abba')
-          if(nz_abba) abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+          if(nz_abba) then
+            refPA => ERIA%ref('abba',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('abba',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              abba = refPA+refPB
+            elseIf(litA) then
+              abba = refPA+ERIB%getBlock('abba')
+            elseIf(litB) then
+              abba = ERIA%getBlock('abba')+refPB
+            else
+              abba = ERIA%getBlock('abba')+ERIB%getBlock('abba')
+            endIf
+          endIf
           nz_abab = .not.ERIA%isZeroBlock('abab').or..not.ERIB%isZeroBlock('abab')
-          if(nz_abab) abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+          if(nz_abab) then
+            refPA => ERIA%ref('abab',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('abab',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              abab = refPA+refPB
+            elseIf(litA) then
+              abab = refPA+ERIB%getBlock('abab')
+            elseIf(litB) then
+              abab = ERIA%getBlock('abab')+refPB
+            else
+              abab = ERIA%getBlock('abab')+ERIB%getBlock('abab')
+            endIf
+          endIf
           nz_baab = .not.ERIA%isZeroBlock('baab').or..not.ERIB%isZeroBlock('baab')
-          if(nz_baab) baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+          if(nz_baab) then
+            refPA => ERIA%ref('baab',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('baab',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              baab = refPA+refPB
+            elseIf(litA) then
+              baab = refPA+ERIB%getBlock('baab')
+            elseIf(litB) then
+              baab = ERIA%getBlock('baab')+refPB
+            else
+              baab = ERIA%getBlock('baab')+ERIB%getBlock('baab')
+            endIf
+          endIf
           nz_baba = .not.ERIA%isZeroBlock('baba').or..not.ERIB%isZeroBlock('baba')
-          if(nz_baba) baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+          if(nz_baba) then
+            refPA => ERIA%ref('baba',refOrderA,refConjgA)
+            litA = associated(refPA)
+            if(litA) litA = all(refOrderA.eq.[1,2,3,4]).and..not.refConjgA
+            refPB => ERIB%ref('baba',refOrderB,refConjgB)
+            litB = associated(refPB)
+            if(litB) litB = all(refOrderB.eq.[1,2,3,4]).and..not.refConjgB
+            if(litA.and.litB) then
+              baba = refPA+refPB
+            elseIf(litA) then
+              baba = refPA+ERIB%getBlock('baba')
+            elseIf(litB) then
+              baba = ERIA%getBlock('baba')+refPB
+            else
+              baba = ERIA%getBlock('baba')+ERIB%getBlock('baba')
+            endIf
+          endIf
           select case(ERIA%intType())
           case('coulomb')
             select case(ERIB%intType())
@@ -16223,13 +22271,16 @@
       function mqc_twoERIs_scalar_multiply(eris,scalarIn) result(erisOut)
 !
       implicit none
-      type(mqc_twoERIs),intent(in)::eris
+      type(mqc_twoERIs),intent(in),target::eris
       class(*),intent(in)::scalarIn
       type(mqc_twoERIs)::erisOut
       type(mqc_R4Tensor)::aaaa,bbbb,aabb,bbaa,abab,abba,baab,baba,&
                           aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb
       type(mqc_scalar)::scalar
       Character(Len=64)::myLabel,myInt
+      type(mqc_r4tensor),pointer::refP
+      integer(kind=int64),dimension(4)::refOrder
+      logical::refConjg,refLit
 
       myLabel = eris%storageType
       myInt = eris%interactionType
@@ -16249,13 +22300,37 @@
 
       select case (eris%integralType)
       case('space','regular','raffenetti1','raffenetti2','raffenetti3')
-        if(eris%hasSpinBlock('aaaa',interactionIn='stored')) &
-          aaaa = scalar*eris%getBlock('aaaa')
+        if(eris%hasSpinBlock('aaaa',interactionIn='stored')) then
+          refP => eris%ref('aaaa',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            aaaa = scalar*refP
+          else
+            aaaa = scalar*eris%getBlock('aaaa')
+          endIf
+        endIf
         if (eris%intType().eq.'doublebar') then
-          if(eris%hasSpinBlock('aabb',interactionIn='stored')) &
-            aabb = scalar*eris%getBlock('aabb')
-          if(eris%hasSpinBlock('abba',interactionIn='stored')) &
-            abba = scalar*eris%getBlock('abba')
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) then
+            refP => eris%ref('aabb',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              aabb = scalar*refP
+            else
+              aabb = scalar*eris%getBlock('aabb')
+            endIf
+          endIf
+          if(eris%hasSpinBlock('abba',interactionIn='stored')) then
+            refP => eris%ref('abba',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              abba = scalar*refP
+            else
+              abba = scalar*eris%getBlock('abba')
+            endIf
+          endIf
           call mqc_twoeris_allocate(erisOut,trim(myLabel)//'-'//trim(myInt),'space',aaaa,alphaBeta=aabb,abba=abba)
         elseif(eris%intType().eq.'coulomb'.or.eris%intType().eq.'exchange'.or.&
           eris%intType().eq.'inverted'.or.eris%intType().eq.'ms') then
@@ -16265,43 +22340,138 @@
             6,'ERIS%inttype()',ERIS%inttype())
         endIf
       case('spin')
-        if(eris%hasSpinBlock('aaaa',interactionIn='stored')) &
-          aaaa = scalar*eris%getBlock('aaaa')
-        if(eris%hasSpinBlock('bbbb',interactionIn='stored')) &
-          bbbb = scalar*eris%getBlock('bbbb')
+        if(eris%hasSpinBlock('aaaa',interactionIn='stored')) then
+          refP => eris%ref('aaaa',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            aaaa = scalar*refP
+          else
+            aaaa = scalar*eris%getBlock('aaaa')
+          endIf
+        endIf
+        if(eris%hasSpinBlock('bbbb',interactionIn='stored')) then
+          refP => eris%ref('bbbb',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            bbbb = scalar*refP
+          else
+            bbbb = scalar*eris%getBlock('bbbb')
+          endIf
+        endIf
         if(eris%intType().eq.'exchange') then
-          if(eris%hasSpinBlock('aabb',interactionIn='stored')) &
-            aabb = scalar*eris%getBlock('abba')
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) then
+            refP => eris%ref('abba',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              aabb = scalar*refP
+            else
+              aabb = scalar*eris%getBlock('abba')
+            endIf
+          endIf
         elseIf(eris%intType().eq.'inverted') then
-          if(eris%hasSpinBlock('aabb',interactionIn='stored')) &
-            aabb = scalar*eris%getBlock('abab')
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) then
+            refP => eris%ref('abab',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              aabb = scalar*refP
+            else
+              aabb = scalar*eris%getBlock('abab')
+            endIf
+          endIf
         else
-          if(eris%hasSpinBlock('aabb',interactionIn='stored')) &
-            aabb = scalar*eris%getBlock('aabb')
+          if(eris%hasSpinBlock('aabb',interactionIn='stored')) then
+            refP => eris%ref('aabb',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              aabb = scalar*refP
+            else
+              aabb = scalar*eris%getBlock('aabb')
+            endIf
+          endIf
         endIf
         if((eris%intType().eq.'doublebar'.or.eris%intType().eq.'ms').and.&
           eris%hasSpinBlock('abba',interactionIn='stored')) &
-          abba = scalar*eris%getBlock('abba')
-        if((eris%intType().eq.'ms').and.eris%hasSpinBlock('abab',interactionIn='stored')) &
-          abab = scalar*eris%getBlock('abab')
+          refP => eris%ref('abba',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            abba = scalar*refP
+          else
+            abba = scalar*eris%getBlock('abba')
+          endIf
+        if((eris%intType().eq.'ms').and.eris%hasSpinBlock('abab',interactionIn='stored')) then
+          refP => eris%ref('abab',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            abab = scalar*refP
+          else
+            abab = scalar*eris%getBlock('abab')
+          endIf
+        endIf
         if(eris%storType().eq.'full') then
           if(eris%intType().eq.'coulomb'.or.eris%intType().eq.'doublebar'.or.&
             eris%intType().eq.'ms') then
-            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) &
-              bbaa = scalar*eris%getBlock('bbaa')
+            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) then
+              refP => eris%ref('bbaa',refOrder,refConjg)
+              refLit = associated(refP)
+              if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+              if(refLit) then
+                bbaa = scalar*refP
+              else
+                bbaa = scalar*eris%getBlock('bbaa')
+              endIf
+            endIf
           elseIf(eris%intType().eq.'exchange') then
-            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) &
-              bbaa = scalar*eris%getBlock('baab')
+            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) then
+              refP => eris%ref('baab',refOrder,refConjg)
+              refLit = associated(refP)
+              if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+              if(refLit) then
+                bbaa = scalar*refP
+              else
+                bbaa = scalar*eris%getBlock('baab')
+              endIf
+            endIf
           elseIf(eris%intType().eq.'inverted') then
-            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) &
-              bbaa = scalar*eris%getBlock('baba')
+            if(eris%hasSpinBlock('bbaa',interactionIn='stored')) then
+              refP => eris%ref('baba',refOrder,refConjg)
+              refLit = associated(refP)
+              if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+              if(refLit) then
+                bbaa = scalar*refP
+              else
+                bbaa = scalar*eris%getBlock('baba')
+              endIf
+            endIf
           endIf
           if(eris%intType().eq.'doublebar'.or.eris%intType().eq.'ms') then
-            if(eris%hasSpinBlock('baab',interactionIn='stored')) &
-              baab = scalar*eris%getBlock('baab')
+            if(eris%hasSpinBlock('baab',interactionIn='stored')) then
+              refP => eris%ref('baab',refOrder,refConjg)
+              refLit = associated(refP)
+              if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+              if(refLit) then
+                baab = scalar*refP
+              else
+                baab = scalar*eris%getBlock('baab')
+              endIf
+            endIf
             if(eris%intType().eq.'ms') then
-              if(eris%hasSpinBlock('baba',interactionIn='stored')) &
-                baba = scalar*eris%getBlock('baba')
+              if(eris%hasSpinBlock('baba',interactionIn='stored')) then
+                refP => eris%ref('baba',refOrder,refConjg)
+                refLit = associated(refP)
+                if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+                if(refLit) then
+                  baba = scalar*refP
+                else
+                  baba = scalar*eris%getBlock('baba')
+                endIf
+              endIf
               call mqc_twoeris_allocate(erisOut,trim(myLabel)//'-'//trim(myInt),'spin',aaaa,bbbb,&
                 aabb,bbaa,abab,abba,baab,baba)
             else
@@ -16336,39 +22506,167 @@
             'twoeris%storType()',eris%storType())
         endIf
       case('general')
-        if(eris%hasSpinBlock('aaaa',interactionIn='stored')) &
-          aaaa = scalar*eris%getBlock('aaaa')
-        if(eris%hasSpinBlock('bbbb',interactionIn='stored')) &
-          bbbb = scalar*eris%getBlock('bbbb')
-        if(eris%hasSpinBlock('aabb',interactionIn='stored')) &
-          aabb = scalar*eris%getBlock('aabb')
-        if(eris%hasSpinBlock('abba',interactionIn='stored')) &
-          abba = scalar*eris%getBlock('abba')
-        if(eris%hasSpinBlock('abab',interactionIn='stored')) &
-          abab = scalar*eris%getBlock('abab')
-        if(eris%hasSpinBlock('aaab',interactionIn='stored')) &
-          aaab = scalar*eris%getBlock('aaab')
-        if(eris%hasSpinBlock('abbb',interactionIn='stored')) &
-          abbb = scalar*eris%getBlock('abbb')
+        if(eris%hasSpinBlock('aaaa',interactionIn='stored')) then
+          refP => eris%ref('aaaa',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            aaaa = scalar*refP
+          else
+            aaaa = scalar*eris%getBlock('aaaa')
+          endIf
+        endIf
+        if(eris%hasSpinBlock('bbbb',interactionIn='stored')) then
+          refP => eris%ref('bbbb',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            bbbb = scalar*refP
+          else
+            bbbb = scalar*eris%getBlock('bbbb')
+          endIf
+        endIf
+        if(eris%hasSpinBlock('aabb',interactionIn='stored')) then
+          refP => eris%ref('aabb',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            aabb = scalar*refP
+          else
+            aabb = scalar*eris%getBlock('aabb')
+          endIf
+        endIf
+        if(eris%hasSpinBlock('abba',interactionIn='stored')) then
+          refP => eris%ref('abba',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            abba = scalar*refP
+          else
+            abba = scalar*eris%getBlock('abba')
+          endIf
+        endIf
+        if(eris%hasSpinBlock('abab',interactionIn='stored')) then
+          refP => eris%ref('abab',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            abab = scalar*refP
+          else
+            abab = scalar*eris%getBlock('abab')
+          endIf
+        endIf
+        if(eris%hasSpinBlock('aaab',interactionIn='stored')) then
+          refP => eris%ref('aaab',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            aaab = scalar*refP
+          else
+            aaab = scalar*eris%getBlock('aaab')
+          endIf
+        endIf
+        if(eris%hasSpinBlock('abbb',interactionIn='stored')) then
+          refP => eris%ref('abbb',refOrder,refConjg)
+          refLit = associated(refP)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(refLit) then
+            abbb = scalar*refP
+          else
+            abbb = scalar*eris%getBlock('abbb')
+          endIf
+        endIf
         if(eris%storType().eq.'full') then
-          if(eris%hasSpinBlock('bbaa',interactionIn='stored')) &
-            bbaa = scalar*eris%getBlock('bbaa')
-          if(eris%hasSpinBlock('baba',interactionIn='stored')) &
-            baba = scalar*eris%getBlock('baba')
-          if(eris%hasSpinBlock('baab',interactionIn='stored')) &
-            baab = scalar*eris%getBlock('baab')
-          if(eris%hasSpinBlock('aaba',interactionIn='stored')) &
-            aaba = scalar*eris%getBlock('aaba')
-          if(eris%hasSpinBlock('abaa',interactionIn='stored')) &
-            abaa = scalar*eris%getBlock('abaa')
-          if(eris%hasSpinBlock('baaa',interactionIn='stored')) &
-            baaa = scalar*eris%getBlock('baaa')
-          if(eris%hasSpinBlock('bbba',interactionIn='stored')) &
-            bbba = scalar*eris%getBlock('bbba')
-          if(eris%hasSpinBlock('bbab',interactionIn='stored')) &
-            bbab = scalar*eris%getBlock('bbab')
-          if(eris%hasSpinBlock('babb',interactionIn='stored')) &
-            babb = scalar*eris%getBlock('babb')
+          if(eris%hasSpinBlock('bbaa',interactionIn='stored')) then
+            refP => eris%ref('bbaa',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              bbaa = scalar*refP
+            else
+              bbaa = scalar*eris%getBlock('bbaa')
+            endIf
+          endIf
+          if(eris%hasSpinBlock('baba',interactionIn='stored')) then
+            refP => eris%ref('baba',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              baba = scalar*refP
+            else
+              baba = scalar*eris%getBlock('baba')
+            endIf
+          endIf
+          if(eris%hasSpinBlock('baab',interactionIn='stored')) then
+            refP => eris%ref('baab',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              baab = scalar*refP
+            else
+              baab = scalar*eris%getBlock('baab')
+            endIf
+          endIf
+          if(eris%hasSpinBlock('aaba',interactionIn='stored')) then
+            refP => eris%ref('aaba',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              aaba = scalar*refP
+            else
+              aaba = scalar*eris%getBlock('aaba')
+            endIf
+          endIf
+          if(eris%hasSpinBlock('abaa',interactionIn='stored')) then
+            refP => eris%ref('abaa',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              abaa = scalar*refP
+            else
+              abaa = scalar*eris%getBlock('abaa')
+            endIf
+          endIf
+          if(eris%hasSpinBlock('baaa',interactionIn='stored')) then
+            refP => eris%ref('baaa',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              baaa = scalar*refP
+            else
+              baaa = scalar*eris%getBlock('baaa')
+            endIf
+          endIf
+          if(eris%hasSpinBlock('bbba',interactionIn='stored')) then
+            refP => eris%ref('bbba',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              bbba = scalar*refP
+            else
+              bbba = scalar*eris%getBlock('bbba')
+            endIf
+          endIf
+          if(eris%hasSpinBlock('bbab',interactionIn='stored')) then
+            refP => eris%ref('bbab',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              bbab = scalar*refP
+            else
+              bbab = scalar*eris%getBlock('bbab')
+            endIf
+          endIf
+          if(eris%hasSpinBlock('babb',interactionIn='stored')) then
+            refP => eris%ref('babb',refOrder,refConjg)
+            refLit = associated(refP)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(refLit) then
+              babb = scalar*refP
+            else
+              babb = scalar*eris%getBlock('babb')
+            endIf
+          endIf
           call mqc_twoeris_allocate(erisOut,trim(myLabel)//'-'//trim(myInt),'general',aaaa,bbbb,aabb,bbaa,&
             abab,abba,baab,baba,aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb)
         elseif(eris%storType().eq.'symm') then
@@ -18632,7 +24930,7 @@
       function mqc_eriSet_integral_contraction(eris,integral,zeroIn,label) result(output)
 !
       implicit none
-      type(mqc_twoERISet),intent(in)::eris
+      type(mqc_twoERISet),intent(in),target::eris
       type(mqc_scf_integral),intent(in)::integral
       real(kind=real64),optional,intent(in)::zeroIn
       character(len=*),optional::label
@@ -18649,6 +24947,9 @@
       type(mqc_scalar)::half
       real(kind=real64)::raf1,raf2,raf3
       logical::DEBUG=.false.,doHerm,doAhrm
+      type(mqc_r4tensor),pointer::R1,R2,R3,RG
+      type(mqc_r4tensor),target::R1c,R2c,R3c,RGc
+      logical::hasR1,hasR2,hasR3,hasRG
       real(kind=real64),dimension(:),allocatable::aaHRden,bbHRden,aaHCden,bbHCden,abHHRden, &
         abAHRden,abHHCden,abAHCden,aaARden,bbARden,aaACden,bbACden,abHARden,abAARden, &
         abHACden,abAACden
@@ -19031,10 +25332,26 @@
 !          endIf
 !        endIf
 
+!       ERI tensors read in the quartet loop, fetched once here: eris%twoERIs(i)%at(k,l,m,n)
+!       without a spin block built getBlock('full') for every element read.
+        hasR1 = eris%erinum('raffenetti1').ne.0
+        hasR2 = eris%erinum('raffenetti2').ne.0
+        hasR3 = eris%erinum('raffenetti3').ne.0
+        hasRG = eris%erinum('regular').ne.0
+        R1 => null()
+        R2 => null()
+        R3 => null()
+        RG => null()
+        if(hasR1) call mqc_eriset_full_ref(eris%twoERIs(eris%erinum('raffenetti1')),R1,R1c)
+        if(hasR2) call mqc_eriset_full_ref(eris%twoERIs(eris%erinum('raffenetti2')),R2,R2c)
+        if(hasR3) call mqc_eriset_full_ref(eris%twoERIs(eris%erinum('raffenetti3')),R3,R3c)
+        if(hasRG) call mqc_eriset_full_ref(eris%twoERIs(eris%erinum('regular')),RG,RGc)
+
 !$OMP PARALLEL DO DEFAULT(NONE), &
 !$OMP REDUCTION(+:aaHRfoc,bbHRfoc,aaHCfoc,bbHCfoc,abHHRfoc,abAHRfoc,abHHCfoc,abAHCfoc, &
 !$OMP aaARfoc,bbARfoc,aaACfoc,bbACfoc,abHARfoc,abAARfoc,abHACfoc,abAACfoc), &
-!$OMP SHARED(eris,ntt,aaHRden,bbHRden,aaHCden,bbHCden,abHHRden,abAHRden,abHHCden,abAHCden, &
+!$OMP SHARED(R1,R2,R3,RG,hasR1,hasR2,hasR3,hasRG,ntt,aaHRden,bbHRden,aaHCden,bbHCden, &
+!$OMP abHHRden,abAHRden,abHHCden,abAHCden, &
 !$OMP aaARden,bbARden,aaACden,bbACden,abHARden,abAARden,abHACden,abAACden,flag,doHerm, &
 !$OMP doAhrm,zero), &
 !$OMP PRIVATE(cnt,kp,mp,k,l,m,n,raf1,raf2,raf3)
@@ -19053,23 +25370,20 @@
           l = kp - k*(k-1)/2
           n = mp - m*(m-1)/2
 
-          if(eris%erinum('raffenetti1').ne.0) then
-            raf1 = eris%twoERIs(eris%erinum('raffenetti1'))%at(k,l,m,n)
-          elseIf(eris%erinum('regular').ne.0) then
-            raf1 = eris%twoERIs(eris%erinum('regular'))%at(k,l,m,n) - &
-              0.25*(eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l) + &
-              eris%twoERIs(eris%erinum('regular'))%at(k,m,n,l))
-            if(kp.eq.mp) raf1 = 0.5*raf1 
+          if(hasR1) then
+            raf1 = R1%at(k,l,m,n)
+          elseIf(hasRG) then
+            raf1 = RG%at(k,l,m,n) - 0.25*(RG%at(k,n,m,l) + RG%at(k,m,n,l))
+            if(kp.eq.mp) raf1 = 0.5*raf1
           else
             call mqc_error('Regular or Raffenetti 1 type TwoERIs missing in &
               & mqc_eriset_integral_contraction')
           endIf
           if(mod(flag,10).gt.0) then
-            if(eris%erinum('raffenetti2').ne.0) then
-              raf2 = eris%twoERIs(eris%erinum('raffenetti2'))%at(k,l,m,n) 
-            elseIf(eris%erinum('regular').ne.0) then
-              raf2 = eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l) + &
-                eris%twoERIs(eris%erinum('regular'))%at(k,m,n,l)
+            if(hasR2) then
+              raf2 = R2%at(k,l,m,n)
+            elseIf(hasRG) then
+              raf2 = RG%at(k,n,m,l) + RG%at(k,m,n,l)
               if(kp.eq.mp) raf2 = 0.5*raf2 
             else
               call mqc_error('Regular or Raffenetti 2 type TwoERIs missing in &
@@ -19080,11 +25394,10 @@
           endIf
           if (m.ne.n) then
             if (doAhrm.or.mod(flag,10).eq.2.or.mod(flag,100)/10.eq.1) then
-              if(eris%erinum('raffenetti3').ne.0) then
-                raf3 = eris%twoERIs(eris%erinum('raffenetti3'))%at(k,l,m,n) 
-              elseIf(eris%erinum('regular').ne.0) then
-                raf3 = eris%twoERIs(eris%erinum('regular'))%at(k,m,n,l) - &
-                  eris%twoERIs(eris%erinum('regular'))%at(k,n,m,l) 
+              if(hasR3) then
+                raf3 = R3%at(k,l,m,n)
+              elseIf(hasRG) then
+                raf3 = RG%at(k,m,n,l) - RG%at(k,n,m,l)
                 if(kp.eq.mp) raf3 = 0.5*raf3 
               else
                 call mqc_error('Regular or Raffenetti 3 type TwoERIs missing in &
@@ -19493,6 +25806,54 @@
       
       end function mqc_eriSet_integral_contraction
 !
+!     PROCEDURE MQC_ERISet_Full_Ref
+!
+!>    \brief <b> MQC_ERISet_Full_Ref points at the tensor that MQC_TwoERIs_At reads
+!>    without a spin block (getBlock('full')) of one ERI-set member. </b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    For a space-type member (regular, raffenetti1-3, space) whose interaction is not
+!>    doublebar, getBlock('full') is the stored aaaa block: ptr => that member through
+!>    %ref with no copy. Otherwise (other types, a view, or no stored aaaa) copy receives
+!>    getBlock('full') once and ptr => copy. Either way ptr(k,l,m,n) equals
+!>    eri%at(k,l,m,n). ptr is valid while eri and copy are not modified.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_eriset_full_ref(eri,ptr,copy)
+!
+      implicit none
+      type(mqc_twoERIs),intent(in),target::eri
+      type(mqc_r4tensor),pointer,intent(out)::ptr
+      type(mqc_r4tensor),intent(inout),target::copy
+      integer(kind=int64),dimension(4)::ord
+      logical::cj,spaceLike
+      character(len=64)::eType
+!
+      eType = eri%type()
+      spaceLike = eType.eq.'regular'.or.eType.eq.'raffenetti1'.or.eType.eq.'raffenetti2'.or. &
+        eType.eq.'raffenetti3'.or.eType.eq.'space'
+      ptr => null()
+      if(spaceLike.and.eri%intType().ne.'doublebar') ptr => eri%ref('aaaa',ord,cj)
+      if(associated(ptr)) then
+        if(any(ord.ne.[1,2,3,4]).or.cj) ptr => null()
+      endIf
+      if(.not.associated(ptr)) then
+        copy = eri%getBlock('full')
+        ptr => copy
+      endIf
+!
+      end subroutine mqc_eriset_full_ref
+!
 !
 !     PROCEDURE MQC_ERI_Integral_Contraction
 !
@@ -19535,16 +25896,15 @@
 !>    \author M. M. F. Moraes
 !>    \date 2024
 !
-      function mqc_eri_integral_contraction_core(erisIn,integral,inorder,ForceSym) result(output)
+      function mqc_eri_integral_contraction_core(eris,integral,inorder,ForceSym) result(output)
 !
       implicit none
-      type(mqc_twoERIs),intent(in)::erisIn
+      type(mqc_twoERIs),intent(in),target::eris
       type(mqc_scf_integral),intent(in)::integral
       Integer(kind=int64),dimension(2),Intent(In),optional::inorder
       logical,intent(in),optional::ForceSym
       Integer(kind=int64),dimension(2)::ind
       character(len=64)::FinalType
-      type(mqc_twoERIs)::eris
       type(mqc_scf_integral)::output
       type(mqc_matrix)::aa,bb,ab,ba,tmpM
       integer(kind=int64)::nAc,nAd,nBc,nBd
@@ -19562,7 +25922,6 @@
       dBB = integral%getBlock('bb')
       dAB = integral%getBlock('ab')
       dBA = integral%getBlock('ba')
-      eris = erisIn
       if(present(inorder)) then
         same=.false.
         ind=inorder
@@ -19648,7 +26007,7 @@
         select case (integral%type())
         case ('space')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+            aa=aa+mqc_eri_block_contraction(eris,'aaaa',&
                                   dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
@@ -19656,11 +26015,11 @@
           FinalType='space'
         case ('spin')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+            aa=aa+mqc_eri_block_contraction(eris,'aaaa',&
                                   dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
-          tmpM=mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+          tmpM=mqc_eri_block_contraction(eris,'aaaa',&
                                 dBB,ind,forcedSymm)
           if(same) then
             aa=aa+tmpM
@@ -19673,11 +26032,11 @@
           endif
         case ('general')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+            aa=aa+mqc_eri_block_contraction(eris,'aaaa',&
                                   dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
-          tmpM=mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+          tmpM=mqc_eri_block_contraction(eris,'aaaa',&
                                 dBB,ind,forcedSymm)
           if(same) then
             aa=aa+tmpM
@@ -19688,24 +26047,24 @@
             usedBB = .not.eris%isZeroBlock('aaaa')
             if (ia.lt.ib) then
               if(.not.eris%isZeroBlock('aaaa')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  dAB,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'aaaa',&
+                                  dAB,ind,'unknown')
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('aaaa')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  dBA,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaaa',&
+                                  dBA,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
             else
               if(.not.eris%isZeroBlock('aaaa')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  dAB,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaaa',&
+                                  dAB,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('aaaa')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaaa'),&
-                                  dBA,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'aaaa',&
+                                  dBA,ind,'unknown')
                 usedAB = .true.
               endIf
             endif
@@ -19716,35 +26075,35 @@
         select case (integral%type())
         case ('space')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+            aa=aa+mqc_eri_block_contraction(eris,'aaaa',&
                                   dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+            bb=bb+mqc_eri_block_contraction(eris,'bbbb',&
                                   dAA,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                aa=aa+mqc_eri_block_contraction(eris,'bbaa',&
                                   dAA,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                bb=bb+mqc_eri_block_contraction(eris,'aabb',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                aa=aa+mqc_eri_block_contraction(eris,'aabb',&
                                   dAA,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                bb=bb+mqc_eri_block_contraction(eris,'bbaa',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
@@ -19755,35 +26114,35 @@
           endif
         case ('spin')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+            aa=aa+mqc_eri_block_contraction(eris,'aaaa',&
                                   dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+            bb=bb+mqc_eri_block_contraction(eris,'bbbb',&
                                   dBB,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                aa=aa+mqc_eri_block_contraction(eris,'bbaa',&
                                   dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                bb=bb+mqc_eri_block_contraction(eris,'aabb',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                aa=aa+mqc_eri_block_contraction(eris,'aabb',&
                                   dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                bb=bb+mqc_eri_block_contraction(eris,'bbaa',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
@@ -19794,35 +26153,35 @@
           endif
         case ('general')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+            aa=aa+mqc_eri_block_contraction(eris,'aaaa',&
                                   dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+            bb=bb+mqc_eri_block_contraction(eris,'bbbb',&
                                   dBB,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                aa=aa+mqc_eri_block_contraction(eris,'bbaa',&
                                   dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                bb=bb+mqc_eri_block_contraction(eris,'aabb',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                aa=aa+mqc_eri_block_contraction(eris,'aabb',&
                                   dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                bb=bb+mqc_eri_block_contraction(eris,'bbaa',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
@@ -19831,24 +26190,24 @@
           else
             if (ia.lt.ib) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  dAB,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'bbaa',&
+                                  dAB,ind,'unknown')
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  dBA,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aabb',&
+                                  dBA,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                  dAB,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aabb',&
+                                  dAB,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                  dBA,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'bbaa',&
+                                  dBA,ind,'unknown')
                 usedAB = .true.
               endIf
             endif
@@ -19859,76 +26218,76 @@
         select case (integral%type())
         case ('space')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+            aa=aa+mqc_eri_block_contraction(eris,'aaaa',&
                                   dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+            bb=bb+mqc_eri_block_contraction(eris,'bbbb',&
                                   dAA,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                aa=aa+mqc_eri_block_contraction(eris,'bbaa',&
                                   dAA,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                bb=bb+mqc_eri_block_contraction(eris,'aabb',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('aaab')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                  dAA,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaab',&
+                                  dAA,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbab')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                  dAA,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'bbab',&
+                                  dAA,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('aaba')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                  dAA,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'aaba',&
+                                  dAA,ind,'unknown')
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('bbba')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                  dAA,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'bbba',&
+                                  dAA,ind,'unknown')
                 usedAB = .true.
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                aa=aa+mqc_eri_block_contraction(eris,'aabb',&
                                   dAA,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                bb=bb+mqc_eri_block_contraction(eris,'bbaa',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('abaa')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                  dAA,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abaa',&
+                                  dAA,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('abbb')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                  dAA,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                  dAA,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('baaa')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                  dAA,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                  dAA,ind,'unknown')
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('babb')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                  dAA,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'babb',&
+                                  dAA,ind,'unknown')
                 usedAB = .true.
               endIf
             endif
@@ -19937,220 +26296,220 @@
             if (ia.lt.ib) then
               if (ib.eq.4) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaba',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbab',&
+                                                 dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if (ib.eq.3) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaab',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbba',&
+                                                 dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if(ia.eq.1.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baba',&
                                                    dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'babb',&
+                                                   dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.1.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baab',&
                                                    dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'babb',&
+                                                   dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.2.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abba',&
                                                    dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                                   dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.2.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abab',&
                                                    dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                                   dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               endif
             else
               if (ia.eq.4) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaba',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbab',&
+                                                 dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if (ia.eq.3) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaab',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbba',&
+                                                 dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if(ib.eq.1.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baba',&
                                                    dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'babb',&
+                                                   dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.1.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baab',&
                                                    dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'babb',&
+                                                   dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.2.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abba',&
                                                    dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                                   dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.2.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abab',&
                                                    dAA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                                   dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               endif
@@ -20159,76 +26518,76 @@
           endif
         case ('spin')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+            aa=aa+mqc_eri_block_contraction(eris,'aaaa',&
                                   dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+            bb=bb+mqc_eri_block_contraction(eris,'bbbb',&
                                   dBB,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                aa=aa+mqc_eri_block_contraction(eris,'bbaa',&
                                   dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                bb=bb+mqc_eri_block_contraction(eris,'aabb',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('aaab')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                  dAA,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaab',&
+                                  dAA,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbab')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                  dBB,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'bbab',&
+                                  dBB,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('aaba')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                  dAA,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'aaba',&
+                                  dAA,ind,'unknown')
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('bbba')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                  dBB,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'bbba',&
+                                  dBB,ind,'unknown')
                 usedAB = .true.
               endIf
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                aa=aa+mqc_eri_block_contraction(eris,'aabb',&
                                   dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                bb=bb+mqc_eri_block_contraction(eris,'bbaa',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('abaa')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                  dAA,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abaa',&
+                                  dAA,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('abbb')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                  dBB,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                  dBB,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('baaa')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                  dAA,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                  dAA,ind,'unknown')
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('babb')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                  dBB,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'babb',&
+                                  dBB,ind,'unknown')
                 usedAB = .true.
               endIf
             endif
@@ -20237,220 +26596,220 @@
             if (ia.lt.ib) then
               if (ib.eq.4) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaba',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 dBB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbab',&
+                                                 dBB,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if (ib.eq.3) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaab',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 dBB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbba',&
+                                                 dBB,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if(ia.eq.1.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baba',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'babb',&
+                                                   dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.1.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baab',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'babb',&
+                                                   dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.2.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abba',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                                   dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ia.eq.2.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abab',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                                   dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               endif
             else
               if (ia.eq.4) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaba',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 dBB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbab',&
+                                                 dBB,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if (ia.eq.3) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaab',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 dBB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbba',&
+                                                 dBB,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if(ib.eq.1.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baba',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'babb',&
+                                                   dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.1.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baab',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                   dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'babb',&
+                                                   dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.2.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abba',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                                   dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               elseif(ib.eq.2.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abab',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                   dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                                   dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                   dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                                   dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
               endif
@@ -20459,241 +26818,241 @@
           endif
         case ('general')
           if(.not.eris%isZeroBlock('aaaa')) then
-            aa=aa+mqc_eri_block_contraction(eris%getBlock('aaaa'),&
+            aa=aa+mqc_eri_block_contraction(eris,'aaaa',&
                                   dAA,ind,forcedSymm)
             usedAA = .true.
           endIf
           if(.not.eris%isZeroBlock('bbbb')) then
-            bb=bb+mqc_eri_block_contraction(eris%getBlock('bbbb'),&
+            bb=bb+mqc_eri_block_contraction(eris,'bbbb',&
                                   dBB,ind,forcedSymm)
             usedBB = .true.
           endIf
           if(same) then
             if(ia.eq.1.or.ia.eq.2) then
               if(.not.eris%isZeroBlock('bbaa')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                aa=aa+mqc_eri_block_contraction(eris,'bbaa',&
                                   dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('aabb')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                bb=bb+mqc_eri_block_contraction(eris,'aabb',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('aaab')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                  dAA,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaab',&
+                                  dAA,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbab')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                  dBB,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'bbab',&
+                                  dBB,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('aaba')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                  dAA,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'aaba',&
+                                  dAA,ind,'unknown')
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('bbba')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                  dBB,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'bbba',&
+                                  dBB,ind,'unknown')
                 usedAB = .true.
               endIf
               if(ia.eq.1) then
                 if(.not.eris%isZeroBlock('abaa')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abaa'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abaa',&
                                   dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baaa'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baaa',&
                                   dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abbb'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abbb',&
                                   dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('babb'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'babb',&
                                   dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                  dBA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abab',&
+                                  dBA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                  dAB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'baab',&
+                                  dAB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                  dAB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baba',&
+                                  dAB,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                  dBA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abba',&
+                                  dBA,ind,'unknown')
                   usedAB = .true.
                 endIf
               else
                 if(.not.eris%isZeroBlock('baaa')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baaa'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baaa',&
                                   dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abaa'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abaa',&
                                   dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('babb'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'babb',&
                                   dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abbb')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abbb'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abbb',&
                                   dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                  dAB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abab',&
+                                  dAB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                  dBA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'baab',&
+                                  dBA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                  dBA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baba',&
+                                  dBA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                  dAB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abba',&
+                                  dAB,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                aa=aa+mqc_eri_block_contraction(eris%getBlock('aabb'),&
+                aa=aa+mqc_eri_block_contraction(eris,'aabb',&
                                   dBB,ind,forcedSymm)
                 usedAA = .true.
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                bb=bb+mqc_eri_block_contraction(eris%getBlock('bbaa'),&
+                bb=bb+mqc_eri_block_contraction(eris,'bbaa',&
                                   dAA,ind,forcedSymm)
                 usedBB = .true.
               endIf
               if(.not.eris%isZeroBlock('abaa')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                  dAA,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abaa',&
+                                  dAA,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('abbb')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                  dBB,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                  dBB,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('baaa')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                  dAA,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                  dAA,ind,'unknown')
                 usedAB = .true.
               endIf
               if(.not.eris%isZeroBlock('babb')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                  dBB,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'babb',&
+                                  dBB,ind,'unknown')
                 usedAB = .true.
               endIf
               if(ia.eq.3) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'aaab',&
                                   dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'aaba',&
                                   dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'bbab',&
                                   dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'bbba',&
                                   dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                  dBA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abab',&
+                                  dBA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                  dAB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abba',&
+                                  dAB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                  dAB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baba',&
+                                  dAB,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                  dBA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baab',&
+                                  dBA,ind,'unknown')
                   usedAB = .true.
                 endIf
               else
                 if(.not.eris%isZeroBlock('aaba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'aaba',&
                                   dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'aaab',&
                                   dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'bbba',&
                                   dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'bbab',&
                                   dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                  dAB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abab',&
+                                  dAB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                  dBA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abba',&
+                                  dBA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                  dBA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baba',&
+                                  dBA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                  dAB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baab',&
+                                  dAB,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
@@ -20702,369 +27061,369 @@
           else
             if (ia.lt.ib) then
               if(.not.eris%isZeroBlock('aabb')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                               dBA,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aabb',&
+                                               dBA,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                               dAB,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'bbaa',&
+                                               dAB,ind,'unknown')
                 usedAB = .true.
               endIf
               if (ib.eq.4) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'aaab',&
                                                  dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'bbba',&
                                                  dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaba',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 dBB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbab',&
+                                                 dBB,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if (ib.eq.3) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'aaba',&
                                                  dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'bbab',&
                                                  dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaab',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 dBB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbba',&
+                                                 dBB,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if (ia.eq.1) then
                 if(.not.eris%isZeroBlock('abbb')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abbb'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abbb',&
                                                  dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                 dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'babb',&
+                                                 dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                 dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abaa',&
+                                                 dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baaa'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baaa',&
                                                  dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
               endif
               if (ia.eq.2) then
                 if(.not.eris%isZeroBlock('abbb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                 dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                                 dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('babb'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'babb',&
                                                  dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abaa'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abaa',&
                                                  dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                 dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                                 dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if(ia.eq.1.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baba',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   dAB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'baab',&
+                                                   dAB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   dBA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abba',&
+                                                   dBA,ind,'unknown')
                   usedAB = .true.
                 endIf
               elseif(ia.eq.1.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baab',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   dAB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'baba',&
+                                                   dAB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   dBA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abab',&
+                                                   dBA,ind,'unknown')
                   usedAB = .true.
                 endIf
               elseif(ia.eq.2.and.ib.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abba',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   dAB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abab',&
+                                                   dAB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   dBA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baba',&
+                                                   dBA,ind,'unknown')
                   usedAB = .true.
                 endIf
               elseif(ia.eq.2.and.ib.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abab',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   dAB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abba',&
+                                                   dAB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   dBA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baab',&
+                                                   dBA,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
             else
               if(.not.eris%isZeroBlock('aabb')) then
-                if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aabb'),&
-                                               dAB,ind)
+                if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aabb',&
+                                               dAB,ind,'unknown')
                 usedBA = .not.skipBA
               endIf
               if(.not.eris%isZeroBlock('bbaa')) then
-                ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbaa'),&
-                                               dBA,ind)
+                ab=ab+mqc_eri_block_contraction(eris,'bbaa',&
+                                               dBA,ind,'unknown')
                 usedAB = .true.
               endIf
               if (ia.eq.4) then
                 if(.not.eris%isZeroBlock('aaab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'aaab',&
                                                  dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'bbba',&
                                                  dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaba'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaba',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbab'),&
-                                                 dBB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbab',&
+                                                 dBB,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if (ia.eq.3) then
                 if(.not.eris%isZeroBlock('aaba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('aaba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'aaba',&
                                                  dAB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('bbab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('bbab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'bbab',&
                                                  dBA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('aaab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('aaab'),&
-                                                 dAA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'aaab',&
+                                                 dAA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('bbba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('bbba'),&
-                                                 dBB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'bbba',&
+                                                 dBB,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if (ib.eq.1) then
                 if(.not.eris%isZeroBlock('abbb')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abbb'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abbb',&
                                                  dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('babb'),&
-                                                 dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'babb',&
+                                                 dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abaa'),&
-                                                 dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abaa',&
+                                                 dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baaa'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baaa',&
                                                  dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
               endif
               if (ib.eq.2) then
                 if(.not.eris%isZeroBlock('abbb')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abbb'),&
-                                                 dBB,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abbb',&
+                                                 dBB,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('babb')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('babb'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'babb',&
                                                  dAB,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abaa')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abaa'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abaa',&
                                                  dBA,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baaa')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baaa'),&
-                                                 dAA,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baaa',&
+                                                 dAA,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
               if(ib.eq.1.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('abab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baba',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   dBA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'baab',&
+                                                   dBA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   dAB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abba',&
+                                                   dAB,ind,'unknown')
                   usedAB = .true.
                 endIf
               elseif(ib.eq.1.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('abba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'abba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'baab',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   dBA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'baba',&
+                                                   dBA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   dAB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'abab',&
+                                                   dAB,ind,'unknown')
                   usedAB = .true.
                 endIf
               elseif(ib.eq.2.and.ia.eq.3) then
                 if(.not.eris%isZeroBlock('baab')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baab'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baab',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abba'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abba',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abab'),&
-                                                   dBA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abab',&
+                                                   dBA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baba')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baba'),&
-                                                   dAB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baba',&
+                                                   dAB,ind,'unknown')
                   usedAB = .true.
                 endIf
               elseif(ib.eq.2.and.ia.eq.4) then
                 if(.not.eris%isZeroBlock('baba')) then
-                  bb=bb+mqc_eri_block_contraction(eris%getBlock('baba'),&
+                  bb=bb+mqc_eri_block_contraction(eris,'baba',&
                                                    dAA,ind,forcedSymm)
                   usedBB = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abab')) then
-                  aa=aa+mqc_eri_block_contraction(eris%getBlock('abab'),&
+                  aa=aa+mqc_eri_block_contraction(eris,'abab',&
                                                    dBB,ind,forcedSymm)
                   usedAA = .true.
                 endIf
                 if(.not.eris%isZeroBlock('abba')) then
-                  if(.not.skipBA) ba=ba+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('abba'),&
-                                                   dBA,ind)
+                  if(.not.skipBA) ba=ba+mqc_eri_block_contraction(eris,'abba',&
+                                                   dBA,ind,'unknown')
                   usedBA = .not.skipBA
                 endIf
                 if(.not.eris%isZeroBlock('baab')) then
-                  ab=ab+MQC_R4Tensor_Matrix_Contraction(eris%getBlock('baab'),&
-                                                   dAB,ind)
+                  ab=ab+mqc_eri_block_contraction(eris,'baab',&
+                                                   dAB,ind,'unknown')
                   usedAB = .true.
                 endIf
               endif
@@ -21176,18 +27535,57 @@
 !
 !     PROCEDURE mqc_eri_block_contraction
 !
-!>    \brief <b> mqc_eri_block_contraction contracts one ERI block with an integral
-!>    block, with a forced result symmetry when one is given</b>
+!>    \brief <b> mqc_eri_block_contraction contracts one named ERI spin block with an
+!>    integral block, with a forced result symmetry when one is given</b>
 !>
 !>    \par Purpose:
 !     =============
 !>
 !>    \verbatim
 !>
-!>    MQC_R4Tensor_Matrix_Contraction(R4,M,ind), with ForceSym=forced when forced is
-!>    not 'unknown' (see mqc_eri_integral_contraction: the term is part of a sum
-!>    known to have that symmetry; only its lower triangle is computed).
+!>    Result = MQC_R4Tensor_Matrix_Contraction(ERIs%getBlock(BlockName),M,ind), with
+!>    ForceSym=forced when forced is not 'unknown' (see mqc_eri_integral_contraction:
+!>    the term is part of a sum known to have that symmetry; only its lower triangle
+!>    is computed).
+!>    The block is read without a copy through ERIs%ref(BlockName,Order,DoConjg):
+!>    block = stored member S viewed by Order (block position q = S position
+!>    Order(q)), conjugated when DoConjg.
+!>    - contracted pair on S: [Order(ind(1)),Order(ind(2))];
+!>    - the free block positions c < d are S positions Order(c), Order(d); the
+!>      contraction returns them in ascending order, so when Order(c) > Order(d)
+!>      the result is transposed;
+!>    - DoConjg: sum conj(S) M = conj(sum S conj(M)).
+!>    getBlock copy (as before) when the ref is null (no single stored image) or
+!>    when a forced term would need the transpose (a forced contraction computes
+!>    only the lower triangle of the result on S).
 !>
+!>    \endverbatim
+!
+!     Arguments:
+!     ==========
+!>    \param[in] ERIs
+!>    \verbatim
+!>        ERIs is type(mqc_twoERIs), target.
+!>    \endverbatim
+!>
+!>    \param[in] BlockName
+!>    \verbatim
+!>        BlockName is character(len=*). Spin block name ('aaaa', 'aabb', ...).
+!>    \endverbatim
+!>
+!>    \param[in] M
+!>    \verbatim
+!>        M is type(mqc_matrix). Integral block contracted with the pair ind.
+!>    \endverbatim
+!>
+!>    \param[in] ind
+!>    \verbatim
+!>        ind is integer(kind=int64),dimension(2). Contracted block positions.
+!>    \endverbatim
+!>
+!>    \param[in] forced
+!>    \verbatim
+!>        forced is character(len=*). Forced result symmetry or 'unknown'.
 !>    \endverbatim
 !
 !     Authors:
@@ -21195,19 +27593,56 @@
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      function mqc_eri_block_contraction(R4,M,ind,forced) result(MC)
+      function mqc_eri_block_contraction(eris,blockName,M,ind,forced) result(MC)
 !
       implicit none
-      type(mqc_r4tensor),intent(in)::R4
+      type(mqc_twoERIs),intent(in),target::eris
+      character(len=*),intent(in)::blockName
       type(mqc_matrix),intent(in)::M
       integer(kind=int64),dimension(2),intent(in)::ind
       character(len=*),intent(in)::forced
       type(mqc_matrix)::MC
+      type(mqc_r4tensor),pointer::R4Ptr
+      integer(kind=int64),dimension(4)::order
+      integer(kind=int64),dimension(2)::inner,free
+      integer(kind=int64)::i,nFree
+      logical::doConjg,isForced,flip
+      type(mqc_matrix)::MX
 !
-      if(trim(forced).ne.'unknown') then
-        MC = MQC_R4Tensor_Matrix_Contraction(R4,M,ind,ForceSym=forced)
+      isForced = trim(forced).ne.'unknown'
+      R4Ptr => eris%ref(blockName,order,doConjg)
+      flip = .false.
+      if(associated(R4Ptr)) then
+        inner = [order(ind(1)),order(ind(2))]
+        nFree = 0
+        do i = 1, 4
+          if(i.ne.ind(1).and.i.ne.ind(2)) then
+            nFree = nFree+1
+            free(nFree) = order(i)
+          endIf
+        endDo
+        flip = free(1).gt.free(2)
+      endIf
+      if(.not.associated(R4Ptr).or.(flip.and.isForced)) then
+        if(isForced) then
+          MC = MQC_R4Tensor_Matrix_Contraction(eris%getBlock(blockName),M,ind,ForceSym=forced)
+        else
+          MC = MQC_R4Tensor_Matrix_Contraction(eris%getBlock(blockName),M,ind)
+        endIf
       else
-        MC = MQC_R4Tensor_Matrix_Contraction(R4,M,ind)
+        if(doConjg) then
+          MX = conjg(M)
+        else
+          MX = M
+        endIf
+        if(flip) then
+          MC = transpose(MQC_R4Tensor_Matrix_Contraction(R4Ptr,MX,inner))
+        elseIf(isForced) then
+          MC = MQC_R4Tensor_Matrix_Contraction(R4Ptr,MX,inner,ForceSym=forced)
+        else
+          MC = MQC_R4Tensor_Matrix_Contraction(R4Ptr,MX,inner)
+        endIf
+        if(doConjg) MC = conjg(MC)
       endIf
 !
       end function mqc_eri_block_contraction
@@ -21420,7 +27855,7 @@
       function mqc_eri_r4tensor_contraction(eris,r4tensor,label) result(output)
 !
       implicit none
-      type(mqc_twoERIs),intent(in)::eris
+      type(mqc_twoERIs),intent(in),target::eris
       type(mqc_r4Tensor),intent(in)::r4tensor
       character(len=*),optional,intent(in)::label
       type(mqc_scalar)::output
@@ -21432,8 +27867,11 @@
       character(len=64)::mylabel
       integer(kind=int64)::r4t1,r4t2,r4t3,r4t4,nB1,nB2,nB3,nB4,nB1b,nB2b,nB3b,nB4b
       integer(kind=int64)::nBasis,i,j
-      type(mqc_r4tensor)::temp,temp2
-      type(mqc_twoERIs)::tempERI
+      type(mqc_r4tensor),target::temp,temp2
+      type(mqc_twoERIs),target::tempERI
+      type(mqc_r4tensor),pointer::pTemp
+      integer(kind=int64),dimension(4)::refOrder
+      logical::refConjg,refLit
 !     
       if(present(label)) then
         call string_change_case(label,'L',myLabel)
@@ -21534,63 +27972,123 @@
         if(r4t1.eq.nB1.and.r4t2.eq.nB2.and.r4t3.eq.nB3.and.r4t4.eq.nB4) then
           select case (myLabel)
           case ('coulomb','inverted','ms')
-            temp = eris%getBlock('aaaa')
-            output = contraction(temp,r4tensor)
+            pTemp => eris%ref('aaaa',refOrder,refConjg)
+            refLit = associated(pTemp)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              temp = eris%getBlock('aaaa')
+              pTemp => temp
+            endIf
+            output = contraction(pTemp,r4tensor)
           case ('exchange')
             tempERI = mqc_eri_interaction(eris,'exchange')
-            temp = tempERI%getBlock('aaaa')
-            output = contraction(temp,r4tensor)
+            pTemp => tempERI%ref('aaaa',refOrder,refConjg)
+            refLit = associated(pTemp)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              temp = tempERI%getBlock('aaaa')
+              pTemp => temp
+            endIf
+            output = contraction(pTemp,r4tensor)
           case ('doublebar')
             tempERI = mqc_eri_interaction(eris,'doublebar')
-            temp = tempERI%getBlock('aaaa')
-            output = contraction(temp,r4tensor)
+            pTemp => tempERI%ref('aaaa',refOrder,refConjg)
+            refLit = associated(pTemp)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              temp = tempERI%getBlock('aaaa')
+              pTemp => temp
+            endIf
+            output = contraction(pTemp,r4tensor)
           case default
             call mqc_error_a('Unrecognized 2ERI integral interaction specified',6,'myLabel',myLabel)
           end select
         elseIf(r4t1.eq.2*nB1.and.r4t2.eq.2*nB2.and.r4t3.eq.2*nB3.and.r4t4.eq.2*nB4) then
           select case (myLabel)
           case ('coulomb')
-            temp = eris%getBlock('aaaa')
-            output = contraction(temp,r4tensor%tat([1,nB1],[1,nB2],[1,nB3],[1,nB4]))
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[1,nB3],[1,nB4]))
-            output = output + contraction(temp,r4tensor%tat([1,nB1],[1,nB2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
+            pTemp => eris%ref('aaaa',refOrder,refConjg)
+            refLit = associated(pTemp)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              temp = eris%getBlock('aaaa')
+              pTemp => temp
+            endIf
+            output = contraction(pTemp,r4tensor%tat([1,nB1],[1,nB2],[1,nB3],[1,nB4]))
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[1,nB3],[1,nB4]))
+            output = output + contraction(pTemp,r4tensor%tat([1,nB1],[1,nB2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
           case ('exchange')
             tempERI = mqc_eri_interaction(eris,'exchange')
-            temp = tempERI%getBlock('aaaa')
-            output = contraction(temp,r4tensor%tat([1,nB1],[1,nB2],[1,nB3],[1,nB4]))
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[1,nB2],[1,nB3],[nB4+1,nB4*2]))
-            output = output + contraction(temp,r4tensor%tat([1,nB1],[nB2+1,nB2*2],[nB3+1,nB3*2],[1,nB4]))
+            pTemp => tempERI%ref('aaaa',refOrder,refConjg)
+            refLit = associated(pTemp)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              temp = tempERI%getBlock('aaaa')
+              pTemp => temp
+            endIf
+            output = contraction(pTemp,r4tensor%tat([1,nB1],[1,nB2],[1,nB3],[1,nB4]))
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[1,nB2],[1,nB3],[nB4+1,nB4*2]))
+            output = output + contraction(pTemp,r4tensor%tat([1,nB1],[nB2+1,nB2*2],[nB3+1,nB3*2],[1,nB4]))
           case ('doublebar')
             tempERI = mqc_eri_interaction(eris,'doublebar')
-            temp = tempERI%getBlock('aaaa')
-            output = contraction(temp,r4tensor%tat([1,nB1],[1,nB2],[1,nB3],[1,nB4]))
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
+            pTemp => tempERI%ref('aaaa',refOrder,refConjg)
+            refLit = associated(pTemp)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              temp = tempERI%getBlock('aaaa')
+              pTemp => temp
+            endIf
+            output = contraction(pTemp,r4tensor%tat([1,nB1],[1,nB2],[1,nB3],[1,nB4]))
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
             tempERI = mqc_eri_interaction(eris,'coulomb')
-            temp = tempERI%getBlock('aaaa')
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[1,nB3],[1,nB4]))
-            output = output + contraction(temp,r4tensor%tat([1,nB1],[1,nB2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
+            pTemp => tempERI%ref('aaaa',refOrder,refConjg)
+            refLit = associated(pTemp)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              temp = tempERI%getBlock('aaaa')
+              pTemp => temp
+            endIf
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[1,nB3],[1,nB4]))
+            output = output + contraction(pTemp,r4tensor%tat([1,nB1],[1,nB2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
             tempERI = mqc_eri_interaction(eris,'exchange')
-            temp = tempERI%getBlock('aaaa')
-            output = output - contraction(temp,r4tensor%tat([nB1+1,nB1*2],[1,nB2],[1,nB3],[nB4+1,nB4*2]))
-            output = output - contraction(temp,r4tensor%tat([1,nB1],[nB2+1,nB2*2],[nB3+1,nB3*2],[1,nB4]))
+            pTemp => tempERI%ref('aaaa',refOrder,refConjg)
+            refLit = associated(pTemp)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              temp = tempERI%getBlock('aaaa')
+              pTemp => temp
+            endIf
+            output = output - contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[1,nB2],[1,nB3],[nB4+1,nB4*2]))
+            output = output - contraction(pTemp,r4tensor%tat([1,nB1],[nB2+1,nB2*2],[nB3+1,nB3*2],[1,nB4]))
           case ('inverted')
-            temp = eris%getBlock('aaaa')
-            output = contraction(temp,r4tensor%tat([1,nB1],[1,nB2],[1,nB3],[1,nB4]))
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
-            output = output + contraction(temp,r4tensor%tat([1,nB1],[nB2+1,nB2*2],[1,nB3],[nB4+1,nB4*2]))
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[1,nB2],[nB3+1,nB3*2],[1,nB4]))
+            pTemp => eris%ref('aaaa',refOrder,refConjg)
+            refLit = associated(pTemp)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              temp = eris%getBlock('aaaa')
+              pTemp => temp
+            endIf
+            output = contraction(pTemp,r4tensor%tat([1,nB1],[1,nB2],[1,nB3],[1,nB4]))
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
+            output = output + contraction(pTemp,r4tensor%tat([1,nB1],[nB2+1,nB2*2],[1,nB3],[nB4+1,nB4*2]))
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[1,nB2],[nB3+1,nB3*2],[1,nB4]))
           case ('ms')
-            temp = eris%getBlock('aaaa')
-            output = contraction(temp,r4tensor%tat([1,nB1],[1,nB2],[1,nB3],[1,nB4]))
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
-            output = output + contraction(temp,r4tensor%tat([1,nB1],[1,nB2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[1,nB3],[1,nB4]))
-            output = output + contraction(temp,r4tensor%tat([1,nB1],[nB2+1,nB2*2],[nB3+1,nB3*2],[1,nB4]))
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[1,nB2],[1,nB3],[nB4+1,nB4*2]))
-            output = output + contraction(temp,r4tensor%tat([1,nB1],[nB2+1,nB2*2],[1,nB3],[nB4+1,nB4*2]))
-            output = output + contraction(temp,r4tensor%tat([nB1+1,nB1*2],[1,nB2],[nB3+1,nB3*2],[1,nB4]))
+            pTemp => eris%ref('aaaa',refOrder,refConjg)
+            refLit = associated(pTemp)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              temp = eris%getBlock('aaaa')
+              pTemp => temp
+            endIf
+            output = contraction(pTemp,r4tensor%tat([1,nB1],[1,nB2],[1,nB3],[1,nB4]))
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
+            output = output + contraction(pTemp,r4tensor%tat([1,nB1],[1,nB2],[nB3+1,nB3*2],[nB4+1,nB4*2]))
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[nB2+1,nB2*2],[1,nB3],[1,nB4]))
+            output = output + contraction(pTemp,r4tensor%tat([1,nB1],[nB2+1,nB2*2],[nB3+1,nB3*2],[1,nB4]))
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[1,nB2],[1,nB3],[nB4+1,nB4*2]))
+            output = output + contraction(pTemp,r4tensor%tat([1,nB1],[nB2+1,nB2*2],[1,nB3],[nB4+1,nB4*2]))
+            output = output + contraction(pTemp,r4tensor%tat([nB1+1,nB1*2],[1,nB2],[nB3+1,nB3*2],[1,nB4]))
           case default
             call mqc_error_a('Unrecognized 2ERI integral interaction specified',6,'myLabel',myLabel)
           end select
@@ -22714,8 +29212,11 @@
       function mqc_eri_eri_partial_contraction_core(eris1,eris2,index1,index2) result(IntOut)
 !
       implicit none
-      type(mqc_twoERIs),intent(in)::eris1,eris2
+      type(mqc_twoERIs),intent(in),target::eris1,eris2
       integer(kind=int64),dimension(4),intent(in),optional::index1,index2
+      type(mqc_r4tensor),pointer::refP1,refP2
+      integer(kind=int64),dimension(4)::refOrder1,refOrder2,refIdx1,refIdx2
+      logical::refConjg1,refConjg2,refFold
       type(mqc_scf_integral)::IntOut
 !
       type(mqc_matrix)::aa,ab,ba,bb
@@ -22734,6 +29235,11 @@
       aaa_b_array=['baaa','abaa','aaba','aaab']
 
 !
+!     index orders as the partial contractions use them (default [1,2,3,4])
+      refIdx1 = [1,2,3,4]
+      refIdx2 = [1,2,3,4]
+      if(present(index1)) refIdx1 = index1
+      if(present(index2)) refIdx2 = index2
       if(present(index1)) then
         ia=index1(1)
         ja=index1(2)
@@ -22806,9 +29312,19 @@
       call ba%init(eris1%blockSize('beta',ka),eris1%blockSize('alpha',la))
       call bb%init(eris1%blockSize('beta',ka),eris1%blockSize('beta',la))
 
-      if(.not.(eris1%isZeroBlock('aaaa').or.eris2%isZeroBlock('aaaa'))) &
-        aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-              eris1%getBlock('aaaa'),eris2%getBlock('aaaa'),index1,index2)
+      if(.not.(eris1%isZeroBlock('aaaa').or.eris2%isZeroBlock('aaaa'))) then
+        refP1 => eris1%ref('aaaa',refOrder1,refConjg1)
+        refP2 => eris2%ref('aaaa',refOrder2,refConjg2)
+        refFold = associated(refP1).and.associated(refP2)
+        if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+        if(refFold) then
+          aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+               refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+        else
+          aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+               eris1%getBlock('aaaa'),eris2%getBlock('aaaa'),index1,index2)
+        endIf
+      endIf
       select case (eris1%type())
       case ('space','regular')
         select case (eris2%type())
@@ -22816,9 +29332,19 @@
           intType='space'
         case ('spin')
           intType='spin'
-          if(.not.(eris1%isZeroBlock('aaaa').or.eris2%isZeroBlock('bbbb'))) &
-            bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-              eris1%getBlock('aaaa'),eris2%getBlock('bbbb'),index1,index2)
+          if(.not.(eris1%isZeroBlock('aaaa').or.eris2%isZeroBlock('bbbb'))) then
+            refP1 => eris1%ref('aaaa',refOrder1,refConjg1)
+            refP2 => eris2%ref('bbbb',refOrder2,refConjg2)
+            refFold = associated(refP1).and.associated(refP2)
+            if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+            if(refFold) then
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+            else
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   eris1%getBlock('aaaa'),eris2%getBlock('bbbb'),index1,index2)
+            endIf
+          endIf
           do i=1,6
             active_conf=aa_bb_array(i)
             str1=mqc_index_to_string(inverseIndex1,active_conf)
@@ -22826,55 +29352,145 @@
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
                 if (active_conf(3:4).eq.'aa') then
-                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                    aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                    refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                    refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                    refFold = associated(refP1).and.associated(refP2)
+                    if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                    if(refFold) then
+                      aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                    else
+                      aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                    endIf
+                  endIf
                 else if (active_conf(3:4).eq.'bb') then
-                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                    bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                    refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                    refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                    refFold = associated(refP1).and.associated(refP2)
+                    if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                    if(refFold) then
+                      bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                    else
+                      bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                    endIf
+                  endIf
                 else if (active_conf(3:4).eq.'ab') then
                   intType='general'
-                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                    ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                    refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                    refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                    refFold = associated(refP1).and.associated(refP2)
+                    if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                    if(refFold) then
+                      ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                    else
+                      ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                    endIf
+                  endIf
                 else if (active_conf(3:4).eq.'ba') then
                   intType='general'
-                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                    ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                    refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                    refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                    refFold = associated(refP1).and.associated(refP2)
+                    if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                    if(refFold) then
+                      ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                    else
+                      ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                    endIf
+                  endIf
                 end if
               end if
             end if
           end do
         case ('general')
           intType='spin'
-          if(.not.(eris1%isZeroBlock('aaaa').or.eris2%isZeroBlock('bbbb'))) &
-            bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-              eris1%getBlock('aaaa'),eris2%getBlock('bbbb'),index1,index2)
+          if(.not.(eris1%isZeroBlock('aaaa').or.eris2%isZeroBlock('bbbb'))) then
+            refP1 => eris1%ref('aaaa',refOrder1,refConjg1)
+            refP2 => eris2%ref('bbbb',refOrder2,refConjg2)
+            refFold = associated(refP1).and.associated(refP2)
+            if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+            if(refFold) then
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+            else
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   eris1%getBlock('aaaa'),eris2%getBlock('bbbb'),index1,index2)
+            endIf
+          endIf
           do i=1,6
             active_conf=aa_bb_array(i)
             str1=mqc_index_to_string(inverseIndex1,active_conf)
             str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if (active_conf(3:4).eq.'aa') then
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               else if (active_conf(3:4).eq.'bb') then
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               else if (active_conf(3:4).eq.'ab') then
                 intType='general'
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               else if (active_conf(3:4).eq.'ba') then
                 intType='general'
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               end if
             end if
           end do
@@ -22886,9 +29502,19 @@
         select case (eris2%type())
         case ('space','regular','spin')
           intType='spin'
-          if(.not.(eris1%isZeroBlock('bbbb').or.eris2%isZeroBlock('bbbb'))) &
-            bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-              eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+          if(.not.(eris1%isZeroBlock('bbbb').or.eris2%isZeroBlock('bbbb'))) then
+            refP1 => eris1%ref('bbbb',refOrder1,refConjg1)
+            refP2 => eris2%ref('bbbb',refOrder2,refConjg2)
+            refFold = associated(refP1).and.associated(refP2)
+            if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+            if(refFold) then
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+            else
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+            endIf
+          endIf
           do i=1,6
             active_conf=aa_bb_array(i)
             str1=mqc_index_to_string(inverseIndex1,active_conf)
@@ -22896,55 +29522,145 @@
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
                 if (active_conf(3:4).eq.'aa') then
-                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                    aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                    refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                    refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                    refFold = associated(refP1).and.associated(refP2)
+                    if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                    if(refFold) then
+                      aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                    else
+                      aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                    endIf
+                  endIf
                 else if (active_conf(3:4).eq.'bb') then
-                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                    bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                    refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                    refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                    refFold = associated(refP1).and.associated(refP2)
+                    if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                    if(refFold) then
+                      bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                    else
+                      bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                    endIf
+                  endIf
                 else if (active_conf(3:4).eq.'ab') then
                   intType='general'
-                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                    ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                    refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                    refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                    refFold = associated(refP1).and.associated(refP2)
+                    if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                    if(refFold) then
+                      ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                    else
+                      ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                    endIf
+                  endIf
                 else if (active_conf(3:4).eq.'ba') then
                   intType='general'
-                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                    ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                    refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                    refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                    refFold = associated(refP1).and.associated(refP2)
+                    if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                    if(refFold) then
+                      ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                    else
+                      ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                           eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                    endIf
+                  endIf
                 end if
               end if
             end if
           end do
         case ('general')
           intType='spin'
-          if(.not.(eris1%isZeroBlock('bbbb').or.eris2%isZeroBlock('bbbb'))) &
-            bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-              eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+          if(.not.(eris1%isZeroBlock('bbbb').or.eris2%isZeroBlock('bbbb'))) then
+            refP1 => eris1%ref('bbbb',refOrder1,refConjg1)
+            refP2 => eris2%ref('bbbb',refOrder2,refConjg2)
+            refFold = associated(refP1).and.associated(refP2)
+            if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+            if(refFold) then
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+            else
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+            endIf
+          endIf
           do i=1,6
             active_conf=aa_bb_array(i)
             str1=mqc_index_to_string(inverseIndex1,active_conf)
             str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str1.eq.'aabb'.or.str1.eq.'bbaa') then
               if (active_conf(3:4).eq.'aa') then
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               else if (active_conf(3:4).eq.'bb') then
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               else if (active_conf(3:4).eq.'ab') then
                 intType='general'
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               else if (active_conf(3:4).eq.'ba') then
                 intType='general'
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               end if
             end if
           end do
@@ -22956,62 +29672,162 @@
         select case (eris2%type())
         case ('space','regular','spin')
           intType='spin'
-          if(.not.(eris1%isZeroBlock('bbbb').or.eris2%isZeroBlock('bbbb'))) &
-            bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-              eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+          if(.not.(eris1%isZeroBlock('bbbb').or.eris2%isZeroBlock('bbbb'))) then
+            refP1 => eris1%ref('bbbb',refOrder1,refConjg1)
+            refP2 => eris2%ref('bbbb',refOrder2,refConjg2)
+            refFold = associated(refP1).and.associated(refP2)
+            if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+            if(refFold) then
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+            else
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+            endIf
+          endIf
           do i=1,6
             active_conf=aa_bb_array(i)
             str1=mqc_index_to_string(inverseIndex1,active_conf)
             str2=mqc_index_to_string(inverseIndex2,active_conf)
             if(str2.eq.'aabb'.or.str2.eq.'bbaa') then
               if (active_conf(3:4).eq.'aa') then
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               else if (active_conf(3:4).eq.'bb') then
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               else if (active_conf(3:4).eq.'ab') then
                 intType='general'
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               else if (active_conf(3:4).eq.'ba') then
                 intType='general'
-                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                  ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                  refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                  refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                  refFold = associated(refP1).and.associated(refP2)
+                  if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                  if(refFold) then
+                    ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                  else
+                    ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                         eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                  endIf
+                endIf
               end if
             end if
           end do
         case ('general')
           intType='spin'
-          if(.not.(eris1%isZeroBlock('bbbb').or.eris2%isZeroBlock('bbbb'))) &
-            bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-              eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+          if(.not.(eris1%isZeroBlock('bbbb').or.eris2%isZeroBlock('bbbb'))) then
+            refP1 => eris1%ref('bbbb',refOrder1,refConjg1)
+            refP2 => eris2%ref('bbbb',refOrder2,refConjg2)
+            refFold = associated(refP1).and.associated(refP2)
+            if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+            if(refFold) then
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+            else
+              bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                   eris1%getBlock('bbbb'),eris2%getBlock('bbbb'),index1,index2)
+            endIf
+          endIf
           do i=1,6
             active_conf=aa_bb_array(i)
             str1=mqc_index_to_string(inverseIndex1,active_conf)
             str2=mqc_index_to_string(inverseIndex2,active_conf)
             if (active_conf(3:4).eq.'aa') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             else if (active_conf(3:4).eq.'bb') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             else if (active_conf(3:4).eq.'ab') then
               intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             else if (active_conf(3:4).eq.'ba') then
               intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             end if
           end do
           do i=1,4
@@ -23019,23 +29835,63 @@
             str1=mqc_index_to_string(inverseIndex1,active_conf)
             str2=mqc_index_to_string(inverseIndex2,active_conf)
             if (active_conf(3:4) == 'aa') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             else if (active_conf(3:4) == 'bb') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             else if (active_conf(3:4) == 'ab') then
               intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             else if (active_conf(3:4) == 'ba') then
               intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             end if
           end do
           do i=1,4
@@ -23043,23 +29899,63 @@
             str1=mqc_index_to_string(inverseIndex1,active_conf)
             str2=mqc_index_to_string(inverseIndex2,active_conf)
             if (active_conf(3:4) == 'aa') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                aa = aa +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  aa = aa + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             else if (active_conf(3:4) == 'bb') then
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                bb = bb +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  bb = bb + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             else if (active_conf(3:4) == 'ab') then
               intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ab = ab +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  ab = ab + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             else if (active_conf(3:4) == 'ba') then
               intType='general'
-              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) &
-                ba = ba +  MQC_R4Tensor_R4Tensor_Partial_Contraction(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              if(.not.(eris1%isZeroBlock(str1).or.eris2%isZeroBlock(str2))) then
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  ba = ba + MQC_R4Tensor_R4Tensor_Partial_Contraction(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
+              endIf
             end if
           end do
         case default
@@ -23187,8 +30083,11 @@
       function mqc_eri_eri_partial_contraction_2eri_core(eris1,eris2,index1,index2) result(eriOut)
 !
       implicit none
-      type(mqc_twoERIs),intent(in)::eris1,eris2
+      type(mqc_twoERIs),intent(in),target::eris1,eris2
       integer(kind=int64),dimension(4),intent(in),optional::index1,index2
+      type(mqc_r4tensor),pointer::refP1,refP2
+      integer(kind=int64),dimension(4)::refOrder1,refOrder2,refIdx1,refIdx2
+      logical::refConjg1,refConjg2,refFold
       type(mqc_twoERIs)::eriOut
 
       type(MQC_R4Tensor)::aaaa,aaab,aaba,abaa,baaa,aabb,abab,baab,abba,baba,bbaa,&
@@ -23211,6 +30110,11 @@
       a_bbb_array=['abbb','babb','bbab','bbba']
       aaa_b_array=['baaa','abaa','aaba','aaab']
 !
+!     index orders as the partial contractions use them (default [1,2,3,4])
+      refIdx1 = [1,2,3,4]
+      refIdx2 = [1,2,3,4]
+      if(present(index1)) refIdx1 = index1
+      if(present(index2)) refIdx2 = index2
       if(present(index1)) then
         ia=index1(1)
         ja=index1(2)
@@ -23379,117 +30283,261 @@
             select case (active_conf)
             case('aaaa') 
               if(eriType.eq.'empty') eriType = 'space'
-              aaaa = aaaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              refP1 => eris1%ref(str1,refOrder1,refConjg1)
+              refP2 => eris2%ref(str2,refOrder2,refConjg2)
+              refFold = associated(refP1).and.associated(refP2)
+              if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+              if(refFold) then
+                aaaa = aaaa + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+              else
+                aaaa = aaaa + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              endIf
               allocVec(1)=.true.
             case('bbbb') 
               if(eriType.eq.'space'.or.eriType.eq.'empty') eriType = 'spin'
-              bbbb = bbbb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              refP1 => eris1%ref(str1,refOrder1,refConjg1)
+              refP2 => eris2%ref(str2,refOrder2,refConjg2)
+              refFold = associated(refP1).and.associated(refP2)
+              if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+              if(refFold) then
+                bbbb = bbbb + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+              else
+                bbbb = bbbb + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              endIf
               allocVec(2)=.true.
             case('aabb') 
               if(eriType.eq.'space'.or.eriType.eq.'empty') eriType = 'spin'
               if(intType.eq.'unknown') intType = 'coulomb' 
               if(intType.eq.'exchange') intType = 'doublebar' 
               if(intType.eq.'inverted') intType = 'ms' 
-              aabb = aabb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              refP1 => eris1%ref(str1,refOrder1,refConjg1)
+              refP2 => eris2%ref(str2,refOrder2,refConjg2)
+              refFold = associated(refP1).and.associated(refP2)
+              if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+              if(refFold) then
+                aabb = aabb + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+              else
+                aabb = aabb + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              endIf
               allocVec(3)=.true.
             case('bbaa') 
               if(eriType.eq.'space'.or.eriType.eq.'empty') eriType = 'spin'
               if(intType.eq.'unknown') intType = 'coulomb' 
               if(intType.eq.'exchange') intType = 'doublebar' 
               if(intType.eq.'inverted') intType = 'ms' 
-              bbaa = bbaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              refP1 => eris1%ref(str1,refOrder1,refConjg1)
+              refP2 => eris2%ref(str2,refOrder2,refConjg2)
+              refFold = associated(refP1).and.associated(refP2)
+              if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+              if(refFold) then
+                bbaa = bbaa + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+              else
+                bbaa = bbaa + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              endIf
               allocVec(4)=.true.
             case('abab') 
               if(eriType.eq.'space'.or.eriType.eq.'empty') eriType = 'spin'
               if(intType.eq.'unknown') intType = 'inverted' 
               if(intType.eq.'exchange'.or.intType.eq.'coulomb'.or.&
                  intType.eq.'doublebar'.or.intType.eq.'unknown') intType = 'ms'  
-              abab = abab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              refP1 => eris1%ref(str1,refOrder1,refConjg1)
+              refP2 => eris2%ref(str2,refOrder2,refConjg2)
+              refFold = associated(refP1).and.associated(refP2)
+              if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+              if(refFold) then
+                abab = abab + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+              else
+                abab = abab + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              endIf
               allocVec(5)=.true.
             case('abba') 
               if(eriType.eq.'space'.or.eriType.eq.'empty') eriType = 'spin'
               if(intType.eq.'unknown') intType = 'exchange' 
               if(intType.eq.'coulomb') intType = 'doublebar' 
               if(intType.eq.'inverted') intType = 'ms' 
-              abba = abba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              refP1 => eris1%ref(str1,refOrder1,refConjg1)
+              refP2 => eris2%ref(str2,refOrder2,refConjg2)
+              refFold = associated(refP1).and.associated(refP2)
+              if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+              if(refFold) then
+                abba = abba + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+              else
+                abba = abba + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              endIf
               allocVec(6)=.true.
             case('baab') 
               if(eriType.eq.'space'.or.eriType.eq.'empty') eriType = 'spin'
               if(intType.eq.'unknown') intType = 'exchange' 
               if(intType.eq.'coulomb') intType = 'doublebar' 
               if(intType.eq.'inverted') intType = 'ms' 
-              baab = baab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              refP1 => eris1%ref(str1,refOrder1,refConjg1)
+              refP2 => eris2%ref(str2,refOrder2,refConjg2)
+              refFold = associated(refP1).and.associated(refP2)
+              if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+              if(refFold) then
+                baab = baab + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+              else
+                baab = baab + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              endIf
               allocVec(7)=.true.
             case('baba') 
               if(eriType.eq.'space'.or.eriType.eq.'empty') eriType = 'spin'
               if(intType.eq.'unknown') intType = 'inverted' 
               if(intType.eq.'exchange'.or.intType.eq.'coulomb'.or.&
                  intType.eq.'doublebar'.or.intType.eq.'unknown') intType = 'ms'  
-              baba = baba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                   eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              refP1 => eris1%ref(str1,refOrder1,refConjg1)
+              refP2 => eris2%ref(str2,refOrder2,refConjg2)
+              refFold = associated(refP1).and.associated(refP2)
+              if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+              if(refFold) then
+                baba = baba + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+              else
+                baba = baba + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+              endIf
               allocVec(8)=.true.
             case('abbb') 
               if(eris1%integralType.ne.'general'.and.eris2%integralType.ne.'general') cycle
                 eriType='general'
                 intType = 'coulomb' 
-                abbb = abbb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  abbb = abbb + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  abbb = abbb + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
                 allocVec(16)=.true.
             case('babb') 
               if(eris1%integralType.ne.'general'.and.eris2%integralType.ne.'general') cycle
                 eriType='general'
                 intType = 'coulomb' 
-                babb = babb +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  babb = babb + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  babb = babb + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
                 allocVec(15)=.true.
             case('bbab') 
               if(eris1%integralType.ne.'general'.and.eris2%integralType.ne.'general') cycle
                 eriType='general'
                 intType = 'coulomb' 
-                bbab = bbab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  bbab = bbab + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  bbab = bbab + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
                 allocVec(14)=.true.
             case('bbba') 
               if(eris1%integralType.ne.'general'.and.eris2%integralType.ne.'general') cycle
                 eriType='general'
                 intType = 'coulomb' 
-                bbba = bbba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  bbba = bbba + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  bbba = bbba + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
                 allocVec(13)=.true.
             case('baaa') 
               if(eris1%integralType.ne.'general'.and.eris2%integralType.ne.'general') cycle
                 eriType='general'
                 intType = 'coulomb' 
-                baaa = baaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  baaa = baaa + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  baaa = baaa + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
                 allocVec(12)=.true.
             case('abaa') 
               if(eris1%integralType.ne.'general'.and.eris2%integralType.ne.'general') cycle
                 eriType='general'
                 intType = 'coulomb' 
-                abaa = abaa +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  abaa = abaa + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  abaa = abaa + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
                 allocVec(11)=.true.
             case('aaba') 
               if(eris1%integralType.ne.'general'.and.eris2%integralType.ne.'general') cycle
                 eriType='general'
                 intType = 'coulomb' 
-                aaba = aaba +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  aaba = aaba + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  aaba = aaba + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
                 allocVec(10)=.true.
             case('aaab') 
               if(eris1%integralType.ne.'general'.and.eris2%integralType.ne.'general') cycle
                 eriType='general'
                 intType = 'coulomb' 
-                aaab = aaab +  MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
-                     eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                refP1 => eris1%ref(str1,refOrder1,refConjg1)
+                refP2 => eris2%ref(str2,refOrder2,refConjg2)
+                refFold = associated(refP1).and.associated(refP2)
+                if(refFold) refFold = .not.(refConjg1.or.refConjg2)
+                if(refFold) then
+                  aaab = aaab + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       refP1,refP2,refOrder1(refIdx1),refOrder2(refIdx2))
+                else
+                  aaab = aaab + MQC_R4Tensor_R4Tensor_Partial_Contraction_2R4Tensor(&
+                       eris1%getBlock(str1),eris2%getBlock(str2),index1,index2)
+                endIf
                 allocVec(9)=.true.
             end select  
           end if
@@ -23751,7 +30799,7 @@
       function mqc_eri_dimension_swap_core(eris,dim1,dim2) result(output)
 !
       implicit none
-      class(mqc_twoERIs),intent(in)::eris
+      class(mqc_twoERIs),intent(in),target::eris
       integer(kind=int64),intent(in)::dim1,dim2
       integer(kind=int64)::mydim1,mydim2,i,j
       integer(kind=int64)::nB1a,nB2a,nB3a,nB4a
@@ -23770,8 +30818,13 @@
       type(mqc_twoERIs)::output
       type(mqc_r4tensor)::alpha,beta,alphaBeta,betaAlpha,abab,abba,baab, &
         baba,aaab,aaba,abaa,baaa,bbba,bbab,babb,abbb
-      type(mqc_r4tensor)::taaaa,tbbbb,taabb,tbbaa,tabab,tabba,tbaab, &
+      type(mqc_r4tensor),target::taaaa,tbbbb,taabb,tbbaa,tabab,tabba,tbaab, &
         tbaba,taaab,taaba,tabaa,tbaaa,tbbba,tbbab,tbabb,tabbb
+      type(mqc_r4tensor),pointer::ptaaaa,ptbbbb,ptaabb,ptbbaa,ptabab,ptabba,ptbaab,ptbaba, &
+                                  ptaaab,ptaaba,ptabaa,ptbaaa,ptbbba,ptbbab,ptbabb,ptabbb
+      type(mqc_r4tensor),pointer::refP
+      integer(kind=int64),dimension(4)::refOrder
+      logical::refConjg,refLit
       logical::nz_alpha,nz_beta,nz_alphabeta,nz_betaalpha,nz_abab,nz_abba,nz_baab,nz_baba
       logical::nz_aaab,nz_aaba,nz_abaa,nz_baaa,nz_bbba,nz_bbab,nz_babb,nz_abbb
       logical::nz_taaaa,nz_tbbbb,nz_taabb,nz_tbbaa,nz_tabab,nz_tabba,nz_tbaab,nz_tbaba
@@ -23847,7 +30900,15 @@
       select case (eris%type())
       case ('space')
         nz_taaaa = .not.eris%isZeroBlock('alpha')
-        if(nz_taaaa) taaaa = eris%getBlock('alpha')
+        if(nz_taaaa) then
+          ptaaaa => eris%ref('alpha',refOrder,refConjg)
+          refLit = associated(ptaaaa)
+          if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+          if(.not.refLit) then
+            taaaa = eris%getBlock('alpha')
+            ptaaaa => taaaa
+          endIf
+        endIf
         select case (mydim1)
         case (1)
           select case (mydim2)
@@ -23857,7 +30918,7 @@
             if(nz_taaaa) then
               do i = 1, nB1a
                 do j = 1, nB2a
-                  call alpha%tput(taaaa%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                  call alpha%tput(ptaaaa%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                 endDo
               endDo
             endIf
@@ -23893,7 +30954,7 @@
             if(nz_taaaa) then
               do i = 1, nB1a
                 do j = 1, nB3a
-                  call alpha%tput(taaaa%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                  call alpha%tput(ptaaaa%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                 endDo
               endDo
             endIf
@@ -23929,7 +30990,7 @@
             if(nz_taaaa) then
               do i = 1, nB1a
                 do j = 1, nB4a
-                  call alpha%tput(taaaa%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                  call alpha%tput(ptaaaa%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                 endDo
               endDo
             endIf
@@ -23968,7 +31029,7 @@
             if(nz_taaaa) then
               do i = 1, nB2a
                 do j = 1, nB3a
-                  call alpha%tput(taaaa%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                  call alpha%tput(ptaaaa%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                 endDo
               endDo
             endIf
@@ -24004,7 +31065,7 @@
             if(nz_taaaa) then
               do i = 1, nB2a
                 do j = 1, nB4a
-                  call alpha%tput(taaaa%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                  call alpha%tput(ptaaaa%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                 endDo
               endDo
             endIf
@@ -24041,7 +31102,7 @@
           if(nz_taaaa) then
             do i = 1, nB3a
               do j = 1, nB4a
-                call alpha%tput(taaaa%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                call alpha%tput(ptaaaa%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
               endDo
             endDo
           endIf
@@ -24098,13 +31159,23 @@
         end select
         nz_alpha = .not.eris%isZeroBlock('alpha')
         if(nz_alpha) then
-          taaaa = eris%getBlock('alpha')
-          alpha = taaaa%permute(perm,.false.)
+          refP => eris%ref('alpha',refOrder,refConjg)
+          if(associated(refP)) then
+            alpha = refP%permute(refOrder(perm),refConjg)
+          else
+            taaaa = eris%getBlock('alpha')
+            alpha = taaaa%permute(perm,.false.)
+          endIf
         endIf
         nz_beta = .not.eris%isZeroBlock('beta')
         if(nz_beta) then
-          tbbbb = eris%getBlock('beta')
-          beta = tbbbb%permute(perm,.false.)
+          refP => eris%ref('beta',refOrder,refConjg)
+          if(associated(refP)) then
+            beta = refP%permute(refOrder(perm),refConjg)
+          else
+            tbbbb = eris%getBlock('beta')
+            beta = tbbbb%permute(perm,.false.)
+          endIf
         endIf
         outSet = .false.
         nzPat = .false.
@@ -24118,8 +31189,13 @@
           endDo
           outSet(j) = .true.
           if(.not.eris%isZeroBlock(trim(bNames(i)))) then
-            taabb = eris%getBlock(trim(bNames(i)))
-            patBlk(j) = taabb%permute(perm,.false.)
+            refP => eris%ref(trim(bNames(i)),refOrder,refConjg)
+            if(associated(refP)) then
+              patBlk(j) = refP%permute(refOrder(perm),refConjg)
+            else
+              taabb = eris%getBlock(trim(bNames(i)))
+              patBlk(j) = taabb%permute(perm,.false.)
+            endIf
             nzPat(j) = .true.
           endIf
         endDo
@@ -24181,82 +31257,210 @@
         end do
         if(eris%hasSpinBlock('aaaa',interactionIn='stored')) then
           nz_taaaa = .not.eris%isZeroBlock('alpha')
-          if(nz_taaaa) taaaa = eris%getBlock('alpha')
+          if(nz_taaaa) then
+            ptaaaa => eris%ref('alpha',refOrder,refConjg)
+            refLit = associated(ptaaaa)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              taaaa = eris%getBlock('alpha')
+              ptaaaa => taaaa
+            endIf
+          endIf
           allocVec(1)=.true.
         end if
         if(eris%hasSpinBlock('bbbb',interactionIn='stored')) then
           nz_tbbbb = .not.eris%isZeroBlock('beta')
-          if(nz_tbbbb) tbbbb = eris%getBlock('beta')
+          if(nz_tbbbb) then
+            ptbbbb => eris%ref('beta',refOrder,refConjg)
+            refLit = associated(ptbbbb)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tbbbb = eris%getBlock('beta')
+              ptbbbb => tbbbb
+            endIf
+          endIf
           allocVec(2)=.true.
         end if
         if(eris%hasSpinBlock('AlphaBeta',interactionIn='stored')) then
           nz_taabb = .not.eris%isZeroBlock('AlphaBeta')
-          if(nz_taabb) taabb = eris%getBlock('AlphaBeta')
+          if(nz_taabb) then
+            ptaabb => eris%ref('AlphaBeta',refOrder,refConjg)
+            refLit = associated(ptaabb)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              taabb = eris%getBlock('AlphaBeta')
+              ptaabb => taabb
+            endIf
+          endIf
           allocVec(3)=.true.
         end if
         if(eris%hasSpinBlock('BetaAlpha',interactionIn='stored')) then
           nz_tbbaa = .not.eris%isZeroBlock('BetaAlpha')
-          if(nz_tbbaa) tbbaa = eris%getBlock('BetaAlpha')
+          if(nz_tbbaa) then
+            ptbbaa => eris%ref('BetaAlpha',refOrder,refConjg)
+            refLit = associated(ptbbaa)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tbbaa = eris%getBlock('BetaAlpha')
+              ptbbaa => tbbaa
+            endIf
+          endIf
           allocVec(4)=.true.
         end if
         if(eris%hasSpinBlock('abab',interactionIn='stored')) then
           nz_tabab = .not.eris%isZeroBlock('abab')
-          if(nz_tabab) tabab = eris%getBlock('abab')
+          if(nz_tabab) then
+            ptabab => eris%ref('abab',refOrder,refConjg)
+            refLit = associated(ptabab)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tabab = eris%getBlock('abab')
+              ptabab => tabab
+            endIf
+          endIf
           allocVec(5)=.true.
         end if
         if(eris%hasSpinBlock('abba',interactionIn='stored')) then
           nz_tabba = .not.eris%isZeroBlock('abba')
-          if(nz_tabba) tabba = eris%getBlock('abba')
+          if(nz_tabba) then
+            ptabba => eris%ref('abba',refOrder,refConjg)
+            refLit = associated(ptabba)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tabba = eris%getBlock('abba')
+              ptabba => tabba
+            endIf
+          endIf
           allocVec(6)=.true.
         end if
         if(eris%hasSpinBlock('baab',interactionIn='stored')) then
           nz_tbaab = .not.eris%isZeroBlock('baab')
-          if(nz_tbaab) tbaab = eris%getBlock('baab')
+          if(nz_tbaab) then
+            ptbaab => eris%ref('baab',refOrder,refConjg)
+            refLit = associated(ptbaab)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tbaab = eris%getBlock('baab')
+              ptbaab => tbaab
+            endIf
+          endIf
           allocVec(7)=.true.
         end if
         if(eris%hasSpinBlock('baba',interactionIn='stored')) then
           nz_tbaba = .not.eris%isZeroBlock('baba')
-          if(nz_tbaba) tbaba = eris%getBlock('baba')
+          if(nz_tbaba) then
+            ptbaba => eris%ref('baba',refOrder,refConjg)
+            refLit = associated(ptbaba)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tbaba = eris%getBlock('baba')
+              ptbaba => tbaba
+            endIf
+          endIf
           allocVec(8)=.true.
         end if
         if(eris%hasSpinBlock('aaab',interactionIn='stored')) then
           nz_taaab = .not.eris%isZeroBlock('aaab')
-          if(nz_taaab) taaab = eris%getBlock('aaab')
+          if(nz_taaab) then
+            ptaaab => eris%ref('aaab',refOrder,refConjg)
+            refLit = associated(ptaaab)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              taaab = eris%getBlock('aaab')
+              ptaaab => taaab
+            endIf
+          endIf
           allocVec(9)=.true.
         end if
         if(eris%hasSpinBlock('aaba',interactionIn='stored')) then
           nz_taaba = .not.eris%isZeroBlock('aaba')
-          if(nz_taaba) taaba = eris%getBlock('aaba')
+          if(nz_taaba) then
+            ptaaba => eris%ref('aaba',refOrder,refConjg)
+            refLit = associated(ptaaba)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              taaba = eris%getBlock('aaba')
+              ptaaba => taaba
+            endIf
+          endIf
           allocVec(10)=.true.
         end if
         if(eris%hasSpinBlock('abaa',interactionIn='stored')) then
           nz_tabaa = .not.eris%isZeroBlock('abaa')
-          if(nz_tabaa) tabaa = eris%getBlock('abaa')
+          if(nz_tabaa) then
+            ptabaa => eris%ref('abaa',refOrder,refConjg)
+            refLit = associated(ptabaa)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tabaa = eris%getBlock('abaa')
+              ptabaa => tabaa
+            endIf
+          endIf
           allocVec(11)=.true.
         end if
         if(eris%hasSpinBlock('baaa',interactionIn='stored')) then
           nz_tbaaa = .not.eris%isZeroBlock('baaa')
-          if(nz_tbaaa) tbaaa = eris%getBlock('baaa')
+          if(nz_tbaaa) then
+            ptbaaa => eris%ref('baaa',refOrder,refConjg)
+            refLit = associated(ptbaaa)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tbaaa = eris%getBlock('baaa')
+              ptbaaa => tbaaa
+            endIf
+          endIf
           allocVec(12)=.true.
         end if
         if(eris%hasSpinBlock('bbba',interactionIn='stored')) then
           nz_tbbba = .not.eris%isZeroBlock('bbba')
-          if(nz_tbbba) tbbba = eris%getBlock('bbba')
+          if(nz_tbbba) then
+            ptbbba => eris%ref('bbba',refOrder,refConjg)
+            refLit = associated(ptbbba)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tbbba = eris%getBlock('bbba')
+              ptbbba => tbbba
+            endIf
+          endIf
           allocVec(13)=.true.
         end if
         if(eris%hasSpinBlock('bbab',interactionIn='stored')) then
           nz_tbbab = .not.eris%isZeroBlock('bbab')
-          if(nz_tbbab) tbbab = eris%getBlock('bbab')
+          if(nz_tbbab) then
+            ptbbab => eris%ref('bbab',refOrder,refConjg)
+            refLit = associated(ptbbab)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tbbab = eris%getBlock('bbab')
+              ptbbab => tbbab
+            endIf
+          endIf
           allocVec(14)=.true.
         end if
         if(eris%hasSpinBlock('babb',interactionIn='stored')) then
           nz_tbabb = .not.eris%isZeroBlock('babb')
-          if(nz_tbabb) tbabb = eris%getBlock('babb')
+          if(nz_tbabb) then
+            ptbabb => eris%ref('babb',refOrder,refConjg)
+            refLit = associated(ptbabb)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tbabb = eris%getBlock('babb')
+              ptbabb => tbabb
+            endIf
+          endIf
           allocVec(15)=.true.
         end if
         if(eris%hasSpinBlock('abbb',interactionIn='stored')) then
           nz_tabbb = .not.eris%isZeroBlock('abbb')
-          if(nz_tabbb) tabbb = eris%getBlock('abbb')
+          if(nz_tabbb) then
+            ptabbb => eris%ref('abbb',refOrder,refConjg)
+            refLit = associated(ptabbb)
+            if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+            if(.not.refLit) then
+              tabbb = eris%getBlock('abbb')
+              ptabbb => tabbb
+            endIf
+          endIf
           allocVec(16)=.true.
         end if
         select case (mydim1)
@@ -24269,7 +31473,7 @@
               if(nz_taaaa) then
                 do i = 1, nB1a
                   do j = 1, nB2a
-                    call alpha%tput(taaaa%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call alpha%tput(ptaaaa%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24282,7 +31486,7 @@
               if(nz_tbbbb) then
                 do i = 1, nB1b
                   do j = 1, nB2b
-                    call beta%tput(tbbbb%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call beta%tput(ptbbbb%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24295,7 +31499,7 @@
               if(nz_taabb) then
                 do i = 1, nB1a
                   do j = 1, nB2a
-                    call alphaBeta%tput(taabb%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call alphaBeta%tput(ptaabb%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24308,7 +31512,7 @@
               if(nz_tbbaa) then
                 do i = 1, nB1b
                   do j = 1, nB2b
-                    call betaAlpha%tput(tbbaa%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call betaAlpha%tput(ptbbaa%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24321,7 +31525,7 @@
               if(nz_tabab) then
                 do i = 1, nB1a
                   do j = 1, nB2b
-                    call baab%tput(tabab%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call baab%tput(ptabab%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24334,7 +31538,7 @@
               if(nz_tabba) then
                 do i = 1, nB1a
                   do j = 1, nB2b
-                    call baba%tput(tabba%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call baba%tput(ptabba%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24347,7 +31551,7 @@
               if(nz_tbaab) then
                 do i = 1, nB1b
                   do j = 1, nB2a
-                    call abab%tput(tbaab%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call abab%tput(ptbaab%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24360,7 +31564,7 @@
               if(nz_tbaba) then
                 do i = 1, nB1b
                   do j = 1, nB2a
-                    call abba%tput(tbaba%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call abba%tput(ptbaba%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24373,7 +31577,7 @@
               if(nz_taaab) then
                 do i = 1, nB1a
                   do j = 1, nB2a
-                    call aaab%tput(taaab%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call aaab%tput(ptaaab%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24386,7 +31590,7 @@
               if(nz_taaba) then
                 do i = 1, nB1a
                   do j = 1, nB2a
-                    call aaba%tput(taaba%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call aaba%tput(ptaaba%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24399,7 +31603,7 @@
               if(nz_tabaa) then
                 do i = 1, nB1a
                   do j = 1, nB2b
-                    call baaa%tput(tabaa%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call baaa%tput(ptabaa%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24412,7 +31616,7 @@
               if(nz_tbaaa) then
                 do i = 1, nB1b
                   do j = 1, nB2a
-                    call abaa%tput(tbaaa%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call abaa%tput(ptbaaa%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24425,7 +31629,7 @@
               if(nz_tbbba) then
                 do i = 1, nB1b
                   do j = 1, nB2b
-                    call bbba%tput(tbbba%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call bbba%tput(ptbbba%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24438,7 +31642,7 @@
               if(nz_tbbab) then
                 do i = 1, nB1b
                   do j = 1, nB2b
-                    call bbab%tput(tbbab%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call bbab%tput(ptbbab%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24451,7 +31655,7 @@
               if(nz_tbabb) then
                 do i = 1, nB1b
                   do j = 1, nB2a
-                    call abbb%tput(tbabb%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call abbb%tput(ptbabb%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24464,7 +31668,7 @@
               if(nz_tabbb) then
                 do i = 1, nB1a
                   do j = 1, nB2b
-                    call babb%tput(tabbb%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
+                    call babb%tput(ptabbb%tat([i,i],[j,j],[0],[0]),[j,j],[i,i],[0],[0])
                   endDo
                 endDo
               endIf
@@ -24478,7 +31682,7 @@
               if(nz_taaaa) then
                 do i = 1, nB1a
                   do j = 1, nB3a
-                    call alpha%tput(taaaa%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call alpha%tput(ptaaaa%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24491,7 +31695,7 @@
               if(nz_tbbbb) then
                 do i = 1, nB1b
                   do j = 1, nB3b
-                    call beta%tput(tbbbb%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call beta%tput(ptbbbb%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24504,7 +31708,7 @@
               if(nz_taabb) then
                 do i = 1, nB1a
                   do j = 1, nB3b
-                    call baab%tput(taabb%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call baab%tput(ptaabb%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24517,7 +31721,7 @@
               if(nz_tbbaa) then
                 do i = 1, nB1b
                   do j = 1, nB3a
-                    call abba%tput(tbbaa%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call abba%tput(ptbbaa%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24530,7 +31734,7 @@
               if(nz_tabab) then
                 do i = 1, nB1a
                   do j = 1, nB3a
-                    call abab%tput(tabab%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call abab%tput(ptabab%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24543,7 +31747,7 @@
               if(nz_tabba) then
                 do i = 1, nB1a
                   do j = 1, nB3b
-                    call betaAlpha%tput(tabba%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call betaAlpha%tput(ptabba%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24556,7 +31760,7 @@
               if(nz_tbaab) then
                 do i = 1, nB1b
                   do j = 1, nB3a
-                    call alphaBeta%tput(tbaab%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call alphaBeta%tput(ptbaab%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24569,7 +31773,7 @@
               if(nz_tbaba) then
                 do i = 1, nB1a
                   do j = 1, nB3b
-                    call baba%tput(tbaba%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call baba%tput(ptbaba%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24582,7 +31786,7 @@
               if(nz_taaab) then
                 do i = 1, nB1a
                   do j = 1, nB3a
-                    call aaab%tput(taaab%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call aaab%tput(ptaaab%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24595,7 +31799,7 @@
               if(nz_taaba) then
                 do i = 1, nB1a
                   do j = 1, nB3b
-                    call baaa%tput(taaba%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call baaa%tput(ptaaba%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24608,7 +31812,7 @@
               if(nz_tabaa) then
                 do i = 1, nB1a
                   do j = 1, nB3a
-                    call abaa%tput(tabaa%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call abaa%tput(ptabaa%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24621,7 +31825,7 @@
               if(nz_tbaaa) then
                 do i = 1, nB1b
                   do j = 1, nB3a
-                    call aaba%tput(tbaaa%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call aaba%tput(ptbaaa%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24634,7 +31838,7 @@
               if(nz_tbbba) then
                 do i = 1, nB1b
                   do j = 1, nB3b
-                    call bbba%tput(tbbba%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call bbba%tput(ptbbba%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24647,7 +31851,7 @@
               if(nz_tbbab) then
                 do i = 1, nB1b
                   do j = 1, nB3a
-                    call abbb%tput(tbbab%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call abbb%tput(ptbbab%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24660,7 +31864,7 @@
               if(nz_tbabb) then
                 do i = 1, nB1b
                   do j = 1, nB3b
-                    call babb%tput(tbabb%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call babb%tput(ptbabb%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24673,7 +31877,7 @@
               if(nz_tabbb) then
                 do i = 1, nB1a
                   do j = 1, nB3b
-                    call bbab%tput(tabbb%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
+                    call bbab%tput(ptabbb%tat([i,i],[0],[j,j],[0]),[j,j],[0],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24687,7 +31891,7 @@
               if(nz_taaaa) then
                 do i = 1, nB1a
                   do j = 1, nB4a
-                    call alpha%tput(taaaa%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call alpha%tput(ptaaaa%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24700,7 +31904,7 @@
               if(nz_tbbbb) then
                 do i = 1, nB1b
                   do j = 1, nB4b
-                    call beta%tput(tbbbb%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call beta%tput(ptbbbb%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24713,7 +31917,7 @@
               if(nz_taabb) then
                 do i = 1, nB1a
                   do j = 1, nB4b
-                    call baba%tput(taabb%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call baba%tput(ptaabb%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24726,7 +31930,7 @@
               if(nz_tbbaa) then
                 do i = 1, nB1b
                   do j = 1, nB4a
-                    call abab%tput(tbbaa%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call abab%tput(ptbbaa%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24739,7 +31943,7 @@
               if(nz_tabab) then
                 do i = 1, nB1b
                   do j = 1, nB4a
-                    call abab%tput(tabab%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call abab%tput(ptabab%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24752,7 +31956,7 @@
               if(nz_tabba) then
                 do i = 1, nB1a
                   do j = 1, nB4a
-                    call abba%tput(tabba%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call abba%tput(ptabba%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24765,7 +31969,7 @@
               if(nz_tbaab) then
                 do i = 1, nB1b
                   do j = 1, nB4b
-                    call baab%tput(tbaab%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call baab%tput(ptbaab%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24778,7 +31982,7 @@
               if(nz_tbaba) then
                 do i = 1, nB1b
                   do j = 1, nB4a
-                    call alphaBeta%tput(tbaba%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call alphaBeta%tput(ptbaba%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24791,7 +31995,7 @@
               if(nz_taaab) then
                 do i = 1, nB1a
                   do j = 1, nB4b
-                    call baaa%tput(taaab%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call baaa%tput(ptaaab%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24804,7 +32008,7 @@
               if(nz_taaba) then
                 do i = 1, nB1a
                   do j = 1, nB4a
-                    call aaba%tput(taaba%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call aaba%tput(ptaaba%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24817,7 +32021,7 @@
               if(nz_tabaa) then
                 do i = 1, nB1a
                   do j = 1, nB4a
-                    call abaa%tput(tabaa%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call abaa%tput(ptabaa%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24830,7 +32034,7 @@
               if(nz_tbaaa) then
                 do i = 1, nB1b
                   do j = 1, nB4a
-                    call aaab%tput(tbaaa%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call aaab%tput(ptbaaa%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24843,7 +32047,7 @@
               if(nz_tbbba) then
                 do i = 1, nB1b
                   do j = 1, nB4a
-                    call abbb%tput(tbbba%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call abbb%tput(ptbbba%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24856,7 +32060,7 @@
               if(nz_tbbab) then
                 do i = 1, nB1b
                   do j = 1, nB4b
-                    call bbab%tput(tbbab%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call bbab%tput(ptbbab%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24869,7 +32073,7 @@
               if(nz_tbabb) then
                 do i = 1, nB1b
                   do j = 1, nB4b
-                    call babb%tput(tbabb%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call babb%tput(ptbabb%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24882,7 +32086,7 @@
               if(nz_tabbb) then
                 do i = 1, nB1a
                   do j = 1, nB4b
-                    call bbba%tput(tabbb%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
+                    call bbba%tput(ptabbb%tat([i,i],[0],[0],[j,j]),[j,j],[0],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -24899,7 +32103,7 @@
               if(nz_taaaa) then
                 do i = 1, nB2a
                   do j = 1, nB3a
-                    call alpha%tput(taaaa%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call alpha%tput(ptaaaa%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24912,7 +32116,7 @@
               if(nz_tbbbb) then
                 do i = 1, nB2b
                   do j = 1, nB3b
-                    call beta%tput(tbbbb%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call beta%tput(ptbbbb%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24925,7 +32129,7 @@
               if(nz_taabb) then
                 do i = 1, nB2a
                   do j = 1, nB3b
-                    call abab%tput(taabb%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call abab%tput(ptaabb%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24938,7 +32142,7 @@
               if(nz_tbbaa) then
                 do i = 1, nB2b
                   do j = 1, nB3a
-                    call baba%tput(tbbaa%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call baba%tput(ptbbaa%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24951,7 +32155,7 @@
               if(nz_tabab) then
                 do i = 1, nB2b
                   do j = 1, nB3a
-                    call alphaBeta%tput(tabab%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call alphaBeta%tput(ptabab%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24964,7 +32168,7 @@
               if(nz_tabba) then
                 do i = 1, nB2b
                   do j = 1, nB3b
-                    call abba%tput(tabba%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call abba%tput(ptabba%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24977,7 +32181,7 @@
               if(nz_tbaab) then
                 do i = 1, nB2a
                   do j = 1, nB3a
-                    call baab%tput(tbaab%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call baab%tput(ptbaab%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -24990,7 +32194,7 @@
               if(nz_tbaba) then
                 do i = 1, nB2a
                   do j = 1, nB3b
-                    call betaAlpha%tput(tbaba%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call betaAlpha%tput(ptbaba%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -25003,7 +32207,7 @@
               if(nz_taaab) then
                 do i = 1, nB2a
                   do j = 1, nB3a
-                    call aaab%tput(taaab%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call aaab%tput(ptaaab%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -25016,7 +32220,7 @@
               if(nz_taaba) then
                 do i = 1, nB2a
                   do j = 1, nB3b
-                    call abaa%tput(taaba%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call abaa%tput(ptaaba%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -25029,7 +32233,7 @@
               if(nz_tabaa) then
                 do i = 1, nB2b
                   do j = 1, nB3a
-                    call aaba%tput(tabaa%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call aaba%tput(ptabaa%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -25042,7 +32246,7 @@
               if(nz_tbaaa) then
                 do i = 1, nB2a
                   do j = 1, nB3a
-                    call baaa%tput(tbaaa%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call baaa%tput(ptbaaa%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -25055,7 +32259,7 @@
               if(nz_tbbba) then
                 do i = 1, nB2b
                   do j = 1, nB3b
-                    call bbba%tput(tbbba%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call bbba%tput(ptbbba%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -25068,7 +32272,7 @@
               if(nz_tbbab) then
                 do i = 1, nB2b
                   do j = 1, nB3a
-                    call babb%tput(tbbab%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call babb%tput(ptbbab%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -25081,7 +32285,7 @@
               if(nz_tbabb) then
                 do i = 1, nB2a
                   do j = 1, nB3b
-                    call bbab%tput(tbabb%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call bbab%tput(ptbabb%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -25094,7 +32298,7 @@
               if(nz_tabbb) then
                 do i = 1, nB2b
                   do j = 1, nB3b
-                    call abbb%tput(tabbb%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
+                    call abbb%tput(ptabbb%tat([0],[i,i],[j,j],[0]),[0],[j,j],[i,i],[0])
                   endDo
                 endDo
               endIf
@@ -25108,7 +32312,7 @@
               if(nz_taaaa) then
                 do i = 1, nB2a
                   do j = 1, nB4a
-                    call alpha%tput(taaaa%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call alpha%tput(ptaaaa%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25121,7 +32325,7 @@
               if(nz_tbbbb) then
                 do i = 1, nB2b
                   do j = 1, nB4b
-                    call beta%tput(tbbbb%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call beta%tput(ptbbbb%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25134,7 +32338,7 @@
               if(nz_taabb) then
                 do i = 1, nB2a
                   do j = 1, nB4b
-                    call abba%tput(taabb%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call abba%tput(ptaabb%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25147,7 +32351,7 @@
               if(nz_tbbaa) then
                 do i = 1, nB2b
                   do j = 1, nB4a
-                    call baab%tput(tbbaa%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call baab%tput(ptbbaa%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25160,7 +32364,7 @@
               if(nz_tabab) then
                 do i = 1, nB2b
                   do j = 1, nB4b
-                    call abab%tput(tabab%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call abab%tput(ptabab%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25173,7 +32377,7 @@
               if(nz_tabba) then
                 do i = 1, nB2b
                   do j = 1, nB4a
-                    call alphaBeta%tput(tabba%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call alphaBeta%tput(ptabba%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25186,7 +32390,7 @@
               if(nz_tbaab) then
                 do i = 1, nB2a
                   do j = 1, nB4b
-                    call betaAlpha%tput(tbaab%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call betaAlpha%tput(ptbaab%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25199,7 +32403,7 @@
               if(nz_tbaba) then
                 do i = 1, nB2a
                   do j = 1, nB4a
-                    call baba%tput(tbaba%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call baba%tput(ptbaba%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25212,7 +32416,7 @@
               if(nz_taaab) then
                 do i = 1, nB2a
                   do j = 1, nB4b
-                    call abaa%tput(taaab%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call abaa%tput(ptaaab%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25225,7 +32429,7 @@
               if(nz_taaba) then
                 do i = 1, nB2a
                   do j = 1, nB4a
-                    call aaba%tput(taaba%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call aaba%tput(ptaaba%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25238,7 +32442,7 @@
               if(nz_tabaa) then
                 do i = 1, nB2b
                   do j = 1, nB4a
-                    call aaab%tput(tabaa%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call aaab%tput(ptabaa%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25251,7 +32455,7 @@
               if(nz_tbaaa) then
                 do i = 1, nB2a
                   do j = 1, nB4a
-                    call baaa%tput(tbaaa%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call baaa%tput(ptbaaa%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25264,7 +32468,7 @@
               if(nz_tbbba) then
                 do i = 1, nB2b
                   do j = 1, nB4a
-                    call babb%tput(tbbba%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call babb%tput(ptbbba%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25277,7 +32481,7 @@
               if(nz_tbbab) then
                 do i = 1, nB2b
                   do j = 1, nB4b
-                    call bbab%tput(tbbab%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call bbab%tput(ptbbab%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25290,7 +32494,7 @@
               if(nz_tbabb) then
                 do i = 1, nB2a
                   do j = 1, nB4b
-                    call bbba%tput(tbabb%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call bbba%tput(ptbabb%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25303,7 +32507,7 @@
               if(nz_tabbb) then
                 do i = 1, nB2b
                   do j = 1, nB4b
-                    call abbb%tput(tabbb%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
+                    call abbb%tput(ptabbb%tat([0],[i,i],[0],[j,j]),[0],[j,j],[0],[i,i])
                   endDo
                 endDo
               endIf
@@ -25318,7 +32522,7 @@
             if(nz_taaaa) then
               do i = 1, nB3a
                 do j = 1, nB4a
-                  call alpha%tput(taaaa%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call alpha%tput(ptaaaa%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25331,7 +32535,7 @@
             if(nz_tbbbb) then
               do i = 1, nB4b
                 do j = 1, nB3b
-                  call beta%tput(tbbbb%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call beta%tput(ptbbbb%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25344,7 +32548,7 @@
             if(nz_taabb) then
               do i = 1, nB3b
                 do j = 1, nB4b
-                  call alphaBeta%tput(taabb%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call alphaBeta%tput(ptaabb%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25357,7 +32561,7 @@
             if(nz_tbbaa) then
               do i = 1, nB3a
                 do j = 1, nB4a
-                  call betaAlpha%tput(tbbaa%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call betaAlpha%tput(ptbbaa%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25370,7 +32574,7 @@
             if(nz_tabab) then
               do i = 1, nB3a
                 do j = 1, nB4b
-                  call abba%tput(tabab%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call abba%tput(ptabab%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25383,7 +32587,7 @@
             if(nz_tabba) then
               do i = 1, nB3b
                 do j = 1, nB4a
-                  call abab%tput(tabba%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call abab%tput(ptabba%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25396,7 +32600,7 @@
             if(nz_tbaab) then
               do i = 1, nB3a
                 do j = 1, nB4b
-                  call baba%tput(tbaab%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call baba%tput(ptbaab%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25409,7 +32613,7 @@
             if(nz_tbaba) then
               do i = 1, nB3b
                 do j = 1, nB4a
-                  call baab%tput(tbaba%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call baab%tput(ptbaba%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25422,7 +32626,7 @@
             if(nz_taaab) then
               do i = 1, nB3a
                 do j = 1, nB4b
-                  call aaba%tput(taaab%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call aaba%tput(ptaaab%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25435,7 +32639,7 @@
             if(nz_taaba) then
               do i = 1, nB3b
                 do j = 1, nB4a
-                  call aaab%tput(taaba%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call aaab%tput(ptaaba%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25448,7 +32652,7 @@
             if(nz_tabaa) then
               do i = 1, nB3a
                 do j = 1, nB4a
-                  call abaa%tput(tabaa%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call abaa%tput(ptabaa%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25461,7 +32665,7 @@
             if(nz_tbaaa) then
               do i = 1, nB3a
                 do j = 1, nB4a
-                  call baaa%tput(tbaaa%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call baaa%tput(ptbaaa%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25474,7 +32678,7 @@
             if(nz_tbbba) then
               do i = 1, nB3b
                 do j = 1, nB4a
-                  call bbab%tput(tbbba%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call bbab%tput(ptbbba%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25487,7 +32691,7 @@
             if(nz_tbbab) then
               do i = 1, nB3a
                 do j = 1, nB4b
-                  call bbba%tput(tbbab%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call bbba%tput(ptbbab%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25500,7 +32704,7 @@
             if(nz_tbabb) then
               do i = 1, nB3b
                 do j = 1, nB4b
-                  call babb%tput(tbabb%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call babb%tput(ptbabb%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -25513,7 +32717,7 @@
             if(nz_tabbb) then
               do i = 1, nB3b
                 do j = 1, nB4b
-                  call abbb%tput(tabbb%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
+                  call abbb%tput(ptabbb%tat([0],[0],[i,i],[j,j]),[0],[0],[j,j],[i,i])
                 endDo
               endDo
             endIf
@@ -28100,7 +35304,7 @@
       function MQC_twoERIs_At(twoERIs,i,j,k,l,spinBlockIn,interactionIn) result(element)
 !
       implicit none
-      class(mqc_twoERIs)::twoERIs
+      class(mqc_twoERIs),target::twoERIs
       class(*),intent(in)::i,j,k,l
       integer(kind=int64)::myI,myJ,myK,myL
       type(mqc_scalar)::element
@@ -28108,6 +35312,11 @@
       character(len=*),optional,intent(in)::spinBlockIn,interactionIn
       character(len=64)::spinBlock,interaction
       real(kind=real64)::zero=0.0d0
+      type(mqc_r4tensor),pointer::R4Ptr
+      integer(kind=int64),dimension(4)::order,idx,x,nA,nT
+      integer::q
+      logical::doConjg
+      character(len=4)::fullBlock
 
       element = zero
       select type (i)  
@@ -28167,14 +35376,43 @@
         'interaction',interaction)
 
       if(interaction.eq.'stored'.or.interaction.eq.twoERIs%intType()) then
-        if(present(spinBlockIn)) then
-          requestedBlock=twoERIs%getBlock(spinBlockIn,interactionIn=interaction)
-          element=requestedBlock%at(myI,myJ,myK,myL)
-        elseIf(interaction.eq.'stored') then
-          call mqc_error('Literal stored access in MQC_twoERIs_at requires spinBlockIn')
+        if(interaction.eq.'stored') then
+          if(present(spinBlockIn)) then
+            requestedBlock=twoERIs%getBlock(spinBlockIn,interactionIn=interaction)
+            element=requestedBlock%at(myI,myJ,myK,myL)
+          else
+            call mqc_error('Literal stored access in MQC_twoERIs_at requires spinBlockIn')
+          endIf
         else
-          requestedBlock=twoERIs%getBlock('full')
-          element=requestedBlock%at(myI,myJ,myK,myL)
+!         default interaction: read the stored member through %ref (no block copy).
+!         Block position q is position Order(q) of the stored member; DoConjg conjugates.
+!         A null ref is a zero block (element stays zero). Without spinBlockIn the full
+!         index is split into its spin block and the index inside that block (negative
+!         indices count from the end of the full dimension, as in getBlock('full')).
+          idx = [myI,myJ,myK,myL]
+          if(present(spinBlockIn)) then
+            R4Ptr => twoERIs%ref(spinBlockIn,order,doConjg)
+          else
+            do q = 1, 4
+              nA(q) = twoERIs%blockSize('alpha',q)
+              nT(q) = nA(q)+twoERIs%blockSize('beta',q)
+              if(idx(q).lt.0) idx(q) = nT(q)+idx(q)+1
+              if(idx(q).le.nA(q)) then
+                fullBlock(q:q) = 'a'
+              else
+                fullBlock(q:q) = 'b'
+                idx(q) = idx(q)-nA(q)
+              endIf
+            endDo
+            R4Ptr => twoERIs%ref(fullBlock,order,doConjg)
+          endIf
+          if(associated(R4Ptr)) then
+            do q = 1, 4
+              x(order(q)) = idx(q)
+            endDo
+            element = R4Ptr%at(x(1),x(2),x(3),x(4))
+            if(doConjg) element = conjg(element)
+          endIf
         endIf
       else
       if(twoERIs%intType().ne.'coulomb'.and.twoERIs%intType().ne.'ms') &

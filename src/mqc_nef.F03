@@ -9253,7 +9253,6 @@
                    lengthBeta=NEFVecOut%Size_vector_beta(outId))
             do i = 1, nefM%Size_vector_alpha_row(row)
               do j = 1, nefM%Size_vector_alpha_col(col)
-                write(*,*) i,j
                 call blkE%put(&
                   NEFM%at(i,j,row,col,'alpha'),&
                   int(NEFM%collapseIndex(i,j,'a','a',row,col,'singlet',swapOrder=mySwapOrder)),&

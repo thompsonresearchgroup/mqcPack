@@ -6814,7 +6814,8 @@
           start = alphaOrbs(i)+1
         endDo
         call tempIntA%combine(tempIntA,&
-          integral1%orbitals(alphaOrbsIn=[(j,j=alphaOrbs(size(alphaOrbs))+1,size(integral1,'alpha',my_Axis))],axis=my_Axis))
+          integral1%orbitals(alphaOrbsIn=[(j,j=alphaOrbs(size(alphaOrbs))+1,size(integral1,'alpha',my_Axis))],axis=my_Axis)&
+                               ,axis=my_Axis)
       else
         tempIntA = integral1%orbitals(alphaOrbsIn=[(j,j=1,size(integral1,'alpha',my_Axis))],axis=my_Axis)
       endIf
@@ -6827,7 +6828,8 @@
           start = betaOrbs(i)+1
         endDo
         call tempIntB%combine(tempIntB,&
-          integral1%orbitals(betaOrbsIn=[(j,j=betaOrbs(size(betaOrbs))+1,size(integral1,'beta',my_Axis))],axis=my_Axis))
+          integral1%orbitals(betaOrbsIn=[(j,j=betaOrbs(size(betaOrbs))+1,size(integral1,'beta',my_Axis))],axis=my_Axis)&
+                               ,axis=my_Axis)
       else
         tempIntB = integral1%orbitals(betaOrbsIn=[(j,j=1,size(integral1,'beta',my_Axis))],axis=my_Axis)
       endIf

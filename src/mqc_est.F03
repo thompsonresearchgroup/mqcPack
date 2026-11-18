@@ -2493,13 +2493,21 @@
       logical,optional::force
       character(Len=*)::newType
       character(Len=64)::newArrayType,oldArrayType
-      integer(kind=int64)::nDimAlpha1=0,nDimBeta1=0,nDimTotal1=0,nDimAlpha2=0,nDimBeta2=0,nDimTotal2=0,zeroI
+      integer(kind=int64)::nDimAlpha1,nDimBeta1,nDimTotal1,nDimAlpha2,nDimBeta2,nDimTotal2,zeroI
       real(kind=real64)::zeroR
       complex(kind=real64)::zeroC
       parameter(zeroI=0,zeroR=0.0,zeroC=(0.0,0.0))
       type(mqc_matrix)::aa,bb
       logical::myforce
 !
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha1 = 0
+      nDimBeta1 = 0
+      nDimTotal1 = 0
+      nDimAlpha2 = 0
+      nDimBeta2 = 0
+      nDimTotal2 = 0
       call string_change_case(newType,'L',newArrayType)
       oldArrayType = integral%Array_Type
       if (oldArrayType.eq.newArrayType) then
@@ -5572,11 +5580,19 @@
       character(len=64)::myBlockName
       logical::myNoSym
       type(mqc_matrix)::matrixOut,emptyMatrix
-      integer(kind=int64)::nDimAlpha1=0,nDimBeta1=0,nDimTotal1=0,nDimAlpha2=0,nDimBeta2=0,nDimTotal2=0,zeroI
+      integer(kind=int64)::nDimAlpha1,nDimBeta1,nDimTotal1,nDimAlpha2,nDimBeta2,nDimTotal2,zeroI
       real(kind=real64)::zeroR
       complex(kind=real64)::zeroC
       parameter(zeroI=0,zeroR=0.0,zeroC=(0.0,0.0))
 !
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha1 = 0
+      nDimBeta1 = 0
+      nDimTotal1 = 0
+      nDimAlpha2 = 0
+      nDimBeta2 = 0
+      nDimTotal2 = 0
       if(present(blockName)) then
         call string_change_case(blockName,'l',myBlockName)
       else
@@ -5788,9 +5804,17 @@
       type(mqc_scf_integral)::integralOut
       type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha
       type(mqc_matrix)::outMatrixAlpha,outMatrixBeta,outMatrixAlphaBeta,outMatrixBetaAlpha
-      integer(kind=int64)::nDimAlpha1=0,nDimBeta1=0,nDimAlpha2=0,nDimBeta2=0,nAlpha=0,nBeta=0,i,my_axis,&
-        nDA1,nDA2,nDB1,nDB2
+      integer(kind=int64)::nDimAlpha1,nDimBeta1,nDimAlpha2,nDimBeta2,nAlpha,nBeta,i,my_axis,nDA1, &
+        nDA2,nDB1,nDB2
 
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha1 = 0
+      nDimBeta1 = 0
+      nDimAlpha2 = 0
+      nDimBeta2 = 0
+      nAlpha = 0
+      nBeta = 0
       if(.not.allocated(integral)) return
 
       if(present(axis)) then
@@ -6265,8 +6289,14 @@
       type(mqc_matrix)::tmpMatrixAlpha,tmpMatrixBeta,tmpMatrixAlphaBeta,tmpMatrixBetaAlpha
       type(mqc_matrix)::outMatrixAlpha,outMatrixBeta,outMatrixAlphaBeta,outMatrixBetaAlpha
       integer(kind=int64),dimension(:),allocatable::alphaVector,betaVector
-      integer(kind=int64)::nDimAlpha=0,nDimBeta=0,nAlpha=0,nBeta=0,i,my_axis
+      integer(kind=int64)::nDimAlpha,nDimBeta,nAlpha,nBeta,i,my_axis
 
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha = 0
+      nDimBeta = 0
+      nAlpha = 0
+      nBeta = 0
       if(present(axis)) then
         my_axis = axis
       else
@@ -6751,7 +6781,8 @@
 !     Authors:
 !     ========
 !>    \author L. M. Thompson
-!>    \date 2025
+!>    \author M. M. F. Moraes
+!>    \date 2025, 2026
 !
       function mqc_integral_update_orbitals(integral1,integral2,alphaOrbs,betaOrbs,axis) result(integralOut) 
 !
@@ -6778,8 +6809,8 @@
       if(size(alphaOrbs).gt.0) then
         start = 1
         do i = 1,size(alphaOrbs)
-          call tempIntA%combine(tempIntA,integral1%orbitals(alphaOrbsIn=[(j,j=start,alphaOrbs(i)-1)],axis=my_Axis))
-          call tempIntA%combine(tempIntA,integral2%orbitals(alphaOrbsIn=[i],axis=my_Axis))
+          call tempIntA%combine(tempIntA,integral1%orbitals(alphaOrbsIn=[(j,j=start,alphaOrbs(i)-1)],axis=my_Axis),axis=my_Axis)
+          call tempIntA%combine(tempIntA,integral2%orbitals(alphaOrbsIn=[i],axis=my_Axis),axis=my_Axis)
           start = alphaOrbs(i)+1
         endDo
         call tempIntA%combine(tempIntA,&
@@ -6791,8 +6822,8 @@
       if(size(betaOrbs).gt.0) then
         start = 1
         do i = 1,size(betaOrbs)
-          call tempIntB%combine(tempIntB,integral1%orbitals(betaOrbsIn=[(j,j=start,betaOrbs(i)-1)],axis=my_Axis))
-          call tempIntB%combine(tempIntB,integral2%orbitals(betaOrbsIn=[i],axis=my_Axis))
+          call tempIntB%combine(tempIntB,integral1%orbitals(betaOrbsIn=[(j,j=start,betaOrbs(i)-1)],axis=my_Axis),axis=my_Axis)
+          call tempIntB%combine(tempIntB,integral2%orbitals(betaOrbsIn=[i],axis=my_Axis),axis=my_Axis)
           start = betaOrbs(i)+1
         endDo
         call tempIntB%combine(tempIntB,&
@@ -7020,11 +7051,16 @@
       character(len=*),optional::blockName
       character(len=64)::myBlockName
       type(mqc_vector)::vectorOut
-      integer(kind=int64)::nDimAlpha=0,nDimBeta=0,nDimTotal=0,zeroI
+      integer(kind=int64)::nDimAlpha,nDimBeta,nDimTotal,zeroI
       real(kind=real64)::zeroR
       complex(kind=real64)::zeroC
       parameter(zeroI=0,zeroR=0.0,zeroC=(0.0,0.0))
 !
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha = 0
+      nDimBeta = 0
+      nDimTotal = 0
       if(present(blockName)) then
         call string_change_case(blockName,'l',myBlockName)
       else
@@ -7194,13 +7230,27 @@
       character(len=64)::myBlockName,interaction
       character(len=4)::spinLabel
       type(mqc_r4Tensor)::r4tOut
-      integer(kind=int64)::nDimAlpha1=0,nDimBeta1=0,nDimTotal1=0,nDimAlpha2=0,nDimBeta2=0, &
-        nDimTotal2=0,nDimAlpha3=0,nDimBeta3=0,nDimTotal3=0,nDimAlpha4=0,nDimBeta4=0, &
-        nDimTotal4=0,zeroI,i,j,k,l,nDim1,nDim2,nDim3,nDim4
+      integer(kind=int64)::nDimAlpha1,nDimBeta1,nDimTotal1,nDimAlpha2,nDimBeta2,nDimTotal2, &
+        nDimAlpha3,nDimBeta3,nDimTotal3,nDimAlpha4,nDimBeta4,nDimTotal4,zeroI,i,j,k,l,nDim1,nDim2, &
+        nDim3,nDim4
       real(kind=real64)::zeroR
       complex(kind=real64)::zeroC
       parameter(zeroI=0,zeroR=0.0,zeroC=(0.0,0.0))
 !
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha1 = 0
+      nDimBeta1 = 0
+      nDimTotal1 = 0
+      nDimAlpha2 = 0
+      nDimBeta2 = 0
+      nDimTotal2 = 0
+      nDimAlpha3 = 0
+      nDimBeta3 = 0
+      nDimTotal3 = 0
+      nDimAlpha4 = 0
+      nDimBeta4 = 0
+      nDimTotal4 = 0
       if(present(blockName)) then
         call string_change_case(blockName,'l',myBlockName)
       else
@@ -8724,8 +8774,16 @@
       implicit none
       class(mqc_scf_integral),intent(in)::integralIn
       type(mqc_matrix),intent(inOut)::matrixOut
-      integer(kind=int64)::nDimAlpha1=0,nDimBeta1=0,nDimTotal1=0,nDimAlpha2=0,nDimBeta2=0,nDimTotal2=0
+      integer(kind=int64)::nDimAlpha1,nDimBeta1,nDimTotal1,nDimAlpha2,nDimBeta2,nDimTotal2
 !
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha1 = 0
+      nDimBeta1 = 0
+      nDimTotal1 = 0
+      nDimAlpha2 = 0
+      nDimBeta2 = 0
+      nDimTotal2 = 0
       nDimAlpha1 = integralIn%blockSize('Alpha',1) 
       nDimBeta1 = integralIn%blockSize('Beta',1)
       nDimTotal1 = nDimAlpha1 + nDimBeta1
@@ -8823,8 +8881,13 @@
       implicit none
       class(mqc_scf_eigenvalues),intent(in)::eigenvaluesIn
       type(mqc_vector),intent(inOut)::vectorOut
-      integer(kind=int64)::nDimAlpha=0,nDimBeta=0,nDimTotal=0
+      integer(kind=int64)::nDimAlpha,nDimBeta,nDimTotal
 !
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha = 0
+      nDimBeta = 0
+      nDimTotal = 0
       nDimAlpha = eigenvaluesIn%blockSize('Alpha') 
       nDimBeta = eigenvaluesIn%blockSize('Beta')
       nDimTotal = nDimAlpha + nDimBeta
@@ -24602,12 +24665,18 @@
       type(mqc_scf_integral),intent(inOut)::integral
       integer(kind=int64),intent(in)::nelec,multi
 
-      integer(kind=int64)::nDimAlpha1=0,nDimAlpha2=0,nDimBeta1=0,nDimBeta2=0
+      integer(kind=int64)::nDimAlpha1,nDimAlpha2,nDimBeta1,nDimBeta2
       type(mqc_matrix)::tmpMat,tmpMat2,tmpMat3,tmpMat4
       integer(kind=int64),dimension(:),allocatable::elist
 !
 !     Do the work...
 !
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha1 = 0
+      nDimAlpha2 = 0
+      nDimBeta1 = 0
+      nDimBeta2 = 0
       if(integral%type().eq.'general') then
         nDimAlpha1 = integral%blockSize('alpha',1) 
         nDimAlpha2 = integral%blockSize('alpha',2) 
@@ -33472,8 +33541,12 @@
       type(mqc_scf_integral),optional,intent(inOut)::rEVecs,lEVecs
       type(mqc_matrix)::tmpMat1,tmpMat2,tmpMat3,tmpMat4,tmpMat5,tmpMat6,tmpMat7,tmpMat8
       type(mqc_vector)::tmpVec1,tmpVec2
-      integer(kind=int64)::nDimAlpha1=0,nDimAlpha2=0
+      integer(kind=int64)::nDimAlpha1,nDimAlpha2
 !
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha1 = 0
+      nDimAlpha2 = 0
       if(integralA%type().eq.'space') then
         if(present(integralB)) then
           if(integralB%type().eq.'space') then
@@ -33689,8 +33762,12 @@
       type(mqc_scf_integral),optional,intent(inOut)::eVecs
       type(mqc_matrix)::tmpMat1,tmpMat2,tmpMat3,tmpMat4
       type(mqc_vector)::tmpVec1,tmpVec2
-      integer(kind=int64)::nDimAlpha1=0,nDimAlpha2=0
+      integer(kind=int64)::nDimAlpha1,nDimAlpha2
 !
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha1 = 0
+      nDimAlpha2 = 0
       if(integral%type().eq.'space') then
         tmpMat1 = integral%getblock('alpha')
         if(present(eVals).and.present(eVecs)) then
@@ -33808,8 +33885,14 @@
       type(mqc_scf_integral),optional,intent(inOut)::eUVecs,eVVecs
       type(mqc_matrix)::tmpMat1,tmpMat2,tmpMat3,tmpMat4,tmpMat5,tmpMat6,tmpMat7,tmpMat8
       type(mqc_vector)::tmpVec1,tmpVec2
-      integer(kind=int64)::nDimAlpha1=0,nDimAlpha2=0,nDimBeta1=0,nDimBeta2=0
+      integer(kind=int64)::nDimAlpha1,nDimAlpha2,nDimBeta1,nDimBeta2
 !
+!     dimension variables set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      nDimAlpha1 = 0
+      nDimAlpha2 = 0
+      nDimBeta1 = 0
+      nDimBeta2 = 0
       if(integral%type().eq.'space') then
         tmpMat1 = integral%getblock('alpha')
         if(present(eVals).and.present(eUVecs).and.present(eVVecs)) then

@@ -14462,12 +14462,15 @@
       Real(kind=real64),Dimension(:),allocatable::A_EVals
       Complex(kind=real64),Dimension(:),allocatable::AC_EVals
 !
-      Integer(kind=int64)::NDim,i,j,k,IError=1
+      Integer(kind=int64)::NDim,i,j,k,IError
       Real(kind=real64),Dimension(:),Allocatable::A_Symm,Temp_Vector
       Complex(Kind=real64),Dimension(:),Allocatable::AC_Symm,TempC_Vector
       character(len=64)::typeFlag
       Real(kind=real64),Parameter::Zero=1.0E-8
 !
+!     error flag / work sizes set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      IError = 1
       mySolver = 'qr'
       if(present(solver)) call string_change_case(solver,'l',mySolver)
       select case(trim(mySolver))
@@ -32017,13 +32020,16 @@
       real(kind=real64),dimension(:),allocatable::eValsOut,work,eValsReal,eValsImag
       Complex(Kind=real64),dimension(:,:),allocatable::tempAC,tempBC,rightCvecs,leftCvecs
       Complex(Kind=real64),dimension(:),allocatable::eValsA,eValsB,workC
-      integer(kind=int64)::iError=0,lWork,nDim1A,nDim2A,nDim1B,nDim2B,ilaenv,i,npdFlag
+      integer(kind=int64)::iError,lWork,nDim1A,nDim2A,nDim1B,nDim2B,ilaenv,i,npdFlag
       character(len=64)::StorFlagA,StorFlagB,TypeFlagA,TypeFlagB
       type(mqc_vector)::tmp_vec
 !
 !     Generalized eigensystem solver.
 !
 !     StorZero input: full zero data (same result as a full zero matrix)
+!     error flag / work sizes set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      iError = 0
       If(a%Storage.eq.'StorZero') Call MQC_Matrix_Zero_To_Data(a,'element',.False.)
       If(Present(bIn)) then
         If(bIn%Storage.eq.'StorZero') Call MQC_Matrix_Zero_To_Data(bIn,'element',.False.)
@@ -32333,13 +32339,19 @@
       Type(MQC_Matrix),Optional,Intent(InOut)::EVVecs
       Type(MQC_Vector),Optional,Intent(InOut)::EVals
 !
-      Integer(kind=int64)::NDim1=0,NDim2=0,Work_Length=-1,IError=1
+      Integer(kind=int64)::NDim1,NDim2,Work_Length,IError
       Real(kind=real64),Dimension(:),Allocatable::A_SVals,Work
       Complex(Kind=real64),Dimension(:),Allocatable::WorkC
       Real(kind=real64),Dimension(:,:),Allocatable::A_Temp,A_UVecs,A_VVecs
       Complex(Kind=real64),Dimension(:,:),Allocatable::AC_Temp,AC_UVecs,AC_VVecs
       Character(len=64)::typeFlag,storFlag
 !
+!     error flag / work sizes set here, not by initialization in the declaration (an
+!     initialized local is implicitly SAVE: shared between calls and OpenMP threads)
+      NDim1 = 0
+      NDim2 = 0
+      Work_Length = -1
+      IError = 1
 !     StorZero input: full zero data (same result as a full zero matrix)
       If(A%Storage.eq.'StorZero') Call MQC_Matrix_Zero_To_Data(A,'element',.False.)
       NDim1 = MQC_Matrix_Rows(A)

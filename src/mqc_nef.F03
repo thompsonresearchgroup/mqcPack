@@ -65,6 +65,7 @@
       Private::mqc_nef_pair_order_label,mqc_nef_matrix_equal,mqc_nef_plain_matrix_label
       Private::mqc_nef_r4_bref,mqc_nef_r4_bref_pairs
       Private::mqc_nef_r4_collapse_part,mqc_nef_r4_pair_spins,mqc_nef_r4_collapse_channel
+      Private::mqc_nef_r4_collapse_block
 !
 !----------------------------------------------------------------
 !                                                               |
@@ -9418,15 +9419,8 @@
       integer(kind=int64),dimension(4)::my_order
       type(mqc_nef_matrix)::NEFMatOut
       character(len=64)::mySpinType,mySpinTypeKet
-      integer(kind=int64)::idij,idlk
-      type(mqc_scf_integral)::blkM
       integer(kind=int64)::ia,ja,ka,la
-      integer(kind=int64)::dimi,dimj,dimk,diml
-      type(mqc_twoeris),pointer::ERIsP
-      type(mqc_twoeris),target::ERIsMirror
-      type(mqc_matrix)::MatAlpha,MatBeta,MatAlphaBeta,MatBetaAlpha
-      integer(kind=int64),dimension(4)::blk
-      integer(kind=int64),dimension(2)::nIs,nJs,nKs,nLs
+      integer(kind=int64)::dimi,dimj,dimk,diml,nBi,nBj,nBk,nBl
 !
       if(present(spinType)) then
         mySpinType = spinType 
@@ -9503,13 +9497,82 @@
 !     alphabeta (row b, column a) or beta (b,b). The second index of a pair has
 !     the same spin (singlet), the opposite spin (triplet) or both, beta first
 !     (all), as in collapseIndex. spinType sets the rows, spinTypeKet the columns.
-      do dimi = 1, NEFr4%blockSize(ia)
-       do dimj = 1, NEFr4%blockSize(ja)
-        idij = NEFr4%blockSize(ja)*(dimi-1) + dimj
-        do dimk = 1, NEFr4%blockSize(ka)
-         do diml = 1, NEFr4%blockSize(la)
-          idlk = NEFr4%blockSize(la)*(dimk-1) + diml
-          if (NEFr4%isBlockZero([ia,dimi],[ja,dimj],[la,diml],[ka,dimk])) cycle
+!     Block-wise, threaded (OpenMP) over the space-block quadruples: each block writes its own
+!     output slot (mqc_nef_r4_collapse_block). For a mirrored output the slot (row,col) with
+!     row < col is the mirror image of (col,row): it is skipped when (col,row) is computed
+!     (in the serial loop (col,row) came last and its value was the one kept).
+      nBi = NEFr4%blockSize(ia)
+      nBj = NEFr4%blockSize(ja)
+      nBk = NEFr4%blockSize(ka)
+      nBl = NEFr4%blockSize(la)
+!$OMP PARALLEL DO COLLAPSE(4) SCHEDULE(DYNAMIC) DEFAULT(NONE) &
+!$OMP   SHARED(NEFr4,NEFMatOut,ia,ja,ka,la,nBi,nBj,nBk,nBl,my_order,mySpinType,mySpinTypeKet) &
+!$OMP   PRIVATE(dimi,dimj,dimk,diml)
+      do dimi = 1, nBi
+       do dimj = 1, nBj
+        do dimk = 1, nBk
+         do diml = 1, nBl
+          call mqc_nef_r4_collapse_block(NEFr4,NEFMatOut,ia,ja,ka,la,dimi,dimj,dimk,diml,&
+            my_order,mySpinType,mySpinTypeKet)
+         end do
+        end do
+       end do
+      end do
+!$OMP END PARALLEL DO
+!
+      end function mqc_nef_r4_dimention_collapse
+!
+!     PROCEDURE mqc_nef_r4_collapse_block
+!
+!>    \brief <b> mqc_nef_r4_collapse_block collapses one space-block quadruple of a
+!>    NEF_R4 into its slot of the output NEF_Matrix</b>
+!>
+!>    \par Purpose:
+!     =============
+!>
+!>    \verbatim
+!>
+!>    Body of the block loop of mqc_nef_r4_dimention_collapse, called from its OpenMP
+!>    loop: all work arrays are local; the only write is NEFMatOut%iput at the slot
+!>    (idij,idlk) of this quadruple. Zero blocks and, for a mirrored output, the
+!>    mirror half (row < col) whose partner is computed are skipped.
+!>
+!>    \endverbatim
+!
+!     Authors:
+!     ========
+!>    \author M. M. F. Moraes
+!>    \date 2026
+!
+      subroutine mqc_nef_r4_collapse_block(NEFr4,NEFMatOut,ia,ja,ka,la,dimi,dimj,dimk,diml,&
+        my_order,mySpinType,mySpinTypeKet)
+!
+      implicit none
+      class(mqc_nef_r4),intent(in),target::NEFr4
+      type(mqc_nef_matrix),intent(inout)::NEFMatOut
+      integer(kind=int64),intent(in)::ia,ja,ka,la,dimi,dimj,dimk,diml
+      integer(kind=int64),dimension(4),intent(in)::my_order
+      character(len=*),intent(in)::mySpinType,mySpinTypeKet
+      integer(kind=int64)::idij,idlk
+      type(mqc_scf_integral)::blkM
+      type(mqc_twoeris),pointer::ERIsP
+      type(mqc_twoeris),target::ERIsMirror
+      type(mqc_matrix)::MatAlpha,MatBeta,MatAlphaBeta,MatBetaAlpha
+      integer(kind=int64),dimension(4)::blk
+      integer(kind=int64),dimension(2)::nIs,nJs,nKs,nLs
+      logical::skipMirror
+!
+      idij = NEFr4%blockSize(ja)*(dimi-1) + dimj
+      idlk = NEFr4%blockSize(la)*(dimk-1) + diml
+      skipMirror = .false.
+!     mirrored output: (row,col) with row < col is the image of (col,row); skip it when
+!     (col,row) is computed here too (same block sizes, block not zero)
+      if (NEFMatOut%Mirrored.and.idij.lt.idlk.and.&
+          NEFr4%blockSize(ia).eq.NEFr4%blockSize(ka).and.&
+          NEFr4%blockSize(ja).eq.NEFr4%blockSize(la)) then
+        if (.not.NEFr4%isBlockZero([ia,dimk],[ja,diml],[la,dimj],[ka,dimi])) skipMirror = .true.
+      end if
+      if (.not.(skipMirror.or.NEFr4%isBlockZero([ia,dimi],[ja,dimj],[la,diml],[ka,dimk]))) then
 !         whole stored block: pointer for own slots, dagger copy for mirror slots
           blk(ia) = dimi
           blk(ja) = dimj
@@ -9547,12 +9610,9 @@
               nDimB2=int(NEFMatOut%Size_vector_beta_col(idlk),kind=int64))
             call NEFMatOut%iput(blkM,idij,idlk)
           end if
-         end do
-        end do
-       end do
-      end do
+      end if
 !
-      end function mqc_nef_r4_dimention_collapse
+      end subroutine mqc_nef_r4_collapse_block
 !
 !
 !     PROCEDURE MQC_NEF_R4_Collapse_Part
@@ -9720,13 +9780,16 @@
       subroutine mqc_nef_r4_collapse_channel(ERIs,Spins,Ax,DR,DC,IsCmplx)
 !
       implicit none
-      type(mqc_twoeris),intent(in)::ERIs
+      type(mqc_twoeris),intent(in),target::ERIs
       character(len=1),dimension(4),intent(in)::Spins
       integer(kind=int64),dimension(4),intent(in)::Ax
       real(kind=real64),dimension(:,:,:,:),allocatable,intent(out)::DR
       complex(kind=real64),dimension(:,:,:,:),allocatable,intent(out)::DC
       logical,intent(out)::IsCmplx
-      type(mqc_r4tensor)::T
+      type(mqc_r4tensor),target::T
+      type(mqc_r4tensor),pointer::TP
+      integer(kind=int64),dimension(4)::refOrder
+      logical::refConjg,refLit
       real(kind=real64),dimension(:,:,:,:),allocatable::SR
       complex(kind=real64),dimension(:,:,:,:),allocatable::SC
       character(len=4)::BlockName
@@ -9736,13 +9799,20 @@
       do m = 1, 4
         BlockName(Ax(m):Ax(m)) = Spins(m)
       end do
-      T = ERIs%getBlock(BlockName)
-      IsCmplx = mqc_have_complex(T)
+!     the stored member itself when the block is stored as is (no copy), else getBlock
+      TP => ERIs%ref(BlockName,refOrder,refConjg)
+      refLit = associated(TP)
+      if(refLit) refLit = all(refOrder.eq.[1,2,3,4]).and..not.refConjg
+      if(.not.refLit) then
+        T = ERIs%getBlock(BlockName)
+        TP => T
+      endIf
+      IsCmplx = mqc_have_complex(TP)
       if (IsCmplx) then
-        call T%getArray(SC,FullView=.true.)
+        call TP%getArray(SC,FullView=.true.)
         NStor = shape(SC,kind=int64)
       else
-        call T%getArray(SR,FullView=.true.)
+        call TP%getArray(SR,FullView=.true.)
         NStor = shape(SR,kind=int64)
       end if
 !     target axis order (j,i,l,k); ROrder maps each storage axis to its target position
@@ -9915,13 +9985,21 @@
 !>                 included (mqc_nef_matrix_whole_pinv); exact when the space
 !>                 partition does not block-diagonalize the matrix.
 !>    \endverbatim
+!>
+!>    \param[out] phaseTimes
+!>    \verbatim
+!>        phaseTimes is Real(kind=real64),Dimension(3),Optional
+!>        Wall-clock seconds of the three phases: (1) collapse of NEFSet,
+!>        (2) mergeSpace, (3) pseudo-inverse and output assembly (profiling).
+!>    \endverbatim
 !
 !     Authors:
 !     ========
 !>    \author M. M. F. Moraes
 !>    \date 2026
 !
-      function mqc_nef_set_block_diagonal_pinv(NEFSet,spinType,Order,thresh,spaceDim,wholeMatrix) result(NEFMatOut)
+      function mqc_nef_set_block_diagonal_pinv(NEFSet,spinType,Order,thresh,spaceDim,wholeMatrix,&
+        phaseTimes) result(NEFMatOut)
 !
       implicit none
       class(mqc_nef_set),intent(in)::NEFSet
@@ -9930,12 +10008,15 @@
       real(kind=real64),intent(in),optional::thresh
       Integer(kind=int64),optional::spaceDim
       logical,intent(in),optional::wholeMatrix
+      real(kind=real64),dimension(3),intent(out),optional::phaseTimes
       type(mqc_nef_matrix)::TmpMat
       type(mqc_nef_set)::CollapsedMat,NEFMatOut
       real(kind=real64)::myThresh
       Integer(kind=int64)::mySpaceDim
       logical::myWhole
+      integer(kind=int64)::tc0,tc1,tc2,tc3,tcRate
 !
+      call system_clock(tc0,tcRate)
       if(present(thresh)) then
         myThresh = thresh
       else
@@ -9949,12 +10030,14 @@
                        'NEFSet%type()',NEFSet%type())
 !
       CollapsedMat = NEFSet%collapse(spinType=spinType,Order=Order)
+      call system_clock(tc1)
 !
       if(CollapsedMat%NumSpace(1).ne.CollapsedMat%NumSpace(2)) &
         call mqc_error_i('mqc_nef_set_block_diagonal_pinv: collapsed set is not square',6,&
           'NumSpace(1)',CollapsedMat%NumSpace(1),'NumSpace(2)',CollapsedMat%NumSpace(2))
 !
       CollapsedMat = CollapsedMat%mergeSpace()
+      call system_clock(tc2)
 !     the pseudo-inverse keeps the label and bra-ket flag of the merged cell
       call NEFMatOut%init(1,1,sameBraKetSpace=CollapsedMat%isSameBraKetSpace(),&
            symmetry=CollapsedMat%getSymm())
@@ -9978,6 +10061,9 @@
                                                      Map_Matrix_2=CollapsedMat%Map_Matrix_2)
       end if
       if (present(spaceDim)) spaceDim = mySpaceDim
+      call system_clock(tc3)
+      if (present(phaseTimes)) phaseTimes = &
+        real([tc1-tc0,tc2-tc1,tc3-tc2],kind=real64)/real(tcRate,kind=real64)
 ! 
       end function mqc_nef_set_block_diagonal_pinv
 !
